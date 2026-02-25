@@ -1,0 +1,190 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>piec.drivers.lockin.srs830_old &mdash; piec 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="piec.drivers.lockin.virtual_lockin" href="piec.drivers.lockin.virtual_lockin.html" />
+    <link rel="prev" title="piec.drivers.lockin.srs830" href="piec.drivers.lockin.srs830.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            piec
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is piec?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/quickstart.html">Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/the_driver.html">The Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/finding_address.html">Finding Your Instrument’s Address</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/running_measurements.html">Running Measurements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/data_and_analysis.html">Data and Analysis</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../supported_instruments.html">Supported Instruments</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../api_reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="piec.analysis.html">piec.analysis</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="piec.drivers.html">piec.drivers</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.autodetect.html">piec.drivers.autodetect</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.awg.html">piec.drivers.awg</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.daq.html">piec.drivers.daq</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.dc_callibrator.html">piec.drivers.dc_callibrator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.digilent.html">piec.drivers.digilent</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.dmm.html">piec.drivers.dmm</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.emulators.html">piec.drivers.emulators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.instrument.html">piec.drivers.instrument</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="piec.drivers.lockin.html">piec.drivers.lockin</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="piec.drivers.lockin.lockin.html">piec.drivers.lockin.lockin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="piec.drivers.lockin.srs830.html">piec.drivers.lockin.srs830</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">piec.drivers.lockin.srs830_old</a></li>
+<li class="toctree-l4"><a class="reference internal" href="piec.drivers.lockin.virtual_lockin.html">piec.drivers.lockin.virtual_lockin</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.oscilloscope.html">piec.drivers.oscilloscope</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.pulser.html">piec.drivers.pulser</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.rf_source.html">piec.drivers.rf_source</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.scpi.html">piec.drivers.scpi</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.sourcemeter.html">piec.drivers.sourcemeter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.stepper_motor.html">piec.drivers.stepper_motor</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.utilities.html">piec.drivers.utilities</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.virtual_instrument.html">piec.drivers.virtual_instrument</a></li>
+<li class="toctree-l3"><a class="reference internal" href="piec.drivers.z_old.html">piec.drivers.z_old</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="piec.measurement.html">piec.measurement</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Administrative Info</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/authors.html">Authors &amp; Citation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/code_of_conduct.html">Code of Conduct</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">piec</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../api_reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="piec.drivers.html">piec.drivers</a></li>
+          <li class="breadcrumb-item"><a href="piec.drivers.lockin.html">piec.drivers.lockin</a></li>
+      <li class="breadcrumb-item active">piec.drivers.lockin.srs830_old</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api_generated/piec.drivers.lockin.srs830_old.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-piec.drivers.lockin.srs830_old">
+<span id="piec-drivers-lockin-srs830-old"></span><h1>piec.drivers.lockin.srs830_old<a class="headerlink" href="#module-piec.drivers.lockin.srs830_old" title="Link to this heading"></a></h1>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">SRS830</span></code>(address, **kwargs)</p></td>
+<td><p>Driver for the Stanford Research Systems SR830 DSP Lock-In Amplifier.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="piec.drivers.lockin.srs830.html" class="btn btn-neutral float-left" title="piec.drivers.lockin.srs830" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="piec.drivers.lockin.virtual_lockin.html" class="btn btn-neutral float-right" title="piec.drivers.lockin.virtual_lockin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Geo Fratian Alexander Qualls.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

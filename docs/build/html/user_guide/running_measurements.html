@@ -1,0 +1,230 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Running Measurements &mdash; piec 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Data and Analysis" href="data_and_analysis.html" />
+    <link rel="prev" title="Finding Your Instrument’s Address" href="finding_address.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            piec
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is PIEC?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/quickstart.html">Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="the_driver.html">The Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="finding_address.html">Finding Your Instrument’s Address</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Running Measurements</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#general-workflow">General workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#measurement-class-structure">Measurement class structure</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="data_and_analysis.html">Data and Analysis</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../supported_instruments.html">Supported Instruments</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api_reference.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Administrative Info</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/authors.html">Authors &amp; Citation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/code_of_conduct.html">Code of Conduct</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">piec</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Running Measurements</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/user_guide/running_measurements.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="running-measurements">
+<h1>Running Measurements<a class="headerlink" href="#running-measurements" title="Link to this heading"></a></h1>
+<p>PIEC organizes experiments as <strong>measurement classes</strong> — Python objects that bundle instrument
+configuration, waveform generation, and data analysis into a single
+<code class="docutils literal notranslate"><span class="pre">run_experiment()</span></code> call. This page explains the general workflow that applies to all
+measurement types.</p>
+<section id="general-workflow">
+<h2>General workflow<a class="headerlink" href="#general-workflow" title="Link to this heading"></a></h2>
+<ol class="arabic">
+<li><p><strong>Initialize instruments</strong></p>
+<p>Import and instantiate the driver(s) your measurement requires, passing each instrument’s
+VISA address:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">piec.drivers.keysight81150a</span> <span class="kn">import</span> <span class="n">Keysight81150a</span>
+<span class="kn">from</span> <span class="nn">piec.drivers.keysightdsox3024a</span> <span class="kn">import</span> <span class="n">KeysightDSOX3024A</span>
+
+<span class="n">awg</span> <span class="o">=</span> <span class="n">Keysight81150a</span><span class="p">(</span><span class="s1">&#39;GPIB0::8::INSTR&#39;</span><span class="p">)</span>
+<span class="n">osc</span> <span class="o">=</span> <span class="n">KeysightDSOX3024A</span><span class="p">(</span><span class="s1">&#39;GPIB0::7::INSTR&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">'virtual'</span></code> as the address to run without hardware (see
+<a class="reference internal" href="finding_address.html"><span class="doc">Finding Your Instrument’s Address</span></a>).</p>
+</li>
+<li><p><strong>Create the measurement object</strong></p>
+<p>Instantiate the measurement class with your instrument objects and experimental parameters:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">piec.measurement</span> <span class="kn">import</span> <span class="n">HysteresisLoop</span>
+
+<span class="n">experiment</span> <span class="o">=</span> <span class="n">HysteresisLoop</span><span class="p">(</span>
+    <span class="n">awg</span><span class="o">=</span><span class="n">awg</span><span class="p">,</span>
+    <span class="n">osc</span><span class="o">=</span><span class="n">osc</span><span class="p">,</span>
+    <span class="n">frequency</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span>   <span class="c1"># Hz</span>
+    <span class="n">amplitude</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>      <span class="c1"># Volts</span>
+    <span class="n">n_cycles</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">area</span><span class="o">=</span><span class="mf">1.0e-9</span><span class="p">,</span>        <span class="c1"># m²</span>
+    <span class="n">save_dir</span><span class="o">=</span><span class="s1">&#39;./data&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Run the experiment</strong></p>
+<p>Call <code class="docutils literal notranslate"><span class="pre">run_experiment()</span></code> to execute the full measurement sequence:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">experiment</span><span class="o">.</span><span class="n">run_experiment</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Internally this method:</p>
+<ul class="simple">
+<li><p>Configures the instrument to output the required waveform.</p></li>
+<li><p>Sets up the oscilloscope (timebase, channels, trigger).</p></li>
+<li><p>Triggers the waveform and captures the response.</p></li>
+<li><p>Saves the raw data to <code class="docutils literal notranslate"><span class="pre">save_dir</span></code>.</p></li>
+<li><p>Calls <code class="docutils literal notranslate"><span class="pre">analyze()</span></code> to compute derived quantities and generate plots.</p></li>
+</ul>
+</li>
+<li><p><strong>Inspect the output</strong></p>
+<p>After <code class="docutils literal notranslate"><span class="pre">run_experiment()</span></code> completes, the saved data and any generated plots are in the
+directory you specified. See <a class="reference internal" href="data_and_analysis.html"><span class="doc">Data and Analysis</span></a> for details on the file format and
+how to reload and post-process data.</p>
+</li>
+</ol>
+</section>
+<section id="measurement-class-structure">
+<h2>Measurement class structure<a class="headerlink" href="#measurement-class-structure" title="Link to this heading"></a></h2>
+<p>All measurement classes follow the same pattern:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">__init__(self,</span> <span class="pre">...)</span></code></dt><dd><p>Accepts instrument objects and measurement parameters. Stores them as instance attributes
+but does not yet configure any hardware.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">run_experiment(self)</span></code></dt><dd><p>Orchestrates the full measurement: configures instruments, runs the waveform/acquisition
+loop, saves data, and calls <code class="docutils literal notranslate"><span class="pre">analyze()</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">configure_instrument(self)</span></code></dt><dd><p>Implemented by each concrete measurement class. Builds and sends the specific waveform
+(e.g., triangular sweep for hysteresis, pulse sequence for PUND) to the instrument.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">analyze(self)</span></code></dt><dd><p>Implemented by each concrete measurement class. Reads the raw captured data, computes
+physical quantities (polarization, resistance, etc.), and generates plots.</p>
+</dd>
+</dl>
+<p>For experiment-specific parameters and examples, see the individual measurement pages:
+<a class="reference internal" href="../measurements/hysteresis.html"><span class="doc">Hysteresis Loop</span></a>, <a class="reference internal" href="../measurements/pund.html"><span class="doc">Three-Pulse PUND</span></a>, <a class="reference internal" href="../measurements/amr.html"><span class="doc">Anisotropic Magnetoresistance (AMR)</span></a>,
+<a class="reference internal" href="../measurements/iv_sweep.html"><span class="doc">IV Sweep</span></a>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="finding_address.html" class="btn btn-neutral float-left" title="Finding Your Instrument’s Address" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="data_and_analysis.html" class="btn btn-neutral float-right" title="Data and Analysis" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Geo Fratian Alexander Qualls.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
