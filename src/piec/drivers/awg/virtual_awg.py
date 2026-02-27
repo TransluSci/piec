@@ -114,7 +114,12 @@ class VirtualAwg(VirtualInstrument, Awg, Scpi):
             
             freq = self.state['frequency'][self.state['acquisition_channel']]
             duration = 1.0 / freq  # one period
-            t = np.linspace(0, duration, len(v))
+            
+            # Prepend zeros to simulate trigger delay and baseline for analysis
+            prep_points = max(20, len(v) // 10)
+            v = np.concatenate([np.zeros(prep_points), v])
+            t = np.linspace(0, duration * (1 + prep_points / (len(v) - prep_points)), len(v))
+            
             print("Applying waveform to virtual sample...")
            
             self.sample.apply_waveform(v, t)
@@ -322,13 +327,14 @@ class VirtualAwg(VirtualInstrument, Awg, Scpi):
             data (list or np.array): Waveform data points
         """
         # Store the arbitrary waveform in state
-        scaled_dac_data = data
-        min_dac, max_dac = self.arb_dac_value
-        voltage_data = []
-        for val in scaled_dac_data:
-            voltage_data.append(( (2 * (val - min_dac)) / (max_dac - min_dac) ) - 1)
-    
-        self.state['arb_waveform'][channel] = np.array(voltage_data)
+        data_arr = np.array(data)
+        max_abs = np.max(np.abs(data_arr))
+        if max_abs > 0:
+            voltage_data = data_arr / max_abs
+        else:
+            voltage_data = data_arr
+        
+        self.state['arb_waveform'][channel] = voltage_data
 
     def set_arb_waveform(self, channel, name):
         """
