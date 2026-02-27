@@ -7,3 +7,4 @@ registry_cache.json
 build/
 dist/
 .venv/
+piec-*/
