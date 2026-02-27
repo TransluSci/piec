@@ -49,9 +49,10 @@ class VirtualInstrument(Instrument):
                     's11': 12.7e-12,  # m^2 / N (Elastic compliance)
                     's12': -4.2e-12,  # m^2 / N (Elastic compliance)
                     'lattice_a': 0.402e-9,  # meters
-                    "film_thickness": 10e-9,  # meters
-                    'epsilon_r': 400,  # no unit
-                    'leakage_resistance': 5e3,  # Ohms
+                    "film_thickness": 5e-9,  # meters
+                    'epsilon_r': 100,  # no unit
+                    'leakage_resistance': 3e4,  # Ohms
+                    'kinetic_damping': 1e-8, # V s m^2 / C
                 },
                 'substrate': {  # SrTiO3 substrate
                     'lattice_a': 0.3905e-9  # meters
@@ -59,7 +60,7 @@ class VirtualInstrument(Instrument):
                 'electrode': {  # Platinum electrodes
                     'screening_lambda': 0.05e-9,  # meters
                     'permittivity_e': 8.0,  # dimensionless
-                    'area': (20e-6)**2  # meters^2
+                    'area': 1.0e-10  # meters^2
                 }
             }
             VirtualInstrument._shared_fe_sample = Ferroelectric(material_dict=default_fe_material)

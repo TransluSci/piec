@@ -156,22 +156,40 @@ class Ferroelectric(Material):
         P_loop = np.zeros_like(V_applied_path)
         P_current = fsolve(equation_to_solve, x0=np.array([-0.5]), args=(float(V_applied_path[0]),))[0]
         P_loop[0] = P_current
-        on_upper_branch = (P_current > 0)
-        for i in range(1, len(V_applied_path)):
-            V_target = V_applied_path[i]
-            V_previous = V_applied_path[i-1]
-            sweeping_up = (V_target > V_previous)
-            initial_guess_P = P_current
-            if sweeping_up and not on_upper_branch and V_target >= V_c_positive:
-                initial_guess_P = 0.5; on_upper_branch = True
-            elif not sweeping_up and on_upper_branch and V_target <= V_c_negative:
-                initial_guess_P = -0.5; on_upper_branch = False
-            P_solution = fsolve(equation_to_solve, x0=np.array([initial_guess_P]), args=(float(V_target),))
-            P_current = P_solution[0]
-            P_loop[i] = P_current
+        
+        if getattr(self, "t", None) is not None and len(self.t) > 1 and 'kinetic_damping' in fe:
+            gamma = fe['kinetic_damping']
+            dt = self.t[1] - self.t[0]
+            
+            def dP_dt(P_val, V_target):
+                return (V_target - landau_voltage_function(P_val)) / gamma
+                
+            for i in range(1, len(V_applied_path)):
+                V_target = V_applied_path[i]
+                k1 = dP_dt(P_current, V_target)
+                k2 = dP_dt(P_current + 0.5 * dt * k1, V_target)
+                k3 = dP_dt(P_current + 0.5 * dt * k2, V_target)
+                k4 = dP_dt(P_current + dt * k3, V_target)
+                P_current += (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+                P_loop[i] = P_current
+        else:
+            on_upper_branch = (P_current > 0)
+            for i in range(1, len(V_applied_path)):
+                V_target = V_applied_path[i]
+                V_previous = V_applied_path[i-1]
+                sweeping_up = (V_target > V_previous)
+                initial_guess_P = P_current
+                if sweeping_up and not on_upper_branch and V_target >= V_c_positive:
+                    initial_guess_P = 0.5; on_upper_branch = True
+                elif not sweeping_up and on_upper_branch and V_target <= V_c_negative:
+                    initial_guess_P = -0.5; on_upper_branch = False
+                P_solution = fsolve(equation_to_solve, x0=np.array([initial_guess_P]), args=(float(V_target),))
+                P_current = P_solution[0]
+                P_loop[i] = P_current
+                
         return P_loop
 
-    def add_parasitic_effects(self, V_applied_path, P_ideal_loop):
+    def add_parasitic_effects(self, V_applied_path, P_ideal_loop, t=None):
         """
         Add realistic non-ideal effects to hysteresis loop.
         
@@ -182,6 +200,7 @@ class Ferroelectric(Material):
         Args:
             V_applied_path (ndarray): Applied voltage waveform
             P_ideal_loop (ndarray): Ideal polarization response
+            t (ndarray, optional): Time array corresponding to the waveform
             
         Returns:
             tuple: (total_polarization, parasitic_only_polarization)
@@ -192,15 +211,19 @@ class Ferroelectric(Material):
         area = self.material_dict['electrode']['area']
         R_leak = self.material_dict['ferroelectric']['leakage_resistance']
 
-        frequency = 1e6
         # --- Part 1: Linear Dielectric Contribution (Causes Tilt) ---
         # P_dielectric = epsilon_0 * (epsilon_r - 1) * E = epsilon_0 * (epsilon_r - 1) * V / d
         P_dielectric = EPSILON_0 * (epsilon_r - 1) * V_applied_path / film_thickness
         
         # --- Part 2: Leakage Contribution (Causes Rounding/Fattening) ---
-        num_points = len(V_applied_path)
-        period = 1.0 / frequency
-        delta_t = period / num_points
+        if t is not None and len(t) > 1:
+            delta_t = t[1] - t[0]
+        else:
+            frequency = 1e6
+            num_points = len(V_applied_path)
+            period = 1.0 / frequency
+            delta_t = period / num_points
+            
         leakage_integral_term = np.cumsum(V_applied_path) * delta_t
         P_leak_loop = (1 / (area * R_leak)) * leakage_integral_term
 
@@ -226,14 +249,7 @@ class Ferroelectric(Material):
         import matplotlib.pyplot as plt
         
         p_ideal = self.run_landau_hysteresis_simulation(v)
-        p_total, p_noise = self.add_parasitic_effects(v, p_ideal)
-
-
-        p_total[-0] = p_total[-1]
-        p_total[0] = 0
-        
-
-        
+        p_total, p_noise = self.add_parasitic_effects(v, p_ideal, t=t)
         
         self.output_voltage = (np.gradient(p_total, t))*50*self.material_dict['electrode']['area']
         self.output_voltage[0:10] = self.output_voltage[10]
