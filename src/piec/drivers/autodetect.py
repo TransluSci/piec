@@ -197,8 +197,7 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
                     print(f"  -> Failed to check {res_address}: {e}")
                 pass
         
-        if verbose:
-            print(f"No instrument of type {target_class.__name__} found.")
+        print(f"No instrument of type {target_class.__name__} found.")
         return None
 
     # 1. MCC Logic
