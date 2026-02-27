@@ -22,11 +22,11 @@ DEFAULTS = {"awg_address":"VIRTUAL",
             "offset": 0.0,
             "n_cycles": 2,
             "reset_amp": 1.0,
-            "reset_width": 1.0e-7,
-            "reset_delay": 1.0e-7,
+            "reset_width": 1.0e-8,
+            "reset_delay": 1.0e-8,
             "p_u_amp": 1.0,
-            "p_u_width": 1.0e-7,
-            "p_u_delay": 1.0e-7,
+            "p_u_width": 1.0e-8,
+            "p_u_delay": 1.0e-8,
             }
 
 
