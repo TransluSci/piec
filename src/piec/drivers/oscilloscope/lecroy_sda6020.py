@@ -309,3 +309,23 @@ class LeCroySDA6020(Oscilloscope, Scpi):
             return float(value_str)
         except (IndexError, ValueError):
             return float(result)
+
+    def screenshot(self):
+        """
+        Captures the current display as a PNG image.
+        LeCroy SDA6020: SCDP returns BMP data, converted to PNG.
+        returns:
+            (bytes): PNG image data
+        """
+        from io import BytesIO
+        try:
+            from PIL import Image
+        except ImportError:
+            print("screenshot() requires Pillow for BMP→PNG conversion. Install with: pip install Pillow")
+            return None
+        raw = self.instrument.query_binary_values("SCDP", datatype='B')
+        bmp_data = bytes(raw)
+        img = Image.open(BytesIO(bmp_data))
+        png_buffer = BytesIO()
+        img.save(png_buffer, format='PNG')
+        return png_buffer.getvalue()
