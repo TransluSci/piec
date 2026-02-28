@@ -83,4 +83,22 @@ class AnnotatedAwgDriver(Example, Scpi):
 
         self.instrument.write(f":FREQ{channel} {frequency}")
 
+    # --- 7. CHILD-SPECIFIC (AUTO-OPTIONAL) METHODS ---
+    # Any method you add here that does NOT exist in the parent class (Example/Awg)
+    # is automatically treated as optional by PIEC's framework. If measurement code 
+    # calls this method on a different driver that doesn't have it, the call will be 
+    # gracefully skipped with an [OPTIONAL SKIP] message — no crash, no try/except.
+    #
+    # CAUTION: This also means typos on method names will be silently skipped
+    # instead of raising an error. If you see an unexpected [OPTIONAL SKIP] 
+    # message, check for typos in your method call.
+
+    def read_error_log(self):
+        """
+        Example of a child-specific method not in the parent class.
+        This is automatically optional — other drivers that don't have it
+        will skip when measurement code calls it.
+        """
+        return self.instrument.query(":SYST:ERR?")
+
     # ... Add as many other methods as needed to control the instrument ...

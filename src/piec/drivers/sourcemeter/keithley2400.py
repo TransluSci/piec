@@ -202,3 +202,61 @@ class Keithley2400(Sourcemeter, Scpi):
         # Resistance is the third element
         values = response.split(',')
         return float(values[2])
+
+    def run_voltage_sweep(self, start, stop, steps, current_compliance, delay=0):
+        """
+        Executes a hardware-controlled voltage sweep and returns results.
+        Uses Keithley 2400 built-in sweep: :SOUR:VOLT:STAR, :STOP, :STEP, :MODE SWE
+        """
+        import pandas as pd
+        step_size = (stop - start) / (steps - 1) if steps > 1 else 0
+        
+        self.instrument.write(":SOUR:FUNC VOLT")
+        self.instrument.write(f":SOUR:VOLT:STAR {start}")
+        self.instrument.write(f":SOUR:VOLT:STOP {stop}")
+        self.instrument.write(f":SOUR:VOLT:STEP {step_size}")
+        self.instrument.write(":SOUR:VOLT:MODE SWE")
+        self.instrument.write(":SOUR:SWE:RANG AUTO")
+        self.instrument.write(":SOUR:SWE:SPAC LIN")
+        self.instrument.write(f":SOUR:DEL {delay}")
+        self.instrument.write(f":SENS:CURR:PROT {current_compliance}")
+        self.instrument.write(f":TRIG:COUN {steps}")
+        self.instrument.write(":OUTP ON")
+        
+        response = self.instrument.query(":READ?")
+        self.instrument.write(":OUTP OFF")
+        self.instrument.write(":SOUR:VOLT:MODE FIX")  # Reset to fixed mode
+        
+        # Parse response: voltage,current,resistance,time,status repeated per point
+        values = [float(v) for v in response.split(',')]
+        voltages = values[0::5]
+        currents = values[1::5]
+        return pd.DataFrame({'Voltage': voltages, 'Current': currents})
+
+    def run_current_sweep(self, start, stop, steps, voltage_compliance, delay=0):
+        """
+        Executes a hardware-controlled current sweep and returns results.
+        """
+        import pandas as pd
+        step_size = (stop - start) / (steps - 1) if steps > 1 else 0
+        
+        self.instrument.write(":SOUR:FUNC CURR")
+        self.instrument.write(f":SOUR:CURR:STAR {start}")
+        self.instrument.write(f":SOUR:CURR:STOP {stop}")
+        self.instrument.write(f":SOUR:CURR:STEP {step_size}")
+        self.instrument.write(":SOUR:CURR:MODE SWE")
+        self.instrument.write(":SOUR:SWE:RANG AUTO")
+        self.instrument.write(":SOUR:SWE:SPAC LIN")
+        self.instrument.write(f":SOUR:DEL {delay}")
+        self.instrument.write(f":SENS:VOLT:PROT {voltage_compliance}")
+        self.instrument.write(f":TRIG:COUN {steps}")
+        self.instrument.write(":OUTP ON")
+        
+        response = self.instrument.query(":READ?")
+        self.instrument.write(":OUTP OFF")
+        self.instrument.write(":SOUR:CURR:MODE FIX")  # Reset to fixed mode
+        
+        values = [float(v) for v in response.split(',')]
+        voltages = values[0::5]
+        currents = values[1::5]
+        return pd.DataFrame({'Voltage': voltages, 'Current': currents})

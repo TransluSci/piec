@@ -62,11 +62,15 @@ The class attributes must follow a specific syntax based on what kind of paramet
    ```
    *(If a parameter has no known class attribute boundaries, set it to `None`.)*
 
-## 5. Method Conventions: `set_` vs `configure_`
+## 5. Method Conventions: `set_`, `configure_`, and `run_`
 Function naming strictly determines scope:
 * **`set_<property>` Methods:** Must perform a **SINGLE** action. For instance, `set_frequency` only changes the frequency. They correspond directly to SCPI writes assigning one explicit hardware parameter. 
 * **`configure_<module>` Methods:** Must perform **MULTIPLE** actions by wrapping and calling several individual `set_` functions. For instance, `configure_waveform` might call `set_waveform`, `set_frequency`, and `set_amplitude`. 
   - For EVERY `configure_` command, initialize all non-essential arguments to `None` in the signature, and only invoke the corresponding `set_` method if the parameter is not `None`.
+* **`run_<routine>` Methods:** Used for **hardware-executed routines** where the instrument performs a complete operation internally (at hardware speed) and then returns the results. The key distinction is that a `run_` method triggers autonomous instrument behavior — unlike `set_` (which only writes a parameter) or `configure_` (which just calls multiple `set_` methods). Examples:
+  - `run_voltage_sweep(...)` — the sourcemeter executes the full I-V sweep internally and returns all data points at once.
+  - `run_current_sweep(...)` — same for current sweep.
+  - This is fundamentally different from manually looping `set_source_voltage` + `quick_read` in Python.
 
 ## 6. Method Signatures and Default Parameters
 * Method signatures must perfectly mirror the parent interface.
@@ -87,3 +91,37 @@ Function naming strictly determines scope:
 * Read variables using `self.instrument.query("SCPI?")`.
 * Write variables using `self.instrument.write("SCPI")`.
 * We aim for a "lean code" philosophy. Parameter type validation logic (e.g., generic `check_params` testing) should not be manually implemented. Rely on the global parameter checking tools or let the instrument throw a native hardware error. Include `ValueError` raises strictly for missing obligatory arguments when `None` is provided.
+
+## 8. Optional Methods
+
+PIEC has two mechanisms for optional methods, ensuring measurement code **never needs to change** regardless of which specific driver is connected.
+
+### 8a. `@optional` Decorator (Parent Base Classes)
+Some standard instrument features are not universally supported across all models. Use `@optional` in the **category base class** to mark these:
+
+```python
+from ..instrument import Instrument, optional
+
+class Oscilloscope(Instrument):
+    @optional
+    def set_channel_impedance(self, channel, channel_impedance):
+        """Sets the channel impedance, e.g. 1MOhm, 50Ohm"""
+```
+
+* Only use `@optional` in base classes (e.g., `Oscilloscope`, `Awg`), **never** in specific drivers.
+* If a specific driver supports the feature, override the method as usual.
+* If it doesn't, do nothing — calls will print `[OPTIONAL SKIP]` and return `None`.
+
+### 8b. Automatic Optional (Child-Specific Methods)
+Any public method that a specific driver defines **beyond** what the parent class provides is automatically treated as optional. If measurement code calls that method on a different driver that doesn't have it, it gracefully skips.
+
+```python
+# In a Keysight-specific driver:
+class KeysightDSOX3024a(Oscilloscope, Scpi):
+    def read_statistics(self):  # Not in parent Oscilloscope — auto-optional
+        return self.instrument.query(":MEAS:STAT?")
+```
+
+This works because all standard methods exist on every driver via the parent class. Only truly missing child-specific methods trigger the skip mechanism.
+
+> **⚠️ CAUTION:** Typos on method names will also be caught and skipped silently (with an `[OPTIONAL SKIP]` print message) instead of raising an error. **If you see an unexpected `[OPTIONAL SKIP]` message, check for typos in your method call.**

@@ -118,3 +118,13 @@ class Agilent34410A(DMM, Scpi):
         func = "FRES" if four_wire else "RES"
         self.instrument.write(f"CONF:{func}")
         return float(self.instrument.query("READ?"))
+
+    def get_frequency(self):
+        """Returns the measured frequency in Hz."""
+        self.instrument.write("CONF:FREQ")
+        return float(self.instrument.query("READ?"))
+
+    def get_capacitance(self):
+        """Returns the measured capacitance in Farads."""
+        self.instrument.write("CONF:CAP")
+        return float(self.instrument.query("READ?"))

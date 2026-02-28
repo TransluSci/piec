@@ -188,3 +188,20 @@ class TektronixTDS2000(Oscilloscope, Scpi):
         data_time = [i * xincr + xzero for i in range(len(raw_data))]
         
         return pd.DataFrame({'Time': data_time, 'Voltage': data_volts})
+
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine.
+        Tektronix TDS2000: MEASUrement:IMMed:SOUrce CH{ch}; TYPe {type}; VALue?
+        """
+        MEAS_MAP = {
+            'VPP': 'PK2pk', 'VMAX': 'MAXImum', 'VMIN': 'MINImum', 'VRMS': 'RMS',
+            'FREQ': 'FREQuency', 'PERIOD': 'PERIod', 'RISE': 'RISe',
+            'FALL': 'FALL', 'PWIDTH': 'PWIdth', 'NWIDTH': 'NWIdth',
+            'DUTYCYCLE': 'PDUty', 'AMPLITUDE': 'AMPlitude'
+        }
+        meas = MEAS_MAP.get(measurement_type.upper(), measurement_type)
+        self.instrument.write(f"MEASUrement:IMMed:SOUrce CH{channel}")
+        self.instrument.write(f"MEASUrement:IMMed:TYPe {meas}")
+        result = self.instrument.query("MEASUrement:IMMed:VALue?")
+        return float(result)

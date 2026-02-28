@@ -1,7 +1,7 @@
 """
 An example instrument to show how things should be layed out
 """
-from ..instrument import Instrument
+from ..instrument import Instrument, optional
 
 class Example(Instrument):
     # Class attributes for parameter restrictions
@@ -83,6 +83,17 @@ class Example(Instrument):
         args:
             channel (int): The channel to set the load impedance on
             load_impedance (float): The load impedance of the waveform in ohms
+        """
+
+    @optional
+    def set_source_impedance(self, channel, source_impedance):
+        """
+        Sets the source impedance for the selected channel.
+        This is an @optional method — not all AWGs support this.
+        If a specific driver doesn't override this, it will be safely skipped.
+        args:
+            channel (int): The channel to set the source impedance on
+            source_impedance (float): The source impedance in ohms
         """
 
     def set_polarity(self, channel, polarity):

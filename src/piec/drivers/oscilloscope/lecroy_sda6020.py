@@ -289,3 +289,23 @@ class LeCroySDA6020(Oscilloscope, Scpi):
         t_data = (np.arange(len(v_data)) * h_gain) + h_offset
         
         return pd.DataFrame({'Time': t_data, 'Voltage': v_data})
+
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine.
+        LeCroy SDA6020: C{ch}:PAVA? {type}
+        """
+        MEAS_MAP = {
+            'VPP': 'PKPK', 'VMAX': 'MAX', 'VMIN': 'MIN', 'VRMS': 'RMS',
+            'FREQ': 'FREQ', 'PERIOD': 'PER', 'RISE': 'RISE',
+            'FALL': 'FALL', 'PWIDTH': 'WIDLV', 'NWIDTH': 'NWID',
+            'DUTYCYCLE': 'DUTY', 'AMPLITUDE': 'AMPL'
+        }
+        meas = MEAS_MAP.get(measurement_type.upper(), measurement_type)
+        result = self.instrument.query(f"C{channel}:PAVA? {meas}")
+        # LeCroy returns "C1:PAVA FREQ,1.234e6 Hz" — parse the value
+        try:
+            value_str = result.split(',')[1].split()[0]
+            return float(value_str)
+        except (IndexError, ValueError):
+            return float(result)

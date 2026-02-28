@@ -3,7 +3,7 @@ This is an outline for what the osc.py file should be like.
 
 A osc (oscilloscope) is defined as an instrument that has the typical features on expects an oscilloscope to have
 """
-from ..instrument import Instrument
+from ..instrument import Instrument, optional
 class Oscilloscope(Instrument):
     # Initializer / Instance attributes
     """
@@ -160,6 +160,7 @@ class Oscilloscope(Instrument):
             trigger_sweep (str): The trigger sweep mode, e.g. 'AUTO', 'NORM'
         """
 
+    @optional
     def manual_trigger(self):
         """
         Sends a manual force trigger event to the oscilloscope.
@@ -233,4 +234,46 @@ class Oscilloscope(Instrument):
         Returns:
             data (Dataframe): Returns the data in a Pandas Dataframe ideally complete with.
         """
-    
+
+    # --- Optional Features ---
+    # These are features that not all oscilloscopes support.
+    # If a driver does not override these, they will gracefully skip.
+
+    measurement_type = ['VPP', 'VMAX', 'VMIN', 'VRMS', 'FREQ', 'PERIOD', 'RISE', 'FALL', 'PWIDTH', 'NWIDTH', 'DUTYCYCLE', 'AMPLITUDE']
+
+    @optional
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine to return a measured value.
+        Much faster than downloading the full waveform — the scope computes
+        the result from its full acquired memory internally.
+        
+        args:
+            channel (int): The channel to measure on
+            measurement_type (str): The measurement type. Standard names:
+                'VPP'       - Peak-to-peak voltage
+                'VMAX'      - Maximum voltage
+                'VMIN'      - Minimum voltage
+                'VRMS'      - RMS voltage
+                'FREQ'      - Frequency
+                'PERIOD'    - Period
+                'RISE'      - Rise time
+                'FALL'      - Fall time
+                'PWIDTH'    - Positive pulse width
+                'NWIDTH'    - Negative pulse width
+                'DUTYCYCLE' - Duty cycle
+                'AMPLITUDE' - Amplitude (Vtop - Vbase)
+        returns:
+            (float): The measured value in the appropriate unit
+        """
+
+    @optional
+    def screenshot(self):
+        """
+        Captures the current scope display as a PNG image.
+        Child implementations MUST return PNG format bytes. If the instrument
+        returns a different format (BMP, TIFF), convert to PNG before returning.
+
+        returns:
+            (bytes): PNG image data. Save with: open('capture.png', 'wb').write(result)
+        """
