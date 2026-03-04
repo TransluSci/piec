@@ -28,8 +28,12 @@ class Scpi(Instrument):
 
     def reset(self):
         """
-        Calls the *RST command to reset the instrument to its default state.
-        This is useful for clearing any settings or configurations that may have been set previously.
+        Resets the instrument to its default state with the trigger in AUTO mode.
+
+        After reset, the instrument should be acquiring fresh data so that any
+        previously displayed waveforms are cleared. Subclasses should override
+        this method if the instrument's *RST behavior differs (e.g., LeCroy
+        scopes stop the trigger on *RST and need a different command).
         """
         #SCPI Command
         self.instrument.write("*RST")
@@ -62,9 +66,14 @@ class Scpi(Instrument):
     def self_test(self):
         """
         Calls the *TST? command to perform a self-test on the instrument.
-        This is useful for checking if the instrument is functioning properly.
+        Temporarily increases VISA timeout since self-tests can take 30+ seconds.
         """
-        return self.instrument.query("*TST?")
+        original_timeout = self.instrument.timeout
+        self.instrument.timeout = 60000  # 60 seconds
+        try:
+            return self.instrument.query("*TST?")
+        finally:
+            self.instrument.timeout = original_timeout
 
     def operation_complete(self):
         """

@@ -41,6 +41,17 @@ class LeCroySDA6020(Oscilloscope, Scpi):
         """
         self.instrument.write("AUTO_SETUP")
 
+    def reset(self):
+        """
+        Resets the oscilloscope to factory defaults with trigger in AUTO mode.
+
+        Unlike *RST (which leaves the trigger in STOP mode, keeping old data
+        visible), this uses the VBS automation command that mirrors the front-panel
+        'Recall Default' button — resetting all settings AND starting fresh
+        acquisition in AUTO trigger mode so old waveforms are cleared.
+        """
+        self.instrument.write("VBS 'app.SaveRecall.Setup.DoRecallDefaultPanelWithTriggerModeAuto'")
+
     def toggle_channel(self, channel, on=True):
         """
         Function that toggles the selected channel to on or off
