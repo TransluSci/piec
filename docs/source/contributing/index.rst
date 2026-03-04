@@ -28,7 +28,7 @@ Pull request workflow
 4. Open a pull request against ``master`` with a clear description of what changed and why.
 
 .. _test-functions:
-
+ 
 Test functions
 --------------
 
