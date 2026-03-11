@@ -350,9 +350,9 @@ class LeCroySDA6020(Oscilloscope, Scpi):
     def screenshot(self):
         """
         Captures the current display as a PNG image.
-        LeCroy SDA6020: SCDP returns BMP data in LeCroy's own binary block
-        format (not IEEE 488.2), so we use write + read_raw instead of
-        query_binary_values.
+        LeCroy SDA6020: HCSU configures the hardcopy destination to REMOTE
+        so that SCDP sends the BMP data back over VISA instead of to a
+        local file or printer.
 
         returns:
             (bytes): PNG image data
@@ -366,6 +366,8 @@ class LeCroySDA6020(Oscilloscope, Scpi):
         original_timeout = self.instrument.timeout
         self.instrument.timeout = 30000  # 30s for screen capture transfer
         try:
+            # Configure hardcopy: BMP format, send to remote (VISA) port
+            self.instrument.write("HARDCOPY_SETUP DEV,BMP,DEST,REMOTE,PORT,NET")
             self.instrument.write("SCDP")
             raw = self.instrument.read_raw()
             img = Image.open(BytesIO(raw))
