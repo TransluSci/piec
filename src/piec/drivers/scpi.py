@@ -62,9 +62,14 @@ class Scpi(Instrument):
     def self_test(self):
         """
         Calls the *TST? command to perform a self-test on the instrument.
-        This is useful for checking if the instrument is functioning properly.
+        Temporarily increases VISA timeout since self-tests can take 30+ seconds.
         """
-        return self.instrument.query("*TST?")
+        original_timeout = self.instrument.timeout
+        self.instrument.timeout = 60000  # 60 seconds
+        try:
+            return self.instrument.query("*TST?")
+        finally:
+            self.instrument.timeout = original_timeout
 
     def operation_complete(self):
         """
