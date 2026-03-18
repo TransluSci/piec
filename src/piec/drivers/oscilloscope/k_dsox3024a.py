@@ -341,3 +341,29 @@ class KeysightDSOX3024a(Oscilloscope, Scpi):
                 wfm.append((d * preamble_dict["y_increment"]) + preamble_dict["y_origin"])
         
         return pd.DataFrame({'Time': time, 'Voltage': wfm})
+
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine.
+        Keysight InfiniVision SCPI: :MEASure:{type}? CHAN{ch}
+        """
+        MEAS_MAP = {
+            'VPP': 'VPP', 'VMAX': 'VMAX', 'VMIN': 'VMIN', 'VRMS': 'VRMS',
+            'FREQ': 'FREQuency', 'PERIOD': 'PERiod', 'RISE': 'RISetime',
+            'FALL': 'FALLtime', 'PWIDTH': 'PWIDth', 'NWIDTH': 'NWIDth',
+            'DUTYCYCLE': 'DUTYcycle', 'AMPLITUDE': 'VAMPlitude'
+        }
+        meas = MEAS_MAP.get(measurement_type.upper(), measurement_type)
+        result = self.instrument.query(f":MEASure:{meas}? CHAN{channel}")
+        return float(result)
+
+    def screenshot(self):
+        """
+        Captures the current display as a PNG image.
+        Keysight InfiniVision: :DISPlay:DATA? PNG
+        returns:
+            (bytes): PNG image data
+        """
+        self.instrument.write(":HARDcopy:INKSaver OFF")
+        raw = self.instrument.query_binary_values(":DISPlay:DATA? PNG, COLor", datatype='B')
+        return bytes(raw)

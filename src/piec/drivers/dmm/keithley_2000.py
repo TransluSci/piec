@@ -103,3 +103,21 @@ class Keithley2000(DMM, Scpi):
         func = "FRES" if four_wire else "RES"
         self.instrument.write(f":SENS:FUNC '{func}'")
         return float(self.instrument.query(":READ?"))
+
+    def get_frequency(self):
+        """Returns the measured frequency in Hz."""
+        self.instrument.write(":SENS:FUNC 'FREQ'")
+        return float(self.instrument.query(":READ?"))
+
+    def get_temperature(self, probe_type='TC'):
+        """
+        Returns the measured temperature.
+        args:
+            probe_type (str): 'TC' (thermocouple), 'RTD', 'THER' (thermistor)
+        """
+        self.instrument.write(":SENS:FUNC 'TEMP'")
+        # Set probe type if supported
+        PROBE_MAP = {'TC': 'TC', 'RTD': 'RTD', 'THER': 'THER'}
+        pt = PROBE_MAP.get(probe_type.upper(), probe_type)
+        self.instrument.write(f":SENS:TEMP:TRAN {pt}")
+        return float(self.instrument.query(":READ?"))

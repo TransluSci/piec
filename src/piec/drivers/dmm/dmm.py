@@ -5,7 +5,7 @@ A DMM is defined as an instrument that performs measurements but does not
 source power. It inherits from a base Instrument class.
 """
 
-from ..instrument import Instrument
+from ..instrument import Instrument, optional
 
 class DMM(Instrument):
     """
@@ -110,4 +110,36 @@ class DMM(Instrument):
             (float): The measured resistance in Ohms.
         """
         raise NotImplementedError
+
+    # --- Optional Features ---
+    # These are features that not all DMMs support.
+    # If a driver does not override these, they will gracefully skip.
+
+    @optional
+    def get_frequency(self):
+        """
+        Returns the measured frequency in Hz.
+        returns:
+            (float): The measured frequency in Hz.
+        """
+
+    @optional
+    def get_temperature(self, probe_type='TC'):
+        """
+        Returns the measured temperature.
+        Some DMMs support multiple temperature sensor types (thermocouple, RTD,
+        thermistor) — the probe_type tells the instrument which conversion to use.
+        args:
+            probe_type (str): 'TC' (thermocouple), 'RTD', 'THER' (thermistor)
+        returns:
+            (float): Temperature in configured unit (typically °C)
+        """
+
+    @optional
+    def get_capacitance(self):
+        """
+        Returns the measured capacitance in Farads.
+        returns:
+            (float): The measured capacitance in Farads.
+        """
 

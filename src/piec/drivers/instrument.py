@@ -84,16 +84,53 @@ def auto_check_params(func):
     
     return wrapper
 
+def optional(func):
+    """
+    Marks a base-class method as optional.
+    
+    Use this decorator on methods in category base classes (e.g., Oscilloscope, Awg)
+    to indicate that the feature is NOT required for all instruments of that type.
+    
+    Behavior:
+    - If a specific driver DOES override this method, the override runs normally.
+    - If a specific driver does NOT override it, calling it will:
+      * Print: "[OPTIONAL SKIP] <method> not implemented for <ClassName> — skipping."
+      * Return None (no-op)
+    
+    This allows measurement code to call optional methods without any guards
+    (no try/except, no hasattr checks). The driver layer handles it transparently.
+    
+    Example:
+        # In base class (e.g. oscilloscope.py):
+        @optional
+        def set_channel_impedance(self, channel, channel_impedance):
+            \"\"\"Sets the channel impedance, e.g. 1MOhm, 50Ohm\"\"\"
+        
+        # In a driver that SUPPORTS it — just override as usual.
+        # In a driver that DOESN'T — don't override. Calls will skip gracefully.
+    """
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        print(f"[OPTIONAL SKIP] {func.__name__} is not implemented for "
+              f"{self.__class__.__name__} — skipping.")
+        return None
+    
+    wrapper._is_optional = True
+    return wrapper
+
 class AutoCheckMeta(type):
     """
     Metaclass to apply the `auto_check_params` decorator to all
     public methods of a class (those not starting with '_').
+    Methods marked with @optional are left as-is (not wrapped with auto_check_params).
     """
     def __new__(metacls, name, bases, class_dict):
         new_class_dict = {}
         for attr_name, attr_value in class_dict.items():
             if callable(attr_value) and not attr_name.startswith("_") and attr_name != '__init__':
-                attr_value = auto_check_params(attr_value)
+                # Don't wrap @optional stubs with auto_check_params
+                if not getattr(attr_value, '_is_optional', False):
+                    attr_value = auto_check_params(attr_value)
             new_class_dict[attr_name] = attr_value
         return super().__new__(metacls, name, bases, new_class_dict)
 
@@ -282,6 +319,35 @@ class Instrument(metaclass=AutoCheckMeta):
             print("Falling back to VIRTUAL mode.")
             self.instrument = VirtualRMInstrument(address, verbose=True, **connection_kwargs)
             self.virtual = True
+
+    def __getattr__(self, name):
+        """
+        Fallback for missing attributes/methods.
+        
+        Any method that is defined on a specific driver (child class) but NOT 
+        on the parent base class is automatically treated as optional. If 
+        measurement code calls such a method on a driver that doesn't have it,
+        this returns a no-op function that prints a skip message instead of 
+        raising AttributeError.
+
+        This works because all standard methods are defined in the parent base 
+        classes (e.g., Oscilloscope, Awg) and exist on every driver via MRO.
+        Only child-specific extra methods can trigger __getattr__.
+
+        CAUTION: Typos on method names will also be caught here and skipped
+        instead of raising an error. If you see an unexpected [OPTIONAL SKIP] 
+        message, check for typos.
+        """
+        # Don't intercept private/dunder attributes (avoids issues with 
+        # pickling, copying, IDE introspection, etc.)
+        if name.startswith('_'):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        
+        def _skip(*args, **kwargs):
+            print(f"[OPTIONAL SKIP] {name} is not available on "
+                  f"{self.__class__.__name__} — skipping.")
+            return None
+        return _skip
 
     def idn(self):
         """
