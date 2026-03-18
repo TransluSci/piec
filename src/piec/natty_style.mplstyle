@@ -2,11 +2,11 @@
 # Version 1.0
 # Based on Nature author guidelines as of early 2025.
 # Always double-check the latest guidelines from Nature.
+# Shout out Steve
 
 # --- FONTS ---
-# Nature recommends Arial or Helvetica (sans-serif).
+# Nature recommends Arial or Helvetica (I like Helvetica).
 # Font sizes should generally be between 5-7pt within the figure.
-# Panel labels (a,b,c) should be 8pt bold (set this in your script via ax.text).
 font.family : sans-serif
 font.sans-serif : Helvetica, Arial, DejaVu Sans # Matplotlib will try these in order
 font.size : 7 # Base size for text elements (pt). Individual elements below might be smaller.

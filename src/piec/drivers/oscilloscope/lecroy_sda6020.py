@@ -18,28 +18,39 @@ class LeCroySDA6020(Oscilloscope, Scpi):
     AUTODETECT_ID = "SDA6020"
 
     channel = [1, 2, 3, 4]
-    vdiv = (0.001, 10.0)
-    y_range = (0.008, 80.0)
-    y_position = (-100.0, 100.0)
-    input_coupling = ["AC", "DC", "GND"]
+    vdiv = (0.002, 1.0)              # 2 mV/div to 1 V/div (50 Ohm only)
+    y_range = (0.016, 8.0)           # 8 div * vdiv
+    y_position = (-4.0, 4.0)         # ±4V max offset
+    input_coupling = ["DC", "GND"]   # 50 Ohm only, no AC coupling
     probe_attenuation = (0.001, 10000.0)
-    channel_impedance = ["50", "1M"]
-    tdiv = (20e-12, 1000.0)
-    x_range = (200e-12, 10000.0)
+    channel_impedance = ["50"]        # 50 Ohm only
+    tdiv = (20e-12, 1000.0)          # 20 ps/div to 1000 s/div
+    x_range = (200e-12, 10000.0)     # 10 div * tdiv
     x_position = (-10000.0, 10000.0)
     trigger_source = [1, 2, 3, 4, "EXT", "EX10", "LINE"]
-    trigger_level = (-10.0, 10.0)
-    trigger_slope = ["POS", "NEG", "EITHER", "WINDOW", "OFF"]
-    trigger_mode = ["EDGE", "SMART"]
+    trigger_level = (-4.0, 4.0)      # ±4V max input
+    trigger_slope = ["POS", "NEG"]
+    trigger_mode = ["EDGE"]
     trigger_sweep = ["AUTO", "NORM", "SINGLE", "STOP"]
     acquisition_mode = ["NORM"]
-    acquisition_points = (1, 100000000)
+    acquisition_points = (1, 48000000)  # Up to 48 Mpts/Ch with option
 
     def autoscale(self):
         """
         Autoscales the oscilloscope
         """
         self.instrument.write("AUTO_SETUP")
+
+    def reset(self):
+        """
+        Resets the oscilloscope to factory defaults with trigger in AUTO mode.
+
+        Unlike *RST (which leaves the trigger in STOP mode, keeping old data
+        visible), this uses the VBS automation command that mirrors the front-panel
+        'Recall Default' button — resetting all settings AND starting fresh
+        acquisition in AUTO trigger mode so old waveforms are cleared.
+        """
+        self.instrument.write("VBS 'app.SaveRecall.Setup.DoRecallDefaultPanelWithTriggerModeAuto'")
 
     def toggle_channel(self, channel, on=True):
         """
@@ -68,21 +79,13 @@ class LeCroySDA6020(Oscilloscope, Scpi):
 
     def set_input_coupling(self, channel, input_coupling=None):
         """
-        Sets the input coupling, e.g. AC, DC, GND
+        Sets the input coupling. SDA 6020 is 50 Ohm only: DC or GND.
         """
-        if input_coupling == "AC":
-            self.instrument.write(f"C{channel}:COUPLING A1M")
-        elif input_coupling == "DC":
-            try:
-                current_cpl = self.instrument.query(f"C{channel}:COUPLING?").strip().upper()
-                if "D50" in current_cpl:
-                    self.instrument.write(f"C{channel}:COUPLING D50")
-                else:
-                    self.instrument.write(f"C{channel}:COUPLING D1M")
-            except Exception:
-                self.instrument.write(f"C{channel}:COUPLING D1M")
-        elif input_coupling == "GND":
-            self.instrument.write(f"C{channel}:COUPLING GND")
+        if input_coupling is not None:
+            if input_coupling == "DC":
+                self.instrument.write(f"C{channel}:COUPLING D50")
+            elif input_coupling == "GND":
+                self.instrument.write(f"C{channel}:COUPLING GND")
 
     def set_probe_attenuation(self, channel, probe_attenuation=None):
         """
@@ -93,19 +96,12 @@ class LeCroySDA6020(Oscilloscope, Scpi):
 
     def set_channel_impedance(self, channel, channel_impedance=None):
         """
-        Sets the channel impedance
+        The SDA 6020 is 50 Ohm only. This method exists for interface
+        compatibility but only accepts '50'.
         """
-        if channel_impedance == "50":
-            self.instrument.write(f"C{channel}:COUPLING D50")
-        elif channel_impedance == "1M":
-            try:
-                current_cpl = self.instrument.query(f"C{channel}:COUPLING?").strip().upper()
-                if "A1M" in current_cpl:
-                    self.instrument.write(f"C{channel}:COUPLING A1M")
-                else:
-                    self.instrument.write(f"C{channel}:COUPLING D1M")
-            except Exception:
-                self.instrument.write(f"C{channel}:COUPLING D1M")
+        if channel_impedance is not None:
+            if channel_impedance == "50":
+                self.instrument.write(f"C{channel}:COUPLING D50")
 
     def set_horizontal_scale(self, tdiv=None, x_range=None):
         """
@@ -134,38 +130,79 @@ class LeCroySDA6020(Oscilloscope, Scpi):
         if x_position is not None:
             self.set_horizontal_position(x_position=x_position)
 
+    def wait(self, timeout=0):
+        """
+        Waits until the current acquisition has completed.
+
+        Uses LeCroy's WAIT command instead of *WAI, which specifically blocks
+        until acquisition is finished. timeout=0 waits indefinitely (default).
+        """
+        original_timeout = self.instrument.timeout
+        if timeout > 0:
+            self.instrument.timeout = int(timeout * 1000) + 1000
+        try:
+            self.instrument.write(f"WAIT {timeout}")
+        except Exception as e:
+            print(f"Warning: WAIT timed out after {timeout}s — {e}")
+        finally:
+            self.instrument.timeout = original_timeout
+
+    def _to_lecroy_source(self, source):
+        """
+        Translates a user-facing trigger source value to LeCroy command syntax.
+        e.g. int 1 -> 'C1', 'EXT' -> 'EX', 'EX10' -> 'EX10', 'LINE' -> 'LINE'
+        """
+        if isinstance(source, int):
+            return f"C{source}"
+        elif source == "EXT":
+            return "EX"
+        return source
+
+    def _get_lecroy_trigger_source(self):
+        """
+        Returns the current trigger source in LeCroy command syntax.
+        Uses the cached _current_trigger_source, falling back to 'C1'.
+        """
+        src = getattr(self, '_current_trigger_source', None)
+        if src is None:
+            return "C1"
+        return self._to_lecroy_source(src)
+
     def set_trigger_source(self, trigger_source=None):
         """
         Decides what the scope should trigger on
         """
         if trigger_source is not None:
-            src = f"C{trigger_source}" if isinstance(trigger_source, int) else trigger_source
+            src = self._to_lecroy_source(trigger_source)
             self.instrument.write(f"TRIG_SELECT EDGE,SR,{src}")
 
     def set_trigger_level(self, trigger_level=None):
         """
-        The voltage level the signal must cross to initiate a capture
+        The voltage level the signal must cross to initiate a capture.
+        Applies the level to the currently active trigger source.
         """
         if trigger_level is not None:
-            # Requires querying the active trigger source first to set its level
-            # In a basic implementation, we can just try to set the generic trigger level or assume C1.
-            # Assuming edge trigger on C1 as a simplest fallback if we don't track state
-            self.instrument.write(f"C1:TRLV {trigger_level}")
+            src = self._get_lecroy_trigger_source()
+            self.instrument.write(f"{src}:TRLV {trigger_level}")
 
     def set_trigger_slope(self, trigger_slope=None):
         """
-        Changes the trigger slope
+        Changes the trigger slope of the active trigger source.
+        Valid values: POS, NEG.
         """
         if trigger_slope is not None:
-            self.instrument.write(f"TRIG_SLOPE {trigger_slope}")
+            src = self._get_lecroy_trigger_source()
+            self.instrument.write(f"{src}:TRIG_SLOPE {trigger_slope}")
 
     def set_trigger_mode(self, trigger_mode=None):
         """
-        Sets the trigger mode
+        Sets the trigger type (e.g., EDGE) via TRIG_SELECT.
+        On LeCroy scopes the trigger type is part of TRIG_SELECT, not a
+        separate command.
         """
         if trigger_mode is not None:
-            # SMART or EDGE
-            pass # Usually handled within TRIG_SELECT on LeCroy, skipping discrete TRMD implementation for now
+            src = self._get_lecroy_trigger_source()
+            self.instrument.write(f"TRIG_SELECT {trigger_mode},SR,{src}")
 
     def set_trigger_sweep(self, trigger_sweep=None):
         """
