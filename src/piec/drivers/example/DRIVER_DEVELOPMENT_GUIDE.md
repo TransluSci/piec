@@ -12,7 +12,7 @@ All instruments in the library MUST inherit from the base `Instrument` class. Th
 ### Convenience Classes (e.g., `Scpi`)
 `Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard functions (like `reset`, `clear`, `idn`) that most SCPI-compliant instruments share. 
 * **Crucially**: If a method like `reset()` is expected for a certain instrument type, it MUST be defined in the Level 2 interface, even if the Level 3 driver eventually uses the `Scpi` implementation.
-* Always cross-check the instrument manual to ensure the `Scpi` convenience implementation is actually supported by your hardware.
+* **Verification**: Always cross-check the instrument manual. If your instrument is SCPI-compliant but does *not* support a standard `Scpi` method (e.g., `*RST` isn't `reset`), or uses a different command string, you MUST override the method in your Level 3 driver or provide an alternative implementation following the Level 2 naming convention.
 
 ### Level 2: Instrument-Type Interface (`example.py`, `oscilloscope.py`)
 These files define the **Template/Interface** for an entire category of instruments.
@@ -83,8 +83,12 @@ The class attributes must follow a specific syntax based on what kind of paramet
 ## 5. Method Conventions: `set_`, `configure_`, and `run_`
 Function naming strictly determines scope:
 * **`set_<property>` Methods:** Must perform a **SINGLE** action. For instance, `set_frequency` only changes the frequency. They correspond directly to SCPI writes assigning one explicit hardware parameter. 
+* **`get_<property>` Methods:** Must **RETURN** a single, unformatted value (e.g., a status bit, a scalar measurement).
+* **`read_<property>` Methods:** Must **RETURN** formatted or complex data (e.g., an array of waveform points, a multi-value response, or a post-processed string). 
+  - **Formatting**: The specific data structure (typically a `pandas.DataFrame`) must adhere to the return specification detailed in the parent class's docstring.
 * **`configure_<module>` Methods:** Must perform **MULTIPLE** actions by wrapping and calling several individual `set_` functions. For instance, `configure_waveform` might call `set_waveform`, `set_frequency`, and `set_amplitude`. 
   - For EVERY `configure_` command, initialize all non-essential arguments to `None` in the signature, and only invoke the corresponding `set_` method if the parameter is not `None`.
+* **`quick_read` Method:** A specialized **convenience function** (common in Oscilloscopes) used to return whatever data is currently ready or displayed on the hardware (e.g., a cursor value or mean measurement). It is used for fast, unformatted polling.
 * **`run_<routine>` Methods:** Used for **hardware-executed routines** where the instrument performs a complete operation internally (at hardware speed) and then returns the results. The key distinction is that a `run_` method triggers autonomous instrument behavior — unlike `set_` (which only writes a parameter) or `configure_` (which just calls multiple `set_` methods). Examples:
   - `run_voltage_sweep(...)` — the sourcemeter executes the full I-V sweep internally and returns all data points at once.
   - `run_current_sweep(...)` — same for current sweep.
@@ -151,4 +155,34 @@ class KeysightDSOX3024a(Oscilloscope, Scpi):
 
 This works because all standard methods exist on every driver via the parent class. Only truly missing child-specific methods trigger the skip mechanism.
 
-> **⚠️ CAUTION:** Typos on method names will also be caught and skipped silently (with an `[OPTIONAL SKIP]` print message) instead of raising an error. **If you see an unexpected `[OPTIONAL SKIP]` message, check for typos in your method call.**
+## 10. Argument Mapping
+
+In cases where the Level 2 interface uses a generic argument (e.g., `channel=1`, `mode='CONSTANT'`) but the hardware expects a different value (e.g., `channel='A'`, `mode='FIXED'`), the Level 3 driver is responsible for its own internal mapping:
+
+```python
+    def set_mode(self, channel, mode):
+        # Map generic PIEC mode to specific hardware command
+        mode_map = {'CONSTANT': 'FIXED', 'SWEEP': 'SWE'}
+        hw_mode = mode_map.get(mode)
+        if hw_mode is None:
+             raise ValueError(f"Mode {mode} not supported by this instrument")
+        self.instrument.write(f"SOUR{channel}:FUNC:{hw_mode}")
+```
+
+This ensures the user's measurement code can remain model-agnostic.
+
+## 11. Repository Folder Structure
+
+To keep the `drivers` directory organized, follow this nesting pattern:
+1. **Category Folder**: (e.g., `drivers/oscilloscope/`)
+2. **Interface File**: Named after the category (e.g., `oscilloscope.py`).
+3. **Model Drivers**: Put directly in the category folder, named after the model (e.g., `dsox3024a.py`).
+
+```text
+piec/
+  drivers/
+    oscilloscope/
+      oscilloscope.py       (Level 2 Interface)
+      dsox3024a.py          (Level 3 Driver - Keysight)
+      tds6604.py            (Level 3 Driver - Tektronix)
+```
