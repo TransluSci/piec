@@ -2,18 +2,36 @@
 
 This guide outlines the strict requirements and conventions for creating new instrument drivers within the `piec` library. Adhering to these rules ensures a globally consistent, interface-compliant, and minimal codebase across all supported instruments.
 
-## 1. Class Inheritance
-Every new instrument driver must inherit from both:
-1. **The Specific Instrument Category Base Class** (e.g., `Oscilloscope`, `Awg`, `Sourcemeter`, `DMM`, `Lockin`).
-2. **The `Scpi` Base Class** (or `Instrument` if it is a non-SCPI device).
+## 1. The 3-Level Architecture
+
+PIEC drivers follow a strict 3-level hierarchy to ensure consistency and modularity.
+
+### Level 1: The Foundation (`Instrument`)
+All instruments in the library MUST inherit from the base `Instrument` class. This class handles the core VISA communication and standard PIEC behavior.
+
+### Convenience Classes (e.g., `Scpi`)
+`Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard functions (like `reset`, `clear`, `idn`) that most SCPI-compliant instruments share. 
+* **Crucially**: If a method like `reset()` is expected for a certain instrument type, it MUST be defined in the Level 2 interface, even if the Level 3 driver eventually uses the `Scpi` implementation.
+* Always cross-check the instrument manual to ensure the `Scpi` convenience implementation is actually supported by your hardware.
+
+### Level 2: Instrument-Type Interface (`example.py`, `oscilloscope.py`)
+These files define the **Template/Interface** for an entire category of instruments.
+* They list all **requirements** (methods and attributes) for that type.
+* They contain no specific SCPI command strings — only the "vocabulary" of the instrument type.
+
+### Level 3: Specific Instrument Model (`agilent_33220a.py`)
+This is the **Actual Implementation** of the driver.
+* Inherits from the Level 2 Category (e.g., `Awg`) and a Level 1 base (usually `Scpi` or `Instrument`).
+* Implements the Level 2 interface using specific hardware commands.
 
 ```python
 from .awg import Awg
 from ..scpi import Scpi
 
-class NewInstrumentModel(Awg, Scpi):
-    # Driver implementation
-    pass
+# Level 3 Driver inherits from Level 2 (Awg) and a Convenience/Base (Scpi)
+class Agilent33220a(Awg, Scpi):
+    AUTODETECT_ID = "33220A"
+    # Implementation...
 ```
 
 ## 2. Constructor (`__init__`)
@@ -87,16 +105,25 @@ Function naming strictly determines scope:
   - Boolean flag toggles like `on=True`, `ac=False`, or `four_wire=False`.
   - **Convenience `configure_` Methods:** These are allowed to retain sensible default values if those defaults are established in the parent interface. 
 
-## 7. SCPI Communication & Lean Code
+## 7. Communication & Protocol Convenience
 * Read variables using `self.instrument.query("SCPI?")`.
 * Write variables using `self.instrument.write("SCPI")`.
-* We aim for a "lean code" philosophy. Parameter type validation logic (e.g., generic `check_params` testing) should not be manually implemented. Rely on the global parameter checking tools or let the instrument throw a native hardware error. Include `ValueError` raises strictly for missing obligatory arguments when `None` is provided.
+* **The Role of `Scpi`**: Inheritance from `Scpi` is a convenience to avoid rewriting the same basic commands. However, the driver developer is responsible for verifying that the inherited `reset()`, `clear()`, etc., map correctly to the instrument's manual.
 
-## 8. Optional Methods
+## 8. Automatic State Tracking
+The `piec` framework automatically tracks the "last set" value of any parameter that has a corresponding class attribute. 
+* Whenever a `set_<property>(value=...)` method finishes successfully, the decorator updates `self._current_<property>` with that value.
+* These attributes are useful for **dependent parameter checks** (handled by the framework) and for **driver-side conditional logic**.
+* **Example:** If you need to know the current `mode` to set the correct `voltage` range, you can access `self._current_mode`.
+
+> [!CAUTION]  
+> **Initial State is `None`:** Upon first connection, all tracked attributes are initialized to `None`. This means the first few `set_` calls (where one parameter depends on another) might skip validation or cause errors if your logic expects a value. Always perform a hardware query in `__init__` (see Rule 2) to synchronize these states immediately.
+
+## 9. Optional Methods
 
 PIEC has two mechanisms for optional methods, ensuring measurement code **never needs to change** regardless of which specific driver is connected.
 
-### 8a. `@optional` Decorator (Parent Base Classes)
+### 9a. `@optional` Decorator (Parent Base Classes)
 Some standard instrument features are not universally supported across all models. Use `@optional` in the **category base class** to mark these:
 
 ```python
@@ -112,7 +139,7 @@ class Oscilloscope(Instrument):
 * If a specific driver supports the feature, override the method as usual.
 * If it doesn't, do nothing — calls will print `[OPTIONAL SKIP]` and return `None`.
 
-### 8b. Automatic Optional (Child-Specific Methods)
+### 9b. Automatic Optional (Child-Specific Methods)
 Any public method that a specific driver defines **beyond** what the parent class provides is automatically treated as optional. If measurement code calls that method on a different driver that doesn't have it, it gracefully skips.
 
 ```python

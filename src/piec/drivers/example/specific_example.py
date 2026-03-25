@@ -8,96 +8,120 @@ It explains the purpose of each key component required for the autodetect system
 # - The first import should be the generic instrument type (e.g., Awg, Oscilloscope).
 # - The second import should be the communication protocol class (e.g., Scpi).
 # Using relative imports (like . and ..) is standard practice within a package.
-import numpy as np
 from .example import Example
 from ..scpi import Scpi #in the case that the instrument is SCPI based, includes all base SCPI commands
 
-"""
-below is shown an example of an awg, like the 81150a from Keysight
-"""
 # --- 2. CLASS DEFINITION ---
 # The class name should be descriptive and unique.
 # It must inherit from the appropriate base classes imported above.
-class AnnotatedAwgDriver(Example, Scpi):
+class AnnotatedGenericDriver(Example, Scpi):
     """
-    This is the main docstring for your driver.
-    Explain what the instrument is and any key details about the driver's implementation.
+    This is an example of a specific instrument driver that implements 
+    the generic Example interface. 
+    It represents a hypothetical "Generic Instrument Model X".
     """
 
     # --- 3. AUTODETECT IDENTIFIER ---
-    # This is the most important attribute for the autodetect system.
-    # The `autodetect_instrument` function will look for this class attribute.
-    # It must contain a unique string (or list of strings) that is present
-    # in the instrument's response to the '*IDN?' query.
-
-    # Option A: For a driver that controls a single instrument model.
-    # AUTODETECT_ID = "81150A"
-
-    # Option B: For a driver that can control multiple, similar models.
-    # The autodetect system is smart enough to handle a list of strings.
-    AUTODETECT_ID = ["81150A", "33522B", "33622A"]
+    # Substring expected in the *IDN? response.
+    AUTODETECT_ID = "GENERIC_MODEL_X"
 
 
-    # --- 4. INSTRUMENT PARAMETERS (Optional but Recommended) ---
-    # It is good practice to define the known limits and capabilities of the
-    # instrument as class attributes. This provides a quick reference and can
-    # be used for input validation.
+    # --- 4. INSTRUMENT CAPABILITIES & LIMITS ---
+    # Define the specific boundaries for this model.
     channel = [1, 2]
-    waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    frequency_range = (1e-6, 240e6) # in Hz
-    amplitude_range = (0, 5)      # in Volts peak-to-peak
+    voltage = (0.0, 5.0)  # This model only goes up to 5V
+    mode = ['CONSTANT', 'SWEEP']
+    
+    # Example of a dependent attribute:
+    # The valid range of 'current' depends on the value of 'mode'.
+    current = {
+        'mode': {
+            'CONSTANT': (0.0, 0.5), # 500mA limit in constant mode
+            'SWEEP': (0.0, 0.2)     # 200mA limit in sweep mode
+        }
+    }
 
 
-    # --- 5. INITIALIZATION METHOD ---
-    # The __init__ method is what gets called when a connection is successful.
-    # For SCPI instruments, it's standard to call the parent class's __init__
-    # which handles the VISA connection setup.
+    # --- 5. INITIALIZATION ---
+    # The __init__ method is where you perform any setup required immediately 
+    # after the connection is established.
+    def __init__(self, *args, **kwargs):
+        # 1. ALWAYS call super().__init__ first to establish the VISA connection.
+        super().__init__(*args, **kwargs)
+
+        # 2. SYNC INITIAL STATE
+        # Upon connection, all tracked attributes ('self._current_') are None by default.
+        # Professional drivers can query the hardware now so that initial 
+        # dependent parameter checks or model-specific logic don't fail.
+        try:
+            # Hypothetical query for the current mode
+            initial_mode = self.instrument.query(":SOUR:MODE?")
+            self._current_mode = initial_mode.strip().lower()
+        except Exception:
+            # Fallback if query fails (e.g. in virtual mode)
+            self._current_mode = 'CONSTANT'
+
+        # 3. COMMAND MAPPING
+        # If an instrument uses integer codes (0, 1, 2) instead of strings 
+        # ('CONSTANT', 'SWEEP'), it is best practice to create a mapping 
+        # dict here to avoid hard-coding numbers in your methods.
+        self._mode_map = {'constant': 0, 'sweep': 1}
 
 
-    # --- 6. DRIVER-SPECIFIC METHODS ---
-    # These are the methods that implement the instrument's specific commands.
-    # They should use the `self.instrument` object (created by the parent class)
-    # to send and receive data.
-    #THESE ARE TAKEN FROM THE PARENT CLASS AND WE OVERRIED THEM HERE WITH ACTUAL IMPLEMENTATIONS
+    # --- 6. IMPLEMENTED METHODS ---
+    # We override the parent methods with actual SCPI writes.
 
     def output(self, channel, on=True):
         """
-        Turns the output of a specified channel on or off.
+        Turns the output on or off for the specified channel.
         """
-        # Validate the channel input against the class attribute.
-        if channel not in self.channel:
-            raise ValueError(f"Invalid channel. Must be one of {self.channel}")
+        state = 'ON' if on else 'OFF'
+        self.instrument.write(f":OUTP{channel} {state}")
 
-        if on:
-            self.instrument.write(f":OUTP{channel} ON")
+    def set_mode(self, channel, mode):
+        """
+        Sets the operating mode using a mapping to integer codes.
+        Note: The framework handles input validation against self.mode automatically.
+        """
+        code = self._mode_map[mode.lower()]
+        self.instrument.write(f":SOUR{channel}:MODE {code}")
+
+    def set_voltage(self, channel, voltage):
+        """
+        Sets the voltage.
+        Note: The framework handles input validation against self.voltage automatically.
+        """
+        # --- EXAMPLE: USING STATE-TRACKING ---
+        # The framework automatically maintains 'self._current_<property>' 
+        # (e.g., self._current_mode) after any successful set_ call.
+        # You can use these to decide which hardware command to send.
+        if self._current_mode == 'sweep':
+             # Maybe sweep mode requires a special "limit" command instead of "volt"
+             self.instrument.write(f":SOUR{channel}:VOLT:LIM {voltage}")
         else:
-            self.instrument.write(f":OUTP{channel} OFF")
+             self.instrument.write(f":SOUR{channel}:VOLT {voltage}")
 
-    def set_frequency(self, channel, frequency):
+    def set_current(self, channel, current):
         """
-        Sets the frequency for the specified channel.
+        Sets the current limit.
+        Note: The framework handles input validation against self.current automatically.
         """
-        # Validate the frequency input against the class attribute.
-        if not (self.frequency_range[0] <= frequency <= self.frequency_range[1]):
-            raise ValueError(f"Frequency out of range. Must be between {self.frequency_range}")
+        self.instrument.write(f":SOUR{channel}:CURR {current}")
 
-        self.instrument.write(f":FREQ{channel} {frequency}")
+    def quick_read(self, channel):
+        """
+        Queries the instrument for a measurement.
+        """
+        response = self.instrument.query(f":MEAS{channel}:VOLT?")
+        return float(response)
 
     # --- 7. CHILD-SPECIFIC (AUTO-OPTIONAL) METHODS ---
-    # Any method you add here that does NOT exist in the parent class (Example/Awg)
-    # is automatically treated as optional by PIEC's framework. If measurement code 
-    # calls this method on a different driver that doesn't have it, the call will be 
-    # gracefully skipped with an [OPTIONAL SKIP] message — no crash, no try/except.
-    #
-    # CAUTION: This also means typos on method names will be silently skipped
-    # instead of raising an error. If you see an unexpected [OPTIONAL SKIP] 
-    # message, check for typos in your method call.
+    # Methods not in the parent class are automatically optional.
 
     def read_error_log(self):
         """
-        Example of a child-specific method not in the parent class.
-        This is automatically optional — other drivers that don't have it
-        will skip when measurement code calls it.
+        Example of a model-specific method. 
+        Other instruments without this method will skip it gracefully.
         """
         return self.instrument.query(":SYST:ERR?")
 
