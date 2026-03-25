@@ -37,92 +37,59 @@ class Example(Instrument):
     optional_param = None
 
     """
-    Here we define the MINIMUM supported methods for a generic instrument.
-    This serves as a template for Level 2 base classes.
+    Template for Level 2 base classes.
+    Only includes a minimal set of example methods for each function type.
     """
 
-    # --- Core Control Methods ---
-
-    @optional
-    def reset(self):
-        """
-        Resets the instrument to a factory/default state.
-        For SCPI instruments, this is typically handled by the Scpi convenience class (*RST).
-        """
-
-    @optional
-    def clear(self):
-        """
-        Clears the instrument's status registers and error queue.
-        For SCPI instruments, this is typically handled by the Scpi convenience class (*CLS).
-        """
-
-    def output(self, channel, on=True):
-        """
-        Sets the output state (on or off) for the selected channel.
-        Args:
-            channel (int): The channel number.
-            on (bool): Whether to turn the output on (True) or off (False).
-        """
-
-    def set_mode(self, channel, mode):
-        """
-        Sets the operating mode of the instrument.
-        Args:
-            channel (int): The channel number.
-            mode (str): The mode (e.g., 'CONSTANT', 'SWEEP').
-        """
+    # --- 1. Set Methods (Single Action) ---
 
     def set_voltage(self, channel, voltage):
         """
         Sets the output voltage for the selected channel.
-        Args:
-            channel (int): The channel number.
-            voltage (float): The voltage in Volts.
+        Rule: Performs a SINGLE hardware write/action.
         """
 
-    def set_current(self, channel, current):
+    def set_mode(self, channel, mode):
         """
-        Sets the output current limit for the selected channel.
-        Args:
-            channel (int): The channel number.
-            current (float): The current in Amps.
+        Sets the operating mode (e.g., 'CONSTANT', 'SWEEP').
         """
 
-    def configure_instrument(self, channel, voltage=None, current=None, mode=None, on=True):
+    # --- 2. Configure Methods (Multiple Actions) ---
+
+    def configure_instrument(self, channel, voltage=None, mode=None):
         """
-        Configures multiple parameters of the instrument in one call.
-        Wraps individual set_ methods.
-        Args:
-            channel (int): The channel number.
-            voltage (float, optional): The voltage to set.
-            current (float, optional): The current to set.
-            mode (str, optional): The mode to set.
-            on (bool, optional): The output state to set.
+        Wraps multiple set_ methods for convenience.
         """
         if mode is not None:
             self.set_mode(channel, mode)
         if voltage is not None:
             self.set_voltage(channel, voltage)
-        if current is not None:
-            self.set_current(channel, current)
-        if on is not None:
-            self.output(channel, on=on)
 
-    # --- Measurement Methods ---
+    # --- 3. Retrieval Methods (Get vs Read) ---
 
+    def get_voltage(self, channel):
+        """
+        Retrieves a SINGLE, unformatted numeric value.
+        """
+    
+    # --- 4. Convenience Methods ---
     def quick_read(self, channel):
         """
-        Performs a quick reading from the specified channel.
-        Args:
-            channel (int): The channel number.
-        Returns:
-            float: The measured value (simulated or real).
+        A specific convenience function.
+        Returns whatever data is fastest to retrieve or currently displayed 
+        on the hardware (e.g., the value of a hardware cursor or average).
+        """
+
+    # --- 5. Optional Methods ---
+    @optional
+    def read_waveform(self, channel):
+        """
+        Retrieves complex or formatted data (e.g., pandas.DataFrame).
+        The return format MUST be detailed in this docstring.
         """
 
     @optional
     def set_optional(self, optional_param):
         """
-        Example of an optional function. 
-        Only instruments that explicitly override this will execute it.
+        Example of an @optional stub.
         """
