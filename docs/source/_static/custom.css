@@ -1,0 +1,230 @@
+/* Dark theme matching the piec GUI color palette */
+
+body {
+    background-color: #181818 !important;
+    color: #E0E0E0 !important;
+}
+
+/* Main content area */
+.wy-nav-content {
+    background: #2B2B2B !important;
+    color: #E0E0E0 !important;
+}
+
+.wy-nav-content-wrap {
+    background: #181818 !important;
+}
+
+/* Sidebar */
+.wy-nav-side {
+    background: #202020 !important;
+}
+
+.wy-side-nav-search {
+    background: #202020 !important;
+    border-bottom: 1px solid #3E3E42 !important;
+}
+
+.wy-side-nav-search input[type="text"] {
+    background: #383838 !important;
+    color: #E0E0E0 !important;
+    border: 1px solid #3E3E42 !important;
+}
+
+.wy-menu-vertical {
+    background: #202020 !important;
+}
+
+.wy-menu-vertical a {
+    color: #E0E0E0 !important;
+}
+
+.wy-menu-vertical a:hover {
+    background: #383838 !important;
+    color: #FFFFFF !important;
+}
+
+.wy-menu-vertical li.current > a,
+.wy-menu-vertical li.current > a:hover {
+    background: #383838 !important;
+    color: #FFFFFF !important;
+    border-right: 2px solid #E0E0E0 !important;
+}
+
+.wy-menu-vertical li.toctree-l1.current > a {
+    background: #2B2B2B !important;
+}
+
+.wy-menu-vertical li.toctree-l2 > a,
+.wy-menu-vertical li.toctree-l3 > a {
+    color: #C0C0C0 !important;
+}
+
+.wy-menu-vertical li.toctree-l2.current > a,
+.wy-menu-vertical li.toctree-l3.current > a {
+    background: #383838 !important;
+    color: #FFFFFF !important;
+}
+
+/* Top nav bar */
+.wy-nav-top {
+    background: #202020 !important;
+    border-bottom: 1px solid #3E3E42 !important;
+}
+
+.wy-nav-top a {
+    color: #E0E0E0 !important;
+}
+
+/* Breadcrumbs */
+.wy-breadcrumbs {
+    background: #2B2B2B !important;
+}
+
+.wy-breadcrumbs li a {
+    color: #C0C0C0 !important;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6,
+.wy-nav-content h1,
+.wy-nav-content h2,
+.wy-nav-content h3 {
+    color: #FFFFFF !important;
+    border-bottom-color: #3E3E42 !important;
+}
+
+/* Links */
+a {
+    color: #9ECFFF !important;
+}
+
+a:hover {
+    color: #FFFFFF !important;
+}
+
+/* Code blocks */
+.highlight {
+    background: #383838 !important;
+    border: 1px solid #3E3E42 !important;
+}
+
+.highlight pre {
+    background: #383838 !important;
+    color: #E0E0E0 !important;
+}
+
+code, tt {
+    background: #383838 !important;
+    color: #E0E0E0 !important;
+    border: 1px solid #3E3E42 !important;
+}
+
+/* Tables */
+.wy-table-responsive table th {
+    background: #383838 !important;
+    color: #E0E0E0 !important;
+    border: 1px solid #3E3E42 !important;
+}
+
+.wy-table-responsive table td {
+    background: #2B2B2B !important;
+    color: #E0E0E0 !important;
+    border: 1px solid #3E3E42 !important;
+}
+
+.wy-table-odd td,
+.wy-table-striped tr:nth-child(2n-1) td {
+    background: #383838 !important;
+}
+
+/* Note / warning / admonition boxes */
+.admonition {
+    background: #383838 !important;
+    border-left: 4px solid #4A4A4A !important;
+}
+
+.admonition-title {
+    background: #4A4A4A !important;
+    color: #FFFFFF !important;
+}
+
+.admonition p {
+    color: #E0E0E0 !important;
+}
+
+.note {
+    background: #2B3040 !important;
+    border-left-color: #5080C0 !important;
+}
+
+.note .admonition-title {
+    background: #3A4060 !important;
+}
+
+.warning {
+    background: #3A2B20 !important;
+    border-left-color: #C07840 !important;
+}
+
+.warning .admonition-title {
+    background: #503A28 !important;
+}
+
+/* Footer */
+footer {
+    background: #202020 !important;
+    color: #C0C0C0 !important;
+    border-top: 1px solid #3E3E42 !important;
+}
+
+footer a {
+    color: #C0C0C0 !important;
+}
+
+/* RST-specific */
+.rst-content .section {
+    color: #E0E0E0 !important;
+}
+
+.rst-content dl dt {
+    background: #383838 !important;
+    color: #E0E0E0 !important;
+    border-left: 3px solid #4A4A4A !important;
+}
+
+.rst-content dl dd {
+    color: #E0E0E0 !important;
+}
+
+/* API docs - class/function signatures */
+.rst-content .descname,
+.rst-content .descclassname {
+    color: #E0E0E0 !important;
+}
+
+.rst-content .sig {
+    background: #383838 !important;
+    border: 1px solid #3E3E42 !important;
+    color: #E0E0E0 !important;
+}
+
+/* Search results */
+.search-results .search-result {
+    background: #2B2B2B !important;
+    border: 1px solid #3E3E42 !important;
+}
+
+/* Scrollbar (webkit) */
+::-webkit-scrollbar {
+    background: #181818;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #383838;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #4A4A4A;
+}
