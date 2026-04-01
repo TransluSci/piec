@@ -18,6 +18,11 @@ class Lockin(Instrument):
     time_constant = (None, None)
     filter_slope = (None, None)
 
+    def set_amplitude(self, amplitude):
+        """
+        Sets the reference amplitude (oscillator voltage).
+        """
+
 
     """
     All lockins must be able to lockin to a signal and measure it
@@ -98,6 +103,38 @@ class Lockin(Instrument):
         args:
             filter_slope (float): the slope of the filter in dB/octave or dB/decade
         """
+    # --- Legacy Configuration Methods (Backward Compatibility) ---
+
+    def configure_reference(self, voltage=None, frequency=None, source=None, trig=None, phase=None, harmonic=None):
+        """
+        Legacy method to configure the reference part of lockin.
+        """
+        if voltage is not None: self.set_amplitude(voltage)
+        if frequency is not None: self.set_reference_frequency(frequency)
+        if source is not None: self.set_reference_source(source)
+        if phase is not None: self.set_phase(phase)
+        if harmonic is not None: self.set_harmonic(harmonic)
+
+    def configure_input(self, input_configuration=None, input_shield_ground=None, input_coupling=None, input_line_notch=None):
+        """
+        Legacy method to configure the input part of lockin.
+        """
+        if input_configuration is not None: self.set_input_configuration(input_configuration)
+        if input_coupling is not None: self.set_input_coupling(input_coupling)
+        if input_line_notch is not None: self.set_notch_filter(input_line_notch)
+
+    def configure_gain_filters(self, sensitivity=None, reserve_mode=None, time_constant=None, lp_filter_slope=None, sync=None):
+        """
+        Legacy method to configure gain and filters.
+        """
+        if sensitivity is not None: self.set_sensitivity(sensitivity)
+        if time_constant is not None: self.set_time_constant(time_constant)
+        if lp_filter_slope is not None: self.set_filter_slope(lp_filter_slope)
+
+    def get_X_Y(self):
+        """Legacy alias for quick_read."""
+        return self.quick_read()
+
     #data acquisition and output
     def quick_read(self):
         """

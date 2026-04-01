@@ -26,7 +26,8 @@ class MagnetoTransport:
         :metadata (pd.DataFrame): Measurement parameters and metadata
     """
 
-    def __init__(self, dmm, calibrator, arduino, lockin,  field, save_dir=r'\\scratch', voltage_callibration=10000):
+    def __init__(self, dmm, calibrator, arduino, lockin,  field, save_dir=r'\\scratch', voltage_callibration=10000,
+                 live_plot=True, plot_config=None):
         """Initialize core waveform measurement system.
 
         Args:
@@ -37,6 +38,8 @@ class MagnetoTransport:
             :angle: Angle to bring the platform too
             :save_dir: Data storage directory path (default network scratch)
             :voltage_callibration: Voltage calibration factor for field conversion in units of 1V is equal to input value
+            :live_plot: Whether to show a live-updating plot during data capture (default True)
+            :plot_config: Dict with 'x' and 'y' keys for column names to plot (default None, set by subclass)
         """
 
         self.dmm = dmm
@@ -48,6 +51,13 @@ class MagnetoTransport:
         self.filename = None
         self.voltage_callibration = voltage_callibration #1V == 10000 Oe, but depends on hardware settings
         self.data = None
+        self.abort_requested = False
+        self.pause_requested = False
+        self.live_plot = live_plot
+        self.plot_config = plot_config or {'x': 'angle', 'y': 'X'}
+        self._fig = None
+        self._ax = None
+        self._in_jupyter = self._is_jupyter()
         #self._initialize() #checks communication
 
     def initialize(self):
@@ -77,7 +87,7 @@ class MagnetoTransport:
         # Check field is correct by reading the DMM
         time.sleep(3)  # Allow time for the field to stabilize
         # Read the actual voltage from the DMM
-        actual_voltage = self.dmm.read_voltage()
+        actual_voltage = self.dmm.get_voltage()
         actual_field = actual_voltage * self.voltage_callibration #e.g. 0.1V * 10000 = 1000 Oe
         # Check if the field is within a reasonable range
         if abs(actual_field - self.field) > 0.1 * self.field:  # Allow 10% tolerance
@@ -122,22 +132,107 @@ class MagnetoTransport:
         else:
             print("No data to analyze. Capture the waveform first.")
         
-    def run_experiment(self):
+    @staticmethod
+    def _is_jupyter():
+        """Detect if running inside a Jupyter notebook."""
+        try:
+            from IPython import get_ipython
+            shell = get_ipython()
+            if shell is None:
+                return False
+            if shell.__class__.__name__ == 'ZMQInteractiveShell':
+                return True
+        except ImportError:
+            pass
+        return False
+
+    def _init_live_plot(self):
+        """Initialize the live plot figure and axes."""
+        if not self.live_plot:
+            return
+        if not self._in_jupyter:
+            plt.ion()  # interactive mode for non-Jupyter
+        self._fig, self._ax = plt.subplots(figsize=(8, 5))
+        x_col = self.plot_config.get('x', 'angle')
+        y_col = self.plot_config.get('y', 'X')
+        self._ax.set_xlabel(x_col)
+        self._ax.set_ylabel(y_col)
+        self._ax.set_title(f'{y_col} vs {x_col} (live)')
+
+    def _update_live_plot(self):
+        """Update the live plot with the latest data."""
+        if not self.live_plot or self._fig is None or self.data is None:
+            return
+        x_col = self.plot_config.get('x', 'angle')
+        y_col = self.plot_config.get('y', 'X')
+        if x_col not in self.data.columns or y_col not in self.data.columns:
+            return
+
+        self._ax.clear()
+        self._ax.plot(self.data[x_col], self.data[y_col], 'o-', color='blue')
+        self._ax.set_xlabel(x_col)
+        self._ax.set_ylabel(y_col)
+        self._ax.set_title(f'{y_col} vs {x_col} (live)')
+
+        if self._in_jupyter:
+            from IPython.display import display, clear_output
+            clear_output(wait=True)
+            display(self._fig)
+        else:
+            self._fig.canvas.draw_idle()
+            self._fig.canvas.flush_events()
+
+    def _close_live_plot(self):
+        """Close the live plot and show a final static version."""
+        if not self.live_plot or self._fig is None:
+            return
+        if not self._in_jupyter:
+            plt.ioff()
+        plt.close(self._fig)
+        self._fig = None
+        self._ax = None
+
+    def plot_results(self):
+        """Show a final static plot of the captured data."""
+        if not self.live_plot:
+            return
+        if self.data is None:
+            print("No data to plot.")
+            return
+        x_col = self.plot_config.get('x', 'angle')
+        y_col = self.plot_config.get('y', 'X')
+        if x_col not in self.data.columns or y_col not in self.data.columns:
+            print(f"Columns '{x_col}' or '{y_col}' not found in data.")
+            return
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(self.data[x_col], self.data[y_col], 'o-', color='blue')
+        ax.set_xlabel(x_col)
+        ax.set_ylabel(y_col)
+        ax.set_title(f'{y_col} vs {x_col}')
+        plt.tight_layout()
+        plt.show()
+
+    def run_experiment(self, configure_lockin=True):
         """
         Execute complete measurement workflow.
         
         Standard sequence:
         1. Initialize instruments and set initial parameters
-        2. Configure lock-in amplifier
-        3. capture data
+        2. Configure lock-in amplifier (optional)
+        3. capture data (with live plot)
         4. Save results
         5. Perform analysis
+        6. Show final plot
         """
         self.initialize() #checks communication and sets default params
-        #self.configure_lockin() #comment out to manually set the lockin, then we just capture data from it
+        if configure_lockin:
+            self.configure_lockin() # Configure if requested
+        self._init_live_plot()
         self.capture_data() # Capture data from the lockin and saves it to self.data and csv
+        self._close_live_plot()
         self.shut_off() #Sets the field to zero
         self.analyze()
+        self.plot_results()
 
 ### SPECIFIC WAVEFORM MEASURMENT CLASSES ###
 class AMR(MagnetoTransport):
@@ -154,7 +249,8 @@ class AMR(MagnetoTransport):
     type = 'amr'
 
     def __init__(self, dmm=None, calibrator=None, arduino=None, lockin=None, field=None, angle_step=15, total_angle=360,
-                 amplitude=1.0, frequency=10, measure_time=60, sensitivity='50uv/pa', save_dir=r'\scratch', voltage_callibration=10000):
+                 amplitude=1.0, frequency=10, measure_time=60, sensitivity='50uv/pa', save_dir=r'\scratch', voltage_callibration=10000,
+                 live_plot=True, plot_config=None):
         """
         Initialize AMR measurement parameters.
 
@@ -175,7 +271,8 @@ class AMR(MagnetoTransport):
             :voltage_callibration (float): Voltage calibration factor for field conversion (default: 10000)
         """
 
-        super().__init__(dmm, calibrator, arduino, lockin, field, save_dir, voltage_callibration)
+        super().__init__(dmm, calibrator, arduino, lockin, field, save_dir, voltage_callibration,
+                         live_plot=live_plot, plot_config=plot_config or {'x': 'angle', 'y': 'X'})
         self.angle_step = angle_step
         self.total_angle = total_angle
         self.amplitude = amplitude
@@ -237,22 +334,33 @@ class AMR(MagnetoTransport):
         else:
             direction = 0 # counter-clockwise
         steps = convert_angle_to_steps(self.angle_step) 
-        for angle in range(0, self.total_angle, self.angle_step):
+        for angle in np.arange(0, self.total_angle, self.angle_step):
+            while self.pause_requested:
+                if self.abort_requested:
+                    break
+                time.sleep(0.5)
+
+            if self.abort_requested:
+                print("Measurement aborted by user.")
+                break
+
             self.angle = angle
             print("capturing data at angle: ", self.angle)
             # Capture data point from the lockin
             self.capture_data_point()  # Capture data from the lockin
             self.save_data_point()  # Save the captured data to a CSV file
+            self._update_live_plot()  # Update live plot
             self.arduino.step(abs(steps), direction)  # Move the stepper motor to the desired angle
             time.sleep(1) # allow time for lockin to stablize
 
         #get final data point at the end of the loop
-        if self.angle != self.total_angle:
+        if self.angle != self.total_angle and not self.abort_requested:
             self.angle = self.total_angle
             self.arduino.step(abs(steps), direction)  # Move the stepper motor to the desired angle
             time.sleep(1) # allow time for lockin to stablize
             self.capture_data_point() # Capture data point at the initial angle
             self.save_data_point()
+            self._update_live_plot()  # Update live plot
 
     def capture_data_point(self):
         """
@@ -347,7 +455,7 @@ def set_field(self, field):
     voltage = convert_field_to_voltage(field)
     calibrator.set_output(voltage)
     #check field is correct by reading the dmm
-    actual_voltage = dmm.read_voltage()
+    actual_voltage = dmm.get_voltage()
     actual_field = convert_voltage_to_field(actual_voltage)
     print("Set field to {}Oe and checked it is at {}Oe".format(field, actual_field))
 

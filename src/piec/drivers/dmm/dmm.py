@@ -21,11 +21,6 @@ class DMM(Instrument):
     sense_mode = ['2W', '4W']
     sense_range = (None, None)
     
-    def __init__(self, address):
-        """
-        Initializes communication with the DMM.
-        """
-        super().__init__(address)
 
     # --- Core Measurement Configuration ---
 

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three-Pulse PUND &mdash; piec 0.1 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="IV Sweep" href="iv_sweep.html" />
+    <link rel="prev" title="Hysteresis Loop" href="hysteresis.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            piec
+          </a>
+              <div class="version">
+                0.1.2
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is PIEC?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/quickstart.html">Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/the_driver.html">The Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/finding_address.html">Finding Your Instrument’s Address</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/running_measurements.html">Running Measurements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="hysteresis.html">Hysteresis Loop</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Three-Pulse PUND</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#background">Background</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#required-instruments">Required instruments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example">Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#key-parameters">Key parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#output">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#api-reference">API reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="iv_sweep.html">IV Sweep</a></li>
+<li class="toctree-l1"><a class="reference internal" href="amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../supported_instruments.html">Supported Instruments</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api_reference.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Administrative Info</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/authors.html">Authors &amp; Citation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/code_of_conduct.html">Code of Conduct</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">piec</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Three-Pulse PUND</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/measurements/pund.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="three-pulse-pund">
+<h1>Three-Pulse PUND<a class="headerlink" href="#three-pulse-pund" title="Permalink to this heading"></a></h1>
+<p>Positive-Up-Negative-Down (PUND) is a pulse-based technique for isolating the true
+ferroelectric switching polarization from non-switching contributions such as leakage current
+and linear dielectric capacitance.</p>
+<section id="background">
+<h2>Background<a class="headerlink" href="#background" title="Permalink to this heading"></a></h2>
+<p>A standard PUND sequence uses pairs of identical pulses in each polarity direction. The first
+pulse of each pair switches the polarization and captures switching + non-switching current.
+The second (identical) pulse, applied while the material is already switched, captures only
+the non-switching current. Subtracting the two gives the purely switchable polarization (ΔP).</p>
+<p>piec implements a <strong>three-pulse PUND</strong> (Reset → P → U):</p>
+<ol class="arabic simple">
+<li><p><strong>Reset pulse</strong> — sets the device into a known polarization state.</p></li>
+<li><p><strong>P (Positive) pulse</strong> — switches polarization; measures switching + non-switching current.</p></li>
+<li><p><strong>U (Up) pulse</strong> — identical to P; the material is already switched, so only non-switching
+current flows. Subtracting U from P isolates the switchable component.</p></li>
+</ol>
+</section>
+<section id="required-instruments">
+<h2>Required instruments<a class="headerlink" href="#required-instruments" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>AWG</strong> — outputs the pulse sequence (e.g., <code class="docutils literal notranslate"><span class="pre">Keysight81150a</span></code>)</p></li>
+<li><p><strong>Oscilloscope</strong> — captures the current response (e.g., <code class="docutils literal notranslate"><span class="pre">KeysightDSOX3024A</span></code>)</p></li>
+</ul>
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Permalink to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">piec.drivers.keysight81150a</span> <span class="kn">import</span> <span class="n">Keysight81150a</span>
+<span class="kn">from</span> <span class="nn">piec.drivers.keysightdsox3024a</span> <span class="kn">import</span> <span class="n">KeysightDSOX3024A</span>
+<span class="kn">from</span> <span class="nn">piec.measurement</span> <span class="kn">import</span> <span class="n">ThreePulsePund</span>
+
+<span class="n">awg</span> <span class="o">=</span> <span class="n">Keysight81150a</span><span class="p">(</span><span class="s1">&#39;GPIB0::8::INSTR&#39;</span><span class="p">)</span>
+<span class="n">osc</span> <span class="o">=</span> <span class="n">KeysightDSOX3024A</span><span class="p">(</span><span class="s1">&#39;GPIB0::7::INSTR&#39;</span><span class="p">)</span>
+
+<span class="n">experiment</span> <span class="o">=</span> <span class="n">ThreePulsePund</span><span class="p">(</span>
+    <span class="n">awg</span><span class="o">=</span><span class="n">awg</span><span class="p">,</span>
+    <span class="n">osc</span><span class="o">=</span><span class="n">osc</span><span class="p">,</span>
+    <span class="n">reset_amp</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>      <span class="c1"># Reset pulse amplitude (V)</span>
+    <span class="n">reset_width</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>   <span class="c1"># Reset pulse width (s)</span>
+    <span class="n">reset_delay</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>   <span class="c1"># Delay after reset pulse (s)</span>
+    <span class="n">p_u_amp</span><span class="o">=</span><span class="mf">4.5</span><span class="p">,</span>        <span class="c1"># P and U pulse amplitude (V)</span>
+    <span class="n">p_u_width</span><span class="o">=</span><span class="mf">0.5e-3</span><span class="p">,</span>   <span class="c1"># P and U pulse width (s)</span>
+    <span class="n">p_u_delay</span><span class="o">=</span><span class="mf">0.5e-3</span><span class="p">,</span>   <span class="c1"># Delay between P and U pulses (s)</span>
+    <span class="n">v_div</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>          <span class="c1"># Oscilloscope V/div</span>
+    <span class="n">area</span><span class="o">=</span><span class="mf">1.0e-9</span><span class="p">,</span>        <span class="c1"># Device area in m²</span>
+    <span class="n">save_dir</span><span class="o">=</span><span class="s1">&#39;./data&#39;</span><span class="p">,</span>
+    <span class="n">auto_timeshift</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">experiment</span><span class="o">.</span><span class="n">run_experiment</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="key-parameters">
+<h2>Key parameters<a class="headerlink" href="#key-parameters" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">reset_amp</span></code>, <code class="docutils literal notranslate"><span class="pre">reset_width</span></code>, <code class="docutils literal notranslate"><span class="pre">reset_delay</span></code> — amplitude (V), width (s), and delay (s)
+of the initial reset pulse.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">p_u_amp</span></code>, <code class="docutils literal notranslate"><span class="pre">p_u_width</span></code>, <code class="docutils literal notranslate"><span class="pre">p_u_delay</span></code> — amplitude (V), width (s), and delay (s) for
+the P and U measurement pulses.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">area</span></code> (float) — device area in m² for polarization calculation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">auto_timeshift</span></code> (bool) — if <code class="docutils literal notranslate"><span class="pre">True</span></code>, auto-detects the time offset by finding the first
+peak in the voltage response.</p></li>
+</ul>
+</section>
+<section id="output">
+<h2>Output<a class="headerlink" href="#output" title="Permalink to this heading"></a></h2>
+<p>After <code class="docutils literal notranslate"><span class="pre">run_experiment()</span></code> completes, the following are saved to <code class="docutils literal notranslate"><span class="pre">save_dir</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Raw data file</strong> — time-series of applied voltage and measured current for all three pulses.</p></li>
+<li><p><strong>ΔP vs. time plot</strong> — differential polarization (P − U) as a function of time.</p></li>
+<li><p><strong>Current response plot</strong> — measured current overlaid with the applied voltage waveform.</p></li>
+</ul>
+</section>
+<section id="api-reference">
+<h2>API reference<a class="headerlink" href="#api-reference" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="xref py py-class docutils literal notranslate"><span class="pre">ThreePulsePund</span></code></p></li>
+<li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">process_raw_3pp()</span></code></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="hysteresis.html" class="btn btn-neutral float-left" title="Hysteresis Loop" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="iv_sweep.html" class="btn btn-neutral float-right" title="IV Sweep" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Geo Fratian Alexander Qualls.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

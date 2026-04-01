@@ -13,15 +13,20 @@ class Geos_Stepper(Stepper):
     num_steps = (0, 600) #typical step sizes (arduino code as limit of -300 to 300)
     direction = [0,1] #0 is CW 1 is CCW
 
-    def __init__(self, address):
+    def __init__(self, address, **kwargs):
         """
         Connects to the instrument by opening a ResourceManager and talking to it (use PiecManager)
         Sets the instrument timeout and the steps_per_revolution to ensure (hardcode this value based on hardware specs)
         """
-        pm = PiecManager()
-        self.instrument = pm.open_resource(address, baud_rate=115200)
-        self.instrument.timeout = 20000 #20s
-        self.steps_per_revolution = 200 #default value, only change IFF change in hardware is also managed
+        # Ensure we use the correct baud rate for Arduino Serial
+        kwargs.setdefault('baud_rate', 115200)
+        super().__init__(address, **kwargs)
+        
+        # Configure the real instrument if not in virtual mode
+        if not self.virtual:
+            self.instrument.timeout = 20000 # 20s
+            
+        self.steps_per_revolution = 200 # default value, only change IFF change in hardware is also managed
 
     def idn(self):
         """

@@ -54,15 +54,6 @@ class SRS830(Lockin, Scpi):
     # Low-pass filter slope options in dB/octave (OFSL command, page 5-6)
     filter_slope = [6, 12, 18, 24]
 
-    def __init__(self, address):
-        """
-        Initializes the SRS830 instrument.
-
-        Args:
-            address (str): The communication address of the instrument (e.g., GPIB::8).
-        """
-        # The SCPI parent would typically handle the connection
-        super().__init__(address)   
 
     def set_reference_source(self, reference_source):
         """

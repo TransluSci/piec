@@ -33,8 +33,6 @@ class Example(Instrument):
     Please note we do not fill out the methods, we just define them here to show what is expected
     All awgs must be able to generate an arbitrary waveform and output it to the selected channel
     """
-    def __init__(self, address):
-        super().__init__(address)
 
     #core output channel control functions
 

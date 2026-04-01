@@ -52,14 +52,6 @@ class AnnotatedAwgDriver(Example, Scpi):
     # The __init__ method is what gets called when a connection is successful.
     # For SCPI instruments, it's standard to call the parent class's __init__
     # which handles the VISA connection setup.
-    def __init__(self, address):
-        """
-        Initializes the instrument driver.
-        - 'address' is the VISA resource string (e.g., 'GPIB0::7::INSTR').
-        """
-        # This call to super() runs the __init__ method from the parent Scpi class,
-        # which creates the self.instrument object for communication.
-        super().__init__(address)
 
 
     # --- 6. DRIVER-SPECIFIC METHODS ---

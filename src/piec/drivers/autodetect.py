@@ -1,5 +1,6 @@
 import re
 import json
+import time
 import importlib
 import inspect
 from pathlib import Path
@@ -51,53 +52,39 @@ def _import_class_from_path(class_path):
 
 def _resolve_type_string(name):
     """
-    Resolves a simple string like 'lockin' to the corresponding abstract/base Instrument class
-    by dynamically scanning the 'drivers' directory.
-    
-    Logic:
-    1. Look for a folder named {name} in drivers/
-    2. Import piec.drivers.{name}.{name}
-    3. Look for class {Name} (title case) in that module.
+    Resolves a simple string like 'lockin' to the corresponding abstract/base Instrument class.
     """
     name = name.lower()
     
-    # Special alias mappings if folder name differs from standard 'name/name.py' 
-    # or if we want aliases like 'scope' -> 'oscilloscope'
-    aliases = {
-        'scope': 'oscilloscope',
+    # Simple hardcoded mapping to directory names
+    mapping = {
+        'dmm': 'dmm',
+        'lockin': 'lockin',
+        'calibrator': 'dc_callibrator',
+        'dc_callibrator': 'dc_callibrator',
+        'stepper': 'stepper_motor',
+        'stepper_motor': 'stepper_motor',
+        'scope': 'oscilloscope'
     }
-    name = aliases.get(name, name)
-
-    drivers_path = Path(__file__).parent
-    target_dir = drivers_path / name
+    dir_name = mapping.get(name, name)
     
-    # Ignored directories
-    if name in ['z_old', 'example', 'emulators', '__pycache__']:
-        return None
-
-    if target_dir.is_dir() and (target_dir / f"{name}.py").exists():
+    drivers_path = Path(__file__).parent
+    target_dir = drivers_path / dir_name
+    
+    if target_dir.is_dir():
+        # Look for the module piec.drivers.{dir_name}.{dir_name}
         try:
-            # Construct module path: piec.drivers.{name}.{name}
-            module_str = f"piec.drivers.{name}.{name}"
+            module_str = f"piec.drivers.{dir_name}.{dir_name}"
             module = importlib.import_module(module_str)
             
-            # Look for TitleCase class, e.g. "lockin" -> "Lockin"
-            # We can also search case-insensitive if needed.
-            target_class_name = name.title()
-            
-            # Special case for acronyms if needed, or iterate all classes in module
-            # checking for one that matches name (ignoring case)
+            # Look for a class that matches the directory name (case insensitive)
             for cls_name, cls_obj in inspect.getmembers(module, inspect.isclass):
-                if cls_name.lower() == name.lower():
-                     return cls_obj
-            
-            # Fallback for standard Title Case if strict match failed
-            return getattr(module, target_class_name, None)
-
-        except (ImportError, AttributeError) as e:
-            print(f"Autodetect: Found folder '{name}' but failed to load driver/class. {e}")
-            return None
-
+                if cls_name.lower() == dir_name.lower().replace("_", ""):
+                    return cls_obj
+                if cls_name.lower() == name.replace("_", ""):
+                    return cls_obj
+        except:
+            pass
     return None
 
 def _dynamic_driver_scan(verbose=False):
@@ -112,21 +99,26 @@ def _dynamic_driver_scan(verbose=False):
             continue
             
         try:
-            rel_path = file_path.relative_to(drivers_path.parent.parent) 
-            module_str = ".".join(rel_path.with_suffix('').parts)
-            
-            module = importlib.import_module(module_str)
-            
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if hasattr(obj, 'AUTODETECT_ID') and obj.__module__ == module.__name__:
-                    idn_ids = getattr(obj, 'AUTODETECT_ID')
-                    full_class_path = f"{obj.__module__}.{obj.__name__}"
-                    
-                    if isinstance(idn_ids, list):
-                        for i in idn_ids:
-                            found_registry[i] = full_class_path
-                    else:
-                        found_registry[idn_ids] = full_class_path
+            # Reconstruct the module path relative to 'piec'
+            parts = list(file_path.parts)
+            if 'piec' in parts:
+                # Use the last occurrence of 'piec' to avoid matching a parent repo folder
+                piec_idx = len(parts) - 1 - parts[::-1].index('piec')
+                module_parts = parts[piec_idx:]
+                module_str = ".".join(module_parts).replace(".py", "")
+                
+                module = importlib.import_module(module_str)
+                
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if hasattr(obj, 'AUTODETECT_ID') and obj.__module__ == module.__name__:
+                        idn_ids = getattr(obj, 'AUTODETECT_ID')
+                        full_class_path = f"{obj.__module__}.{obj.__name__}"
+                        
+                        if isinstance(idn_ids, (list, tuple)):
+                            for i in idn_ids:
+                                found_registry[i] = full_class_path
+                        else:
+                            found_registry[idn_ids] = full_class_path
         except Exception:
             continue
 
@@ -161,36 +153,22 @@ def _safe_close(instrument):
     if instrument is None:
         return
     try:
-        # 1. Try the class method (if it exists)
         if hasattr(instrument, 'close'):
             instrument.close()
-        # 2. Try the underlying pyvisa object (your preferred style)
         elif hasattr(instrument, 'instrument') and hasattr(instrument.instrument, 'close'):
              instrument.instrument.close()
     except Exception:
-        # If it fails, we just pass as requested
         pass
 
 def autodetect(address=None, verbose=False, required_type=None, **kwargs):
     """
     Automatically detects and connects to an instrument.
-    
-    Args:
-        address: Can be:
-            - A VISA address string (e.g., "USB0::...")
-            - An MCC identifier string or int (e.g., "0")
-            - A Python Class (e.g., Lockin, Awg) -> performs checking scan
-            - None -> defaults to scanning for MCC devices (legacy behavior)
-        verbose (bool): If True, prints detailed scanning progress. Default False.
-        required_type (type): Optional class type to filter results.
-        **kwargs: Passed to the driver constructor.
     """
     # 0. Check if address is actually a Class or a known Type String
     target_class = None
     if isinstance(address, type):
         target_class = address
     elif isinstance(address, str) and "::" not in address:
-        # Attempt to resolve string alias (e.g. "lockin")
         target_class = _resolve_type_string(address)
 
     if target_class:
@@ -204,11 +182,7 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
             if verbose:
                 print(f"  -> Checking {res_address}...")
             try:
-                # Recursively call autodetect with the specific address
-                # Capture print output? No, let it print.
-                # Pass specific target class as required_type to optimize recursive scan
                 inst = autodetect(address=res_address, verbose=verbose, required_type=target_class, **kwargs)
-                
                 if inst and isinstance(inst, target_class):
                     if required_type and not isinstance(inst, required_type):
                         _safe_close(inst)
@@ -216,68 +190,44 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
                         if verbose:
                             print(f"  -> MATCH: {res_address} is a {target_class.__name__}!")
                         return inst
-                
                 elif inst:
-                    # Not the right type, close it
                     _safe_close(inst)
             except Exception as e:
                 if verbose:
                     print(f"  -> Failed to check {res_address}: {e}")
                 pass
         
-        if verbose:
-            print(f"No instrument of type {target_class.__name__} found.")
+        print(f"No instrument of type {target_class.__name__} found.")
         return None
 
     # 1. MCC Logic
     is_mcc = (address is None) or (MCC_AVAILABLE and "::" not in str(address))
-    if is_mcc and MCC_AVAILABLE:
-        # If passed a long description string from list_resources, 
-        # try to extract the useful part or let _setup_mcc_device handle it.
-        # _setup_mcc_device does loose matching "in dev.product_name" etc.
-        
-        # Capture the product name returned by setup
-        product_name = _setup_mcc_device(address, 0, verbose=verbose)
-        
-        if product_name:
-            # OPTIMIZED LOGIC: Check registry for specific driver
-            registry = _load_registry_cache()
-            
-            # Lookup using the product name (simulating IDN)
-            match = next((v for k, v in registry.items() if k in product_name), None)
+    known_aliases = ['lockin', 'dmm', 'calibrator', 'stepper', 'motor', 'arduino', 'scope', 'oscilloscope']
+    if isinstance(address, str) and address.lower() in known_aliases:
+        is_mcc = False
 
+    if is_mcc and MCC_AVAILABLE:
+        product_name = _setup_mcc_device(address, 0, verbose=verbose)
+        if product_name:
+            registry = _load_registry_cache()
+            match = next((v for k, v in registry.items() if k in product_name), None)
             if not match:
                 new_reg = _dynamic_driver_scan(verbose=verbose)
                 registry.update(new_reg)
                 _save_registry_cache(registry)
                 match = next((v for k, v in registry.items() if k in product_name), None)
-
             if match:
-                if verbose:
-                    print(f"  -> Loading MCC driver: {match}")
                 cls = _import_class_from_path(match)
-                
-                # OPTIMIZATION: Check type BEFORE instantiation
                 if cls and required_type and not issubclass(cls, required_type):
                     return None
-
                 if cls: 
                     return cls(address=0, verbose=verbose, **kwargs)
-            
-            # Fallback to generic Digilent if no specific driver found
-            # But strictly check type if required!
             if required_type and not issubclass(Digilent, required_type):
                  return None
-
             return Digilent(address=0, verbose=verbose, **kwargs)
-
         elif address is None:
-            # Only print if this was an explicit None call, 
-            # otherwise it might be a loop check
-            # print("No MCC devices found.") 
             pass
         elif is_mcc and "::" not in str(address):
-             # If it looked like MCC but failed setup, return None (don't fall through to SCPI)
              return None
 
     # 2. SCPI Logic
@@ -288,9 +238,28 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
         idn = ""
         try:
             temp_inst = Scpi(address=address)
-            # Using .instrument.query() as you requested
-            idn = temp_inst.instrument.query("*IDN?").strip() 
-            _safe_close(temp_inst) # Close safely before returning
+            
+            # Simple query-based probe with echo handling
+            def _probe(query_cmd):
+                try:
+                    res = temp_inst.instrument.query(query_cmd).strip()
+                    if query_cmd in res: # Echo handling
+                        res = temp_inst.instrument.read().strip()
+                    return res
+                except:
+                    return ""
+
+            idn = _probe("*IDN?")
+            if not idn or idn.isdigit() or idn == "0":
+                idn = _probe("ID?")
+            
+            # Explicit status probe for EDC 522
+            if not idn or idn.isdigit() or idn == "0":
+                status = _probe("?")
+                if status and any(x in status.upper() for x in ["NOTHING WRONG", "NOT PROGRAMMED", "DATA ERROR", "OVERLOAD"]):
+                    idn = status
+
+            _safe_close(temp_inst)
             if verbose:
                 print(f"  -> IDN: {idn}")
         except Exception as e:
@@ -303,7 +272,6 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
         registry = _load_registry_cache()
         match = next((v for k, v in registry.items() if k in idn), None)
         
-        # Dynamic Fallback
         if not match:
             new_reg = _dynamic_driver_scan(verbose=verbose)
             registry.update(new_reg)
@@ -311,19 +279,13 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
             match = next((v for k, v in registry.items() if k in idn), None)
 
         if match:
-            if verbose:
-                print(f"  -> Loading driver: {match}")
             cls = _import_class_from_path(match)
-            
-            # OPTIMIZATION: Check type BEFORE instantiation
             if cls and required_type and not issubclass(cls, required_type):
                 return None
-                
             if cls:
                 print(f"Autodetect: Loaded {match} for instrument at {address}")
                 return cls(address=address, verbose=verbose, **kwargs)
 
-        # OPTIMIZATION: Check type BEFORE instantiation of generic SCPI
         if required_type and not issubclass(Scpi, required_type):
              return None
 

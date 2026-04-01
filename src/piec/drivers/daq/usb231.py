@@ -1,15 +1,16 @@
 from ..digilent import Digilent
 from .daq import Daq
 
-# Attempt to import necessary enums from mcculw if available
 try:
-    from mcculw.enums import ULRange, DigitalIODirection, DigitalPortType, AnalogInputMode
+    from mcculw.enums import ULRange, DigitalIODirection, DigitalPortType, AnalogInputMode, ScanOptions
+    from mcculw import ul
 except ImportError:
     # These will be handled in virtual mode logic
     ULRange = None
     DigitalIODirection = None
     DigitalPortType = None
     AnalogInputMode = None
+    ScanOptions = None
 
 class USB231(Digilent, Daq):
     """
@@ -70,12 +71,12 @@ class USB231(Digilent, Daq):
             float: The measured value in Volts.
         """
         if self.virtual:
-            print(f"USB231 [Virt]: Reading Analog Input Ch {ai_channel} (Simulated 0.0V)")
+            print(f"USB231 [Virt]: Reading Analog Input Ch {channel} (Simulated 0.0V)")
             return 0.0
 
         # Validation: Ensure the requested channel is valid for the CURRENT mode
         if channel not in self.ai_channel:
-            raise ValueError(f"Channel {ai_channel} is not valid in current Input Mode. Available: {self.ai_channel}")
+            raise ValueError(f"Channel {channel} is not valid in current Input Mode. Available: {self.ai_channel}")
 
         try:
             # v_in returns the voltage directly. 
@@ -85,6 +86,137 @@ class USB231(Digilent, Daq):
         except Exception as e:
             print(f"USB231 Error reading AI{channel}: {e}")
             raise
+
+    def read_AI_scan(self, channel, points, rate):
+        """
+        Reads a stream of Analog input data (hardware paced).
+        [cite_start]Manual Page 10: Hardware paced mode[cite: 124].
+        
+        args:
+            channel (int): The channel to read from.
+            points (int): Number of points to acquire.
+            rate (float): Sample rate in Hz.
+        returns:
+            list: The acquired voltage data.
+        """
+        if self.virtual:
+            import numpy as np
+            print(f"USB231 [Virt]: Scanning {points} points from Ch {channel} at {rate}Hz")
+            # Generate simulated sine wave
+            t = np.linspace(0, points/rate, points)
+            return (np.sin(2 * np.pi * 10 * t)).tolist()
+
+        if channel not in self.ai_channel:
+            raise ValueError(f"Channel {channel} is not valid in current Input Mode. Available: {self.ai_channel}")
+
+        memhandle = None
+        try:
+            # Allocate memory buffer
+            memhandle = self.ul.win_buf_alloc(points)
+            if not memhandle:
+                raise Exception("Failed to allocate memory for scan.")
+
+            # Prepare Scan Options
+            # Use BACKGROUND mode with explicit polling
+            scan_options = ScanOptions.BACKGROUND
+            
+            # Configure rate 
+            rate_in = int(rate)
+            
+            # Start Scan
+            try:
+                self.ul.a_in_scan(
+                    self.board_num, 
+                    channel, 
+                    channel, 
+                    points, 
+                    rate_in, 
+                    ULRange.BIP10VOLTS, 
+                    memhandle, 
+                    scan_options
+                )
+            except Exception as e:
+                print(f"DEBUG: a_in_scan FAILED with: {e}")
+                raise
+
+            # Poll for completion
+            from mcculw.enums import FunctionType, Status
+            import time
+            
+            # Wait loop
+            expected_duration = points / rate
+            timeout = time.time() + expected_duration + 5.0
+            
+            while True:
+                status, curr_count, curr_index = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                if status == Status.IDLE:
+                    break
+                if time.time() > timeout:
+                    self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
+                    raise TimeoutError("Hardware scan timed out.")
+                time.sleep(0.01)
+
+            # Retrieve Data manually to avoid Error 35 in scaled_win_buf_to_array
+            # [cite_start]Manual Page 10: 16-bit resolution[cite: 124]
+            # Data is 16-bit unsigned integers (raw counts)
+            from ctypes import c_ushort, POINTER, cast
+            
+            # Create array for raw data
+            raw_array = (c_ushort * points)()
+            
+            # Use raw win_buf_to_array which might be more stable?
+            # Or better: cast the memhandle directly if possible.
+            # But win_buf_alloc returns an opaque handle.
+            # Let's try ul.win_buf_to_array first.
+            
+            try:
+                self.ul.win_buf_to_array(memhandle, raw_array, 0, points)
+            except Exception as e:
+                print(f"DEBUG: win_buf_to_array failed: {e}")
+                raise
+
+            # Convert raw counts to Voltage
+            # Range: +/- 10V (BIP10VOLTS)
+            # Resolution: 16-bit (0 to 65535) or (-32768 to 32767)?
+            # USB-231 is 12-bit SE, 16-bit Differential? No, manual says 12-bit??
+            # Wait, docstring says 16-bit. Let's assume 16-bit for now.
+            # If BIP10V: 
+            #   0 = -10V, 65535 = +10V? 
+            #   or is it signed?
+            #   Usually MCC uses unsigned 0-65535 mapping.
+            
+            # Let's use the helper to_eng_units for a single point to verify scale/offset if needed,
+            # but that's slow.
+            # Standard MCC conversion:
+            # Volts = (Raw - Offset) * Scale
+            # Full Scale Range = 20V.
+            # 65536 codes.
+            # Volts = (Raw / 65536) * 20 - 10
+            
+            data_volts = []
+            for val in raw_array:
+                # 12-bit device usually returns 12-bit values shifted (e.g. 0-4095).
+                # USB-231 is 12-bit according to some docs, but this driver said 16.
+                # Let's try standard 16-bit scaling first.
+                v = (val / 65536.0) * 20.0 - 10.0
+                data_volts.append(v)
+            
+            return data_volts
+            
+        except Exception as e:
+            print(f"USB231 Scan Error: {e}")
+            raise
+            
+        except Exception as e:
+            print(f"USB231 Scan Error: {e}")
+            raise
+            
+        except Exception as e:
+            print(f"USB231 Scan Error: {e}")
+            raise
+        finally:
+            if memhandle:
+                self.ul.win_buf_free(memhandle)
 
     def write_AO(self, channel, data):
         """

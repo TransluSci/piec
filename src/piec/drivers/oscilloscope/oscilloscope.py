@@ -22,7 +22,8 @@ class Oscilloscope(Instrument):
     trigger_source = [1]
     trigger_level = (None, None)
     trigger_slope = ["POS", "NEG", "EITH"]
-    trigger_mode = ["AUTO", "NORM"]
+    trigger_mode = ["EDGE"]
+    trigger_sweep = ["AUTO", "NORM"]
     acquisition_mode = ["NORM"]
     acquisition_points = (None, None)
 
@@ -138,24 +139,30 @@ class Oscilloscope(Instrument):
         """
         Sets the trigger mode (aka trigger type)
         args:
-            mode (str): The trigger mode, e.g. 'EDGE"
+            trigger_mode (str): The trigger mode, e.g. 'EDGE'
         """
 
     def set_trigger_sweep(self, trigger_sweep):
         """
         Changes the trigger sweep settings of the oscilloscope
         args:
-            trigger_sweep (str): The trigger sweep mode, e.g. 'auto'
+            trigger_sweep (str): The trigger sweep mode, e.g. 'AUTO', 'NORM'
         """
 
-    def configure_trigger(self, trigger_source, trigger_level, trigger_slope, trigger_mode):
+    def configure_trigger(self, trigger_source, trigger_level, trigger_slope, trigger_mode, trigger_sweep):
         """
-        Combines all the trigger commands into one, calls set_trigger_source, set_trigger_level, set_trigger_slope, and set_trigger_mode
+        Combines all the trigger commands into one, calls set_trigger_source, set_trigger_level, set_trigger_slope, set_trigger_mode, and set_trigger_sweep
         args:
             trigger_source (str): The trigger source, e.g. 'CH1', 'CH2', 'EXT', 'INT'
             trigger_level (float): The trigger level in volts
-            trigger_slope (str): The trigger slope, e.g. 'rising', 'falling'
-            trigger_mode (str): The trigger mode, e.g. 'auto', 'normal', 'single'
+            trigger_slope (str): The trigger slope, e.g. 'POS', 'NEG'
+            trigger_mode (str): The trigger mode, e.g. 'EDGE'
+            trigger_sweep (str): The trigger sweep mode, e.g. 'AUTO', 'NORM'
+        """
+
+    def manual_trigger(self):
+        """
+        Sends a manual force trigger event to the oscilloscope.
         """
 
     #Time to control acquisition process
@@ -206,7 +213,7 @@ class Oscilloscope(Instrument):
             acquisition_points (int): The number of data points to capture
         """
     
-    #Time to get the data out NOTE: We already have from the measurer class the quick_read which technically goes under here
+    #Time to get the data out
     def quick_read(self):
         """
         Quick read function that returns the default data in a numpy array. Typically this should be used to get a snapshot of the current waveform (e.g. the current display).

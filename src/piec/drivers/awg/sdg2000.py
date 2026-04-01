@@ -80,11 +80,6 @@ class SDG2000X(Awg, Scpi):
     # Arb Data Range: Manual specifies 16B - 16MB for SDG2000X[cite: 715].
     arb_data_range = (16, 16777216)
 
-    def __init__(self, address):
-        """
-        Initializes the instrument driver using the parent Scpi class.
-        """
-        super().__init__(address)
 
     def output(self, channel, on=True):
         """

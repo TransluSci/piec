@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AMR Measurement Documentation &mdash; piec 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Ferroelectric Measurement Documentation" href="ferroelectric.html" />
+    <link rel="prev" title="GUIs" href="../user_guide/guis.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            piec
+          </a>
+              <div class="version">
+                0.1.2
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is PIEC?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/quickstart.html">Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/the_driver.html">The Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/finding_address.html">Finding Your Instrument’s Address</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/running_measurements.html">Running Measurements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">AMR Measurement Documentation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#theory-amr-equation">Theory (AMR Equation)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#data-fitting">Data Fitting</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-setup-feedback-loop">Hardware Setup &amp; Feedback Loop</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#the-feedback-loop">The Feedback Loop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#other-components">Other Components</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#software-architecture">Software Architecture</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#magnetotransport-class"><code class="docutils literal notranslate"><span class="pre">MagnetoTransport</span></code> Class</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#amr-class"><code class="docutils literal notranslate"><span class="pre">AMR</span></code> Class</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-notebook">How to Use the Notebook</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-gui">How to Use the GUI</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#instrument-connection">1. Instrument Connection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#measurement-parameters-dynamic-inputs">2. Measurement Parameters (Dynamic Inputs)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#running-a-measurement">3. Running a Measurement</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#features-summary">Features Summary</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="iv_sweep.html">DCIV Measurement Documentation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../supported_instruments.html">Supported Instruments</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api_reference.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Administrative Info</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/authors.html">Authors &amp; Citation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../administrative/code_of_conduct.html">Code of Conduct</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">piec</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">AMR Measurement Documentation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/measurements/amr.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="amr-measurement-documentation">
+<h1>AMR Measurement Documentation<a class="headerlink" href="#amr-measurement-documentation" title="Permalink to this heading"></a></h1>
+<p>This document explains the Anisotropic Magnetoresistance (AMR) measurement setup, the software architecture behind it, and how to operate the system using both the Jupyter Notebook and the Graphical User Interface (GUI).</p>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading"></a></h2>
+<p><strong>Anisotropic Magnetoresistance (AMR)</strong> is a property of ferromagnetic materials where the electrical resistance depends on the angle between the current direction and the magnetization direction. This setup measures the resistance of a sample while rotating it in a magnetic field.</p>
+<section id="theory-amr-equation">
+<h3>Theory (AMR Equation)<a class="headerlink" href="#theory-amr-equation" title="Permalink to this heading"></a></h3>
+<p>The resistance <span class="math notranslate nohighlight">\(R(\theta)\)</span> of a ferromagnetic material depends on the angle <span class="math notranslate nohighlight">\(\theta\)</span> between the current density <span class="math notranslate nohighlight">\(J\)</span> and the magnetization <span class="math notranslate nohighlight">\(M\)</span> according to the relation:</p>
+<p><div class="math notranslate nohighlight">
+\[R(\theta) = R_{\perp} + (R_{\parallel} - R_{\perp}) \cos^2(\theta)\]</div>
+</p>
+<p>where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(R_{\parallel}\)</span> corresponds to the resistance when the magnetization is parallel to the current (<span class="math notranslate nohighlight">\(\theta = 0^\circ\)</span>).</p></li>
+<li><p><span class="math notranslate nohighlight">\(R_{\perp}\)</span> corresponds to the resistance when the magnetization is perpendicular to the current (<span class="math notranslate nohighlight">\(\theta = 90^\circ\)</span>).</p></li>
+</ul>
+<p>Using the trigonometric identity <span class="math notranslate nohighlight">\(\cos^2(\theta) = \frac{1 + \cos(2\theta)}{2}\)</span>, this can be rewritten as:</p>
+<p><div class="math notranslate nohighlight">
+\[R(\theta) = R_{avg} + \Delta R \cos(2\theta)\]</div>
+</p>
+<p>where <span class="math notranslate nohighlight">\(R_{avg} = \frac{R_{\parallel} + R_{\perp}}{2}\)</span> is the average resistance, and <span class="math notranslate nohighlight">\(\Delta R = \frac{R_{\parallel} - R_{\perp}}{2}\)</span> is the amplitude of the AMR effect.</p>
+</section>
+<section id="data-fitting">
+<h3>Data Fitting<a class="headerlink" href="#data-fitting" title="Permalink to this heading"></a></h3>
+<p>To extract the AMR amplitude and other parameters, experimental data (Resistance vs. Angle) is typically fitted to the following function:</p>
+<p><div class="math notranslate nohighlight">
+\[y = A + B \cos(2(\theta - \theta_0))\]</div>
+</p>
+<p>where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(A\)</span> represents the average resistance (<span class="math notranslate nohighlight">\(R_{avg}\)</span>).</p></li>
+<li><p><span class="math notranslate nohighlight">\(B\)</span> represents the AMR amplitude (<span class="math notranslate nohighlight">\(\Delta R\)</span>).</p></li>
+<li><p><span class="math notranslate nohighlight">\(\theta\)</span> is the angle of the applied external magnetic field.</p></li>
+<li><p><span class="math notranslate nohighlight">\(\theta_0\)</span> accounts for any angular misalignment between the sample drive and the magnetic field axis.</p></li>
+</ul>
+<p>In a sufficiently strong magnetic field, the magnetization <span class="math notranslate nohighlight">\(M\)</span> aligns with the external field direction, making the measured angle <span class="math notranslate nohighlight">\(\theta\)</span> accurately reflect the magnetization angle.</p>
+</section>
+</section>
+<section id="hardware-setup-feedback-loop">
+<h2>Hardware Setup &amp; Feedback Loop<a class="headerlink" href="#hardware-setup-feedback-loop" title="Permalink to this heading"></a></h2>
+<p>The measurement system relies on a feedback loop to accurately set and verify the magnetic field applied to the sample.</p>
+<section id="the-feedback-loop">
+<h3>The Feedback Loop<a class="headerlink" href="#the-feedback-loop" title="Permalink to this heading"></a></h3>
+<ol class="arabic simple">
+<li><p><strong>Field Setting (Source)</strong>: The <strong>DC Calibrator</strong> (<code class="docutils literal notranslate"><span class="pre">EDC522</span></code> or Virtual) is used to drive the <strong>Custom Magnet</strong>. It outputs a specific voltage that corresponds to the desired magnetic field strength (Oersted).</p>
+<ul class="simple">
+<li><p><em>Conversion:</em> The software uses a calibration factor (default <code class="docutils literal notranslate"><span class="pre">10000</span> <span class="pre">Oe/V</span></code>) to convert the desired field into a voltage command for the calibrator. (This is dependant on actual hardware configuration but it is the default)</p></li>
+</ul>
+</li>
+<li><p><strong>Field Sensing (Readout)</strong>: A <strong>Hall Sensor</strong> measures the actual magnetic field produced by the magnet. This sensor’s output is read by the <strong>Digital Multimeter (DMM)</strong> (<code class="docutils literal notranslate"><span class="pre">Keithley193a</span></code> or Virtual).</p></li>
+<li><p><strong>Verification</strong>: After setting the field, the software waits for the magnet to stabilize, reads the voltage from the DMM, converts it back to field units, and verifies it matches the target within a tolerance (default 10%).</p></li>
+</ol>
+</section>
+<section id="other-components">
+<h3>Other Components<a class="headerlink" href="#other-components" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Stepper Motor</strong>: Rotates the sample relative to the magnetic field.</p></li>
+<li><p><strong>Lock-in Amplifier</strong>: Measures the small resistance changes (voltage drop) across the sample with high precision, typically using AC excitation to improve signal-to-noise ratio.</p></li>
+</ul>
+</section>
+</section>
+<section id="software-architecture">
+<h2>Software Architecture<a class="headerlink" href="#software-architecture" title="Permalink to this heading"></a></h2>
+<p>The codebase is structured around a parent class <code class="docutils literal notranslate"><span class="pre">MagnetoTransport</span></code> and a specific implementation <code class="docutils literal notranslate"><span class="pre">AMR</span></code>.</p>
+<section id="magnetotransport-class">
+<h3><code class="docutils literal notranslate"><span class="pre">MagnetoTransport</span></code> Class<a class="headerlink" href="#magnetotransport-class" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">src/piec/measurement/magneto_transport.py</span></code></p></li>
+<li><p><strong>Role</strong>: Manages core instrument connections and the magnetic field feedback loop.</p></li>
+<li><p><strong>Key Methods</strong>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">initialize()</span></code>: Checks communication with all instruments.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">set_field()</span></code>: Orchestrates the Calibrator -&gt; DMM feedback loop described above.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">shut_off()</span></code>: Safely turns off the magnetic field (sets calibrator to 0V).</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="amr-class">
+<h3><code class="docutils literal notranslate"><span class="pre">AMR</span></code> Class<a class="headerlink" href="#amr-class" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">src/piec/measurement/magneto_transport.py</span></code></p></li>
+<li><p><strong>Inherits from</strong>: <code class="docutils literal notranslate"><span class="pre">MagnetoTransport</span></code></p></li>
+<li><p><strong>Role</strong>: Manages the specific details of the AMR experiment.</p></li>
+<li><p><strong>Key Methods</strong>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">configure_lockin()</span></code>: Sets up the lock-in amplifier (reference frequency, gain, etc.).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">capture_data()</span></code>: Loops through the specified angles, moves the stepper motor, and triggers data capture.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">capture_data_point()</span></code>: Reads the averaged X/Y signals from the lock-in for a set duration.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">save_data_point()</span></code>: Saves measurements to a CSV file.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+</section>
+<section id="how-to-use-the-notebook">
+<h2>How to Use the Notebook<a class="headerlink" href="#how-to-use-the-notebook" title="Permalink to this heading"></a></h2>
+<p>The Jupyter Notebook (<code class="docutils literal notranslate"><span class="pre">notebooks/amr.ipynb</span></code>) provides a step-by-step interface for running experiments, especially useful for debugging or manual control.</p>
+<ol class="arabic">
+<li><p><strong>Imports</strong>: Load necessary drivers and the <code class="docutils literal notranslate"><span class="pre">AMR</span></code> class.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">piec.measurement.magneto_transport</span> <span class="kn">import</span> <span class="n">AMR</span>
+<span class="kn">from</span> <span class="nn">piec.drivers.dmm.keithley193a</span> <span class="kn">import</span> <span class="n">Keithley193a</span>
+<span class="c1"># ... other imports</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Instrument Setup</strong>:</p>
+<ul class="simple">
+<li><p><strong>Autodetect</strong>: Use <code class="docutils literal notranslate"><span class="pre">autodetect('dmm')</span></code>, etc., to find connected instruments.</p></li>
+<li><p><strong>Manual</strong>: If autodetection fails (common for Arduino/Calibrator), manually instantiate them with their address (e.g., <code class="docutils literal notranslate"><span class="pre">GPIB0::9::INSTR</span></code>).</p></li>
+<li><p><strong>Virtual</strong>: Use <code class="docutils literal notranslate"><span class="pre">VirtualDMM()</span></code>, etc., for testing without hardware.</p></li>
+</ul>
+</li>
+<li><p><strong>Configuration</strong>: Define experiment parameters.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">experiment</span> <span class="o">=</span> <span class="n">AMR</span><span class="p">(</span><span class="n">dmm</span><span class="o">=</span><span class="n">dmm</span><span class="p">,</span> <span class="n">calibrator</span><span class="o">=</span><span class="n">calibrator</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">angle_step</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Execution</strong>: Run the measurement loop.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">experiment</span><span class="o">.</span><span class="n">run_experiment</span><span class="p">()</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Analysis</strong>: The notebook includes cells to load the generated CSV data using <code class="docutils literal notranslate"><span class="pre">pandas</span></code> and plot it with <code class="docutils literal notranslate"><span class="pre">matplotlib</span></code>.</p></li>
+</ol>
+</section>
+<section id="how-to-use-the-gui">
+<h2>How to Use the GUI<a class="headerlink" href="#how-to-use-the-gui" title="Permalink to this heading"></a></h2>
+<p>The GUI (<code class="docutils literal notranslate"><span class="pre">guis/amr_GUI.py</span></code>) offers a user-friendly way to configure and run measurements without writing code.</p>
+<section id="instrument-connection">
+<h3>1. Instrument Connection<a class="headerlink" href="#instrument-connection" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Address Selection</strong>: Dropdown menus allow you to select the VISA address for each instrument (DMM, Calibrator, Stepper, Lock-in).</p></li>
+<li><p><strong>Virtual Mode</strong>: Select <code class="docutils literal notranslate"><span class="pre">VIRTUAL</span></code> to run a simulation.</p></li>
+<li><p><strong>Refresh</strong>: Updates the list of available VISA resources.</p></li>
+<li><p><strong>Autodetect</strong>: Attempts to automatically identify connected instruments and select their addresses.</p></li>
+<li><p><strong>Test Stepper</strong>: Verifies communication with the Arduino stepper motor.</p></li>
+</ul>
+</section>
+<section id="measurement-parameters-dynamic-inputs">
+<h3>2. Measurement Parameters (Dynamic Inputs)<a class="headerlink" href="#measurement-parameters-dynamic-inputs" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Magnetic Field (Oe)</strong>: Target field strength.</p></li>
+<li><p><strong>Angle Step (deg)</strong>: Increment size for rotation.</p></li>
+<li><p><strong>Total Angle (deg)</strong>: Total range of rotation (e.g., 360).</p></li>
+<li><p><strong>Lock-in Settings</strong>: Amplitude, Frequency, Sensitivity, and Initialize checkbox.</p></li>
+<li><p><strong>Measure Time (s)</strong>: Duration to average data at each angle.</p></li>
+</ul>
+</section>
+<section id="running-a-measurement">
+<h3>3. Running a Measurement<a class="headerlink" href="#running-a-measurement" title="Permalink to this heading"></a></h3>
+<ol class="arabic simple">
+<li><p><strong>Configure</strong>: Set all parameters and select a <strong>Save Directory</strong>.</p></li>
+<li><p><strong>Start</strong>: Click <strong>Run Measurement</strong> (or press <code class="docutils literal notranslate"><span class="pre">Ctrl+Enter</span></code>).</p></li>
+<li><p><strong>Monitor</strong>:</p>
+<ul class="simple">
+<li><p><strong>Real-time Plot</strong>: The graph updates automatically as new data points are acquired. You can change X/Y axes (e.g., Angle vs X, Field vs Y) on the fly.</p></li>
+<li><p><strong>Console</strong>: Displays status messages (“capturing data at angle…”, “Data point saved…”).</p></li>
+</ul>
+</li>
+<li><p><strong>Control</strong>: Use <strong>Pause/Resume</strong> to temporarily halt the experiment or <strong>Stop</strong> to abort it.</p></li>
+</ol>
+</section>
+</section>
+<section id="features-summary">
+<h2>Features Summary<a class="headerlink" href="#features-summary" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Autodetection</strong>: Automatically finds supported instruments on the VISA bus.</p></li>
+<li><p><strong>Hardware Abstraction</strong>: Seamlessly switch between real hardware and virtual drivers for testing.</p></li>
+<li><p><strong>Real-time Visualization</strong>: Watch the hysteresis loop or resistance curve build up in real-time.</p></li>
+<li><p><strong>Data Management</strong>: Automatically saves data and metadata to CSV files with timestamps.</p></li>
+<li><p><strong>Safety</strong>: Includes <code class="docutils literal notranslate"><span class="pre">shut_off</span></code> procedures to ensure the magnet is powered down after experiments.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../user_guide/guis.html" class="btn btn-neutral float-left" title="GUIs" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="ferroelectric.html" class="btn btn-neutral float-right" title="Ferroelectric Measurement Documentation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Geo Fratian Alexander Qualls.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

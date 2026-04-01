@@ -1,7 +1,10 @@
 *.pyc
-*.ipynb
 __pycache__/
 *.egg-info/
 .installed.cfg
 *.egg
 registry_cache.json
+build/
+dist/
+.venv/
+piec-*/

@@ -120,6 +120,16 @@ class Daq(Instrument):
         """
         Reads the Analog input data from the specified channel
         """
+    def read_AI_scan(self, channel, points, rate):
+        """
+        Reads a stream of Analog input data (hardware paced).
+        args:
+            channel (int): The channel to read from.
+            points (int): Number of points to acquire.
+            rate (float): Sample rate in Hz.
+        returns:
+            list/array: The acquired voltage data.
+        """
     def read_DI(self, channel):
         """
         Reads the Digital input data from the specified channel

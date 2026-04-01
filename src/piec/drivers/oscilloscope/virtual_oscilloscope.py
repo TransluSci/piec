@@ -42,7 +42,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope, Scpi):
     tdiv = (0.000000002, 50.0)
     x_range = (0.00000002, 500.0)
     x_position = (-500.0, 500.0)
-    trigger_source = ["CHAN1", "CHAN2", "CHAN3", "CHAN4", "EXT", "LINE", "WGEN"]
+    trigger_source = [1, 2, 3, 4, "EXT", "LINE", "WGEN"]
     trigger_level = (-6.0, 6.0)
     trigger_slope = ["POS", "NEG", "EITH", "ALT"]
     trigger_mode = ["EDGE"]
@@ -223,10 +223,11 @@ class VirtualScope(VirtualInstrument, Oscilloscope, Scpi):
         Set the trigger source channel.
 
         Args:
-            trigger_source (str): Source channel for triggering.
-                Must be one of ["CHAN1", "CHAN2", "CHAN3", "CHAN4", "EXT", "LINE", "WGEN"]
+            trigger_source (str or int): Source channel for triggering.
         """
-        self.state['trigger_source'] = trigger_source
+        mapping = {1: 'CHAN1', 2: 'CHAN2', 3: 'CHAN3', 4: 'CHAN4', '1': 'CHAN1', '2': 'CHAN2', '3': 'CHAN3', '4': 'CHAN4'}
+        src = mapping.get(trigger_source, trigger_source)
+        self.state['trigger_source'] = src
 
     def set_trigger_level(self, trigger_level):
         """
@@ -299,6 +300,11 @@ class VirtualScope(VirtualInstrument, Oscilloscope, Scpi):
             self.set_trigger_slope(trigger_slope)
         if trigger_mode is not None:
             self.set_trigger_mode(trigger_mode)
+
+    def manual_trigger(self):
+        """Sends a manual force trigger event to the oscilloscope."""
+        # Virtual scope responds immediately
+        pass
 
     def arm(self):
         """

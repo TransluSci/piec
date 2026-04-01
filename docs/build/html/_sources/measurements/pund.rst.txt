@@ -1,0 +1,82 @@
+Three-Pulse PUND
+================
+
+Positive-Up-Negative-Down (PUND) is a pulse-based technique for isolating the true
+ferroelectric switching polarization from non-switching contributions such as leakage current
+and linear dielectric capacitance.
+
+Background
+----------
+
+A standard PUND sequence uses pairs of identical pulses in each polarity direction. The first
+pulse of each pair switches the polarization and captures switching + non-switching current.
+The second (identical) pulse, applied while the material is already switched, captures only
+the non-switching current. Subtracting the two gives the purely switchable polarization (ΔP).
+
+piec implements a **three-pulse PUND** (Reset → P → U):
+
+1. **Reset pulse** — sets the device into a known polarization state.
+2. **P (Positive) pulse** — switches polarization; measures switching + non-switching current.
+3. **U (Up) pulse** — identical to P; the material is already switched, so only non-switching
+   current flows. Subtracting U from P isolates the switchable component.
+
+Required instruments
+--------------------
+
+* **AWG** — outputs the pulse sequence (e.g., ``Keysight81150a``)
+* **Oscilloscope** — captures the current response (e.g., ``KeysightDSOX3024A``)
+
+Example
+-------
+
+.. code-block:: python
+
+   from piec.drivers.keysight81150a import Keysight81150a
+   from piec.drivers.keysightdsox3024a import KeysightDSOX3024A
+   from piec.measurement import ThreePulsePund
+
+   awg = Keysight81150a('GPIB0::8::INSTR')
+   osc = KeysightDSOX3024A('GPIB0::7::INSTR')
+
+   experiment = ThreePulsePund(
+       awg=awg,
+       osc=osc,
+       reset_amp=5.0,      # Reset pulse amplitude (V)
+       reset_width=1e-3,   # Reset pulse width (s)
+       reset_delay=1e-3,   # Delay after reset pulse (s)
+       p_u_amp=4.5,        # P and U pulse amplitude (V)
+       p_u_width=0.5e-3,   # P and U pulse width (s)
+       p_u_delay=0.5e-3,   # Delay between P and U pulses (s)
+       v_div=0.5,          # Oscilloscope V/div
+       area=1.0e-9,        # Device area in m²
+       save_dir='./data',
+       auto_timeshift=True,
+   )
+
+   experiment.run_experiment()
+
+Key parameters
+--------------
+
+* ``reset_amp``, ``reset_width``, ``reset_delay`` — amplitude (V), width (s), and delay (s)
+  of the initial reset pulse.
+* ``p_u_amp``, ``p_u_width``, ``p_u_delay`` — amplitude (V), width (s), and delay (s) for
+  the P and U measurement pulses.
+* ``area`` (float) — device area in m² for polarization calculation.
+* ``auto_timeshift`` (bool) — if ``True``, auto-detects the time offset by finding the first
+  peak in the voltage response.
+
+Output
+------
+
+After ``run_experiment()`` completes, the following are saved to ``save_dir``:
+
+* **Raw data file** — time-series of applied voltage and measured current for all three pulses.
+* **ΔP vs. time plot** — differential polarization (P − U) as a function of time.
+* **Current response plot** — measured current overlaid with the applied voltage waveform.
+
+API reference
+-------------
+
+* :class:`~piec.measurement.discrete_waveform.ThreePulsePund`
+* :func:`~piec.analysis.pund.process_raw_3pp`

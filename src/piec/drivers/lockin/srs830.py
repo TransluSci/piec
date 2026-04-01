@@ -5,9 +5,7 @@ This class inherits from the base Lockin class and SCPI class
 and fills in the instrument-specific attributes and methods based
 on the SR830 manual.
 """
-#NOTE: Keeping version 2 to test against 1, since both are different
-# We assume lockin.py and scpi.py are in the same directory
-# or otherwise available on the python path.
+import re
 from .lockin import Lockin
 from ..scpi import Scpi
 
@@ -19,7 +17,7 @@ class SRS830(Lockin, Scpi):
     using SR830-specific SCPI commands.
     """
 
-    AUTODETECT_ID = "SR830"  # Identifier string for the instrument
+    AUTODETECT_ID = "SR830"
     channel = [1]
     input_coupling = ["AC", "DC"]
     reference_source = ["internal", "external"]
@@ -62,17 +60,12 @@ class SRS830(Lockin, Scpi):
     ]
     filter_slope = [6, 12, 18, 24]
 
-    # --- Constructor & Value Maps ---
-
     def __init__(self, *args, **kwargs):
         """
         Initializes the SR830 driver.
         """
         super().__init__(*args, **kwargs)
         
-        # Store current state for dependent settings (e.g., sensitivity)
-        # We query the instrument for its current state upon init.
-        # Default to 'A' if query fails.
         try:
             config_idx = int(self.instrument.query("ISRC?"))
             self._current_input_config = self.input_configuration[config_idx]
@@ -82,13 +75,13 @@ class SRS830(Lockin, Scpi):
 
         # Create maps for convenient string-to-int conversion
         self._ref_src_map = {s.lower(): i for i, s in enumerate(self.reference_source, 0)}
-        self._ref_src_map_inv = {i: s for s, i in self._ref_src_map.items()} # 0: ext, 1: int
+        self._ref_src_map_inv = {i: s for s, i in self._ref_src_map.items()}
         
-        self._in_config_map = {s: i for i, s in enumerate(self.input_configuration, 0)}
+        self._in_config_map = {s.lower(): i for i, s in enumerate(self.input_configuration, 0)}
         self._in_config_map_inv = {i: s for s, i in self._in_config_map.items()}
 
         self._in_couple_map = {s.lower(): i for i, s in enumerate(self.input_coupling, 0)}
-        self._in_couple_map_inv = {i: s for s, i in self._in_couple_map.items()} # 0: AC, 1: DC
+        self._in_couple_map_inv = {i: s for s, i in self._in_couple_map.items()}
 
         self._notch_map = {s.lower(): i for i, s in enumerate(self.notch_filter, 0)}
         self._notch_map_inv = {i: s for s, i in self._notch_map.items()}
@@ -102,13 +95,17 @@ class SRS830(Lockin, Scpi):
         self._sens_v_map = {val: i for i, val in enumerate(self._sensitivity_v, 0)}
         self._sens_i_map = {val: i for i, val in enumerate(self._sensitivity_i, 0)}
 
-
-    # --- Method Implementations ---
+    def set_amplitude(self, amplitude: float):
+        """
+        Sets the sine out amplitude.
+        SCPI Command: SLVL {f}
+        """
+        self.instrument.write(f"SLVL {amplitude}")
 
     def set_reference_source(self, reference_source: str):
         """
-        Sets the reference source for the lockin. (Internal or External)
-        SCPI Command: FMOD {i} (0=Ext, 1=Int)
+        Sets the reference source for the lockin.
+        SCPI Command: FMOD {i}
         """
         ref_str = reference_source.lower().strip()
         if ref_str not in self._ref_src_map:
@@ -119,14 +116,12 @@ class SRS830(Lockin, Scpi):
 
     def set_reference_frequency(self, frequency: float):
         """
-        Sets the reference frequency for the lockin (if internal reference).
+        Sets the reference frequency for the lockin.
         SCPI Command: FREQ {f}
         """
-        # Note: Instrument only accepts this command if FMOD is Internal
         min_f, max_f = self.frequency['reference_source']['internal']
         if not (min_f <= frequency <= max_f):
             raise ValueError(f"Frequency {frequency} Hz out of range ({min_f} Hz to {max_f} Hz)")
-            
         self.instrument.write(f"FREQ {frequency}")
 
     def set_harmonic(self, harmonic: int):
@@ -137,10 +132,6 @@ class SRS830(Lockin, Scpi):
         min_h, max_h = self.harmonic
         if not (min_h <= harmonic <= max_h):
              raise ValueError(f"Harmonic {harmonic} out of range ({min_h} to {max_h})")
-        
-        # Add check for (f * i <= 102kHz) ?
-        # This requires querying the frequency, which adds overhead.
-        # We will trust the user or let the instrument handle the error.
         self.instrument.write(f"HARM {harmonic}")
 
     def set_phase(self, phase: float):
@@ -148,11 +139,6 @@ class SRS830(Lockin, Scpi):
         Sets the reference phase shift.
         SCPI Command: PHAS {x}
         """
-        min_p, max_p = self.phase
-        if not (min_p <= phase <= max_p):
-            print(f"Warning: Phase {phase} is outside manual's explicit range {self.phase}. "
-                  "Instrument will wrap it.")
-        
         self.instrument.write(f"PHAS {phase}")
 
     def set_input_configuration(self, configuration: str):
@@ -160,46 +146,78 @@ class SRS830(Lockin, Scpi):
         Sets the input configuration (A, A-B, I (1M), I (100M)).
         SCPI Command: ISRC {i}
         """
-        if configuration not in self._in_config_map:
-            raise ValueError(f"Invalid configuration. Must be one of: {self.input_configuration}")
+        config_str = configuration.lower().strip()
+        if config_str not in self._in_config_map:
+            raise ValueError(f"Invalid configuration '{configuration}'. Must be one of: {self.input_configuration}")
         
-        i = self._in_config_map[configuration]
+        i = self._in_config_map[config_str]
         self.instrument.write(f"ISRC {i}")
-        self._current_input_config = configuration # Update internal state
+        # Keep internal state consistent with the actual mapping
+        self._current_input_config = self.input_configuration[i]
 
     def set_input_coupling(self, coupling: str):
         """
         Sets the input coupling (AC or DC).
-        SCPI Command: ICPL {i} (0=AC, 1=DC)
+        SCPI Command: ICPL {i}
         """
         coup_str = coupling.lower().strip()
         if coup_str not in self._in_couple_map:
             raise ValueError(f"Invalid coupling. Must be one of: {self.input_coupling}")
-            
         i = self._in_couple_map[coup_str]
         self.instrument.write(f"ICPL {i}")
 
-    def set_sensitivity(self, sensitivity: float):
+    def set_sensitivity(self, sensitivity):
         """
-        Sets the sensitivity.
+        Sets the sensitivity. Supports float values or strings (e.g., '50uv/pa').
         SCPI Command: SENS {i}
         """
+        if isinstance(sensitivity, str):
+            sensitivity = self._convert_sensitivity(sensitivity)
+
         if self._current_input_config.startswith("I"):
-            # Current input
             sens_map = self._sens_i_map
             valid_vals = self._sensitivity_i
         else:
-            # Voltage input
             sens_map = self._sens_v_map
             valid_vals = self._sensitivity_v
             
-        if sensitivity not in sens_map:
-            raise ValueError(f"Invalid sensitivity value {sensitivity} for current input config "
-                             f"'{self._current_input_config}'. "
-                             f"Valid values are: {valid_vals}")
+        # Robust key matching for float sensitivity
+        closest_key = min(sens_map.keys(), key=lambda k: abs(k - sensitivity))
+        if abs(closest_key - sensitivity) / (closest_key or 1) > 1e-4:
+            raise ValueError(f"Invalid sensitivity {sensitivity}. Valid values: {valid_vals}")
         
-        i = sens_map[sensitivity]
+        i = sens_map[closest_key]
         self.instrument.write(f"SENS {i}")
+
+    def _convert_sensitivity(self, sens_str):
+        """
+        Converts sensitivity strings (e.g., '50uv/pa') to float.
+        """
+        sens_str = sens_str.lower().strip()
+        if sens_str == 'auto':
+            return 'auto'
+        
+        match = re.match(r'([0-9.]+)([a-z/]+)', sens_str)
+        if not match:
+            raise ValueError(f"Could not parse sensitivity string: {sens_str}")
+        
+        num = float(match.group(1))
+        unit = match.group(2)
+        
+        multipliers = {
+            'nv': 1e-9, 'uv': 1e-6, 'mv': 1e-3, 'v': 1.0,
+            'fa': 1e-15, 'pa': 1e-12, 'na': 1e-9, 'ua': 1e-6, 'ma': 1e-3, 'a': 1.0
+        }
+        
+        prefix_match = re.match(r'[a-z]+', unit)
+        if not prefix_match:
+             raise ValueError(f"Unknown unit format: {unit}")
+        
+        prefix = prefix_match.group(0)
+        if prefix in multipliers:
+            return num * multipliers[prefix]
+        
+        raise ValueError(f"Unknown unit prefix: {prefix}")
 
     def set_notch_filter(self, notch_filter: str):
         """
@@ -209,7 +227,6 @@ class SRS830(Lockin, Scpi):
         notch_str = notch_filter.lower().strip()
         if notch_str not in self._notch_map:
             raise ValueError(f"Invalid notch_filter. Must be one of: {self.notch_filter}")
-        
         i = self._notch_map[notch_str]
         self.instrument.write(f"ILIN {i}")
 
@@ -220,95 +237,51 @@ class SRS830(Lockin, Scpi):
         """
         if time_constant not in self._tc_map:
             raise ValueError(f"Invalid time_constant. Must be one of: {self.time_constant}")
-            
         i = self._tc_map[time_constant]
         self.instrument.write(f"OFLT {i}")
 
     def set_filter_slope(self, filter_slope: int):
         """
-        Sets the low pass filter slope (6, 12, 18, or 24 dB/oct).
+        Sets the low pass filter slope.
         SCPI Command: OFSL {i}
         """
         if filter_slope not in self._slope_map:
             raise ValueError(f"Invalid filter_slope. Must be one of: {self.filter_slope}")
-            
         i = self._slope_map[filter_slope]
         self.instrument.write(f"OFSL {i}")
 
-    # --- Data Acquisition ---
-
     def quick_read(self) -> tuple[float, float]:
         """
-        Quick read function that returns (X, Y) data.
-        Uses SNAP? for a concurrent measurement.
+        Quick read (X, Y).
         SCPI Command: SNAP? 1,2
         """
-        try:
-            response = self.instrument.query("SNAP? 1,2")
-            x_str, y_str = response.split(',')
-            return (float(x_str), float(y_str))
-        except Exception as e:
-            print(f"Error in quick_read: {e}. Response: '{response}'")
-            return (0.0, 0.0)
+        response = self.instrument.query("SNAP? 1,2")
+        x_str, y_str = response.split(',')
+        return (float(x_str), float(y_str))
 
     def read_data(self) -> dict[str, float]:
         """
-        Reads X, Y, R, and Theta concurrently.
+        Reads X, Y, R, and Theta.
         SCPI Command: SNAP? 1,2,3,4
         """
-        try:
-            response = self.instrument.query("SNAP? 1,2,3,4")
-            x_str, y_str, r_str, t_str = response.split(',')
-            return {
-                'X': float(x_str),
-                'Y': float(y_str),
-                'R': float(r_str),
-                'Theta': float(t_str)
-            }
-        except Exception as e:
-            print(f"Error in read_data: {e}. Response: '{response}'")
-            return {'X': 0.0, 'Y': 0.0, 'R': 0.0, 'Theta': 0.0}
+        response = self.instrument.query("SNAP? 1,2,3,4")
+        x_str, y_str, r_str, t_str = response.split(',')
+        return {'X': float(x_str), 'Y': float(y_str), 'R': float(r_str), 'Theta': float(t_str)}
 
     def get_X(self) -> float:
-        """
-        Reads the X data.
-        SCPI Command: OUTP? 1
-        """
         return float(self.instrument.query("OUTP? 1"))
 
     def get_Y(self) -> float:
-        """
-        Reads the Y data.
-        SCPI Command: OUTP? 2
-        """
         return float(self.instrument.query("OUTP? 2"))
 
     def get_R(self) -> float:
-        """
-        Reads the R (magnitude) data.
-        SCPI Command: OUTP? 3
-        """
         return float(self.instrument.query("OUTP? 3"))
 
     def get_theta(self) -> float:
-        """
-        Reads the Theta (phase) data.
-        SCPI Command: OUTP? 4
-        """
         return float(self.instrument.query("OUTP? 4"))
 
-    # --- Auto Functions ---
-
     def auto_gain(self):
-        """
-        Automatically sets the gain (sensitivity).
-        SCPI Command: AGAN
-        """
         self.instrument.write("AGAN")
 
     def auto_phase(self):
-        """
-        Automatically sets the reference phase to 0.
-        SCPI Command: APHS
-        """
         self.instrument.write("APHS")

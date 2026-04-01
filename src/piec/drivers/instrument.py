@@ -116,17 +116,14 @@ class VirtualRMInstrument:
         try:
             with open(json_path, "r") as file:
                 self.query_dict = json.load(file)
-        except FileNotFoundError:
+        except Exception as e:
             if self.verbose:
-                print(f"Warning: 'virtual_scpi_queries.json' not found at {json_path}.")
-            
-        # Add default IDN for SR830
+                print(f"Warning: Failed to load 'virtual_scpi_queries.json' at {json_path}: {e}")
+            self.query_dict = {}
+        
+        # Ensure at least a default IDN exists if the file is empty or missing
         if "*IDN?" not in self.query_dict:
-            self.query_dict["*IDN?"] = "Stanford_Research_Systems,SR830,s/n_virtual,ver1.0"
-        if "ISRC?" not in self.query_dict:
-            self.query_dict["ISRC?"] = "0" # Default to 'A' input
-        if "DSO-X 3024A" not in self.query_dict.get("*IDN?", ""):
-             self.query_dict["*IDN?"] = "KEYSIGHT TECHNOLOGIES,DSO-X 3024A,MY54100101,2.41.2014091600"
+            self.query_dict["*IDN?"] = "Piec_Virtual_Instrument,Model_X,s/n_000,ver1.0"
 
 
     def query(self, input:str):

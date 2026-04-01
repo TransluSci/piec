@@ -21,6 +21,29 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.todo',
+    'myst_parser',
+    'sphinx.ext.mathjax',
+    'sphinx_math_dollar',
+]
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
+
+# Show todo directives in the built docs
+todo_include_todos = True
+
+# Mock heavy/optional dependencies so autodoc can import piec without them installed
+autodoc_mock_imports = [
+    'pandas',
+    'numpy',
+    'scipy',
+    'matplotlib',
+    'pyvisa',
+    'mcculw',
 ]
 
 intersphinx_mapping = {
@@ -31,26 +54,25 @@ intersphinx_disabled_domains = ['std']
 
 templates_path = ['_templates']
 
-# -- Options for HTML output
-
-html_theme = 'sphinx_rtd_theme'
-
-# -- Options for EPUB output
-epub_show_urls = 'footnote'
-
-extensions = [
-    'sphinx.ext.duration',
-    'sphinx.ext.doctest',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',  # Ensure this is present
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.napoleon',    # Add Napoleon for Google/Numpy docstrings
+# Exclude old files that have been superseded by the new structure
+exclude_patterns = [
+    'getting_started.rst',
+    'installation_guide.rst',
+    'gui_guide.rst',
+    'notebook_examples.rst',
+    'measurements_overview.rst',
+    'source_code_overview.rst',
+    'authors.rst',
+    'licence.rst',
+    'measurements/drivers_overview.rst',
+    'measurements/discrete_waveforms_general.rst',
 ]
 
-# Napoleon settings
+# -- Napoleon settings (Google/NumPy style docstrings)
+
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
-napoleon_include_init_with_doc = True # Show __init__ docstrings
+napoleon_include_init_with_doc = True
 napoleon_include_private_with_doc = False
 napoleon_include_special_with_doc = True
 napoleon_use_admonition_for_examples = False
@@ -60,7 +82,20 @@ napoleon_use_ivar = False
 napoleon_use_param = True
 napoleon_use_rtype = True
 
-autosummary_generate = True # Enable autosummary to generate rst files
+# -- Autosummary
 
-# ... (rest of the configuration)
-html_theme = 'sphinx_rtd_theme' #
+autosummary_generate = True
+
+# -- HTML output
+
+html_theme = 'sphinx_rtd_theme'
+
+# html_static_path = ['_static']
+
+# html_css_files = [
+#     'custom.css',
+# ]
+
+# -- EPUB output
+
+epub_show_urls = 'footnote'
