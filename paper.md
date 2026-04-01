@@ -46,11 +46,8 @@ alongside the data. The combination of a validated driver hierarchy, reusable `M
 Several tools exist for Python-based laboratory automation. `PyMeasure` [@rawlings2023pymeasure] is a package providing instrument wrappers with parameter validation and simple sweep automation. `Bluesky` [@allan2019bluesky] offers a run engine and document model for large-scale synchrotron facilities. `QCoDeS` [@qcodes] is a Python-based data acquisition framework developed for quantum-computing measurement setups. Commercial platforms such as LabVIEW [@LabVIEW] are widely deployed in experimental physics laboratories.
 
 `PIEC` was built rather than contributing to these existing projects for several reasons. First, `PIEC` was designed to execute multi-instrument coordination. `PyMeasure` does well with single-instrument abstraction and parameter
-sweeps but does not allow for the synchronized configuration and triggering of multiple
-devices which is often necessary in experiments. Second, `PIEC` was designed to have minimal infrastructure overhead for small laboratory groups. `Bluesky`'s architecture is better for multi-user facilities but has a barrier for smaller research groups
-automating measurements with less resources. `QCoDeS` is also optimized for quantum-device stacks that exceed the needs of most materials-science
-laboratories. Third, commercial platforms such as LabVIEW require expensive licenses and proprietary programming environments that also are integrated with the modern Python tech stack. `PIEC` fills that gap between simple scripts and heavy
-infrastructure frameworks.
+sweeps but does not allow for the synchronized configuration and triggering of multiple devices which is often necessary in experiments. Second, `PIEC` was designed to have minimal infrastructure overhead for small laboratory groups. `Bluesky`'s architecture is better for multi-user facilities but has a barrier for smaller research groups
+automating measurements with less resources. `QCoDeS` is also optimized for quantum-device stacks that exceed the needs of most materials-science laboratories. Third, commercial platforms such as LabVIEW require expensive licenses and proprietary programming environments that also are integrated with the modern Python tech stack. `PIEC` fills that gap between simple scripts and heavy infrastructure frameworks.
 
 # Software Design
 
@@ -64,6 +61,8 @@ Within `piec.measurement`, we provide `Measurement` classes that coordinate mult
 The layered architecture means that a researcher can work at whatever level their experiment requires, whether that is coding driver methods for new setups, creating `Measurement` classes for running experiments, or using the pre-existing graphical interfaces ()`piec.guis`) for routine tasks without writing code. 
 
 In the case that an instrument isn't supported or a new measurement class is needed, extending `PIEC` is also simple. Adding a new instrument requires implementing a driver subclass alongside its `VirtualInstrument`, and adding a new experiment type requires implementing a `Measurement` subclass, without modifying other existing code.
+
+Care has been taken to make contibution to the codebase as seamless as possible using modern LLM-enabled workflows. The directory for each instrument type contains a template class which contains every method and attribute, as well as detailed doctrings, but no implementation. Entirely new instuments can be quickly and seamlessly integrated into the codebase by providing this template and a coding manual as context to an LLM, and then stepping through provided debugging notebooks.
 
 # Research Impact Statement
 
