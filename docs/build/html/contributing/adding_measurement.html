@@ -1,21 +1,23 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../">
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Adding a Measurement &mdash; piec 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
   
-      <script src="../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -34,6 +36,9 @@
           <a href="../index.html" class="icon icon-home">
             piec
           </a>
+              <div class="version">
+                0.1.2
+              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -44,25 +49,24 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is piec?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is PIEC?</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../getting_started/installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../getting_started/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/the_driver.html">The Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/finding_address.html">Finding Your Instrument’s Address</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/running_measurements.html">Running Measurements</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">AMR Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">DCIV Measurement Documentation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
 <ul>
@@ -74,7 +78,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Contributing to PIEC</a></li>
 <li class="toctree-l1"><a class="reference internal" href="adding_driver.html">Adding a Driver</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Adding a Measurement</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#where-to-put-the-file">Where to put the file</a></li>
@@ -108,7 +112,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="index.html">Contributing to piec</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Contributing to PIEC</a></li>
       <li class="breadcrumb-item active">Adding a Measurement</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/contributing/adding_measurement.rst.txt" rel="nofollow"> View page source</a>
@@ -120,10 +124,10 @@
            <div itemprop="articleBody">
              
   <section id="adding-a-measurement">
-<h1>Adding a Measurement<a class="headerlink" href="#adding-a-measurement" title="Link to this heading"></a></h1>
+<h1>Adding a Measurement<a class="headerlink" href="#adding-a-measurement" title="Permalink to this heading"></a></h1>
 <p>This page explains how to add a new experiment type to piec.</p>
 <section id="where-to-put-the-file">
-<h2>Where to put the file<a class="headerlink" href="#where-to-put-the-file" title="Link to this heading"></a></h2>
+<h2>Where to put the file<a class="headerlink" href="#where-to-put-the-file" title="Permalink to this heading"></a></h2>
 <p>Measurements live in <code class="docutils literal notranslate"><span class="pre">src/piec/measurement/</span></code>. Add your class to an existing module if it
 fits a category that already exists (e.g., <code class="docutils literal notranslate"><span class="pre">discrete_waveform.py</span></code> for AWG + oscilloscope
 experiments), or create a new module for a distinct experiment category:</p>
@@ -135,7 +139,7 @@ experiments), or create a new module for a distinct experiment category:</p>
 </div>
 </section>
 <section id="choosing-the-right-base-class">
-<h2>Choosing the right base class<a class="headerlink" href="#choosing-the-right-base-class" title="Link to this heading"></a></h2>
+<h2>Choosing the right base class<a class="headerlink" href="#choosing-the-right-base-class" title="Permalink to this heading"></a></h2>
 <ul class="simple">
 <li><p>Inherit from <code class="docutils literal notranslate"><span class="pre">DiscreteWaveform</span></code> if your experiment uses an AWG to apply a waveform and
 an oscilloscope to capture the response.</p></li>
@@ -146,7 +150,7 @@ existing category.</p></li>
 </ul>
 </section>
 <section id="implementing-the-required-methods">
-<h2>Implementing the required methods<a class="headerlink" href="#implementing-the-required-methods" title="Link to this heading"></a></h2>
+<h2>Implementing the required methods<a class="headerlink" href="#implementing-the-required-methods" title="Permalink to this heading"></a></h2>
 <p>Your measurement class must implement:</p>
 <dl class="simple">
 <dt><code class="docutils literal notranslate"><span class="pre">configure_awg(self)</span></code></dt><dd><p>Build and send the specific waveform or pulse sequence to the AWG. Called automatically
@@ -158,14 +162,14 @@ Call the appropriate function from <code class="docutils literal notranslate"><s
 </dl>
 </section>
 <section id="adding-analysis-functions">
-<h2>Adding analysis functions<a class="headerlink" href="#adding-analysis-functions" title="Link to this heading"></a></h2>
+<h2>Adding analysis functions<a class="headerlink" href="#adding-analysis-functions" title="Permalink to this heading"></a></h2>
 <p>If your measurement requires new analysis code, add it to the appropriate module in
 <code class="docutils literal notranslate"><span class="pre">src/piec/analysis/</span></code> (e.g., <code class="docutils literal notranslate"><span class="pre">hysteresis.py</span></code>, <code class="docutils literal notranslate"><span class="pre">pund.py</span></code>), or create a new module.
 Document each public function with a docstring that describes arguments, return values, and
 units.</p>
 </section>
 <section id="writing-tests">
-<h2>Writing tests<a class="headerlink" href="#writing-tests" title="Link to this heading"></a></h2>
+<h2>Writing tests<a class="headerlink" href="#writing-tests" title="Permalink to this heading"></a></h2>
 <div class="admonition-todo admonition" id="id1">
 <p class="admonition-title">Todo</p>
 <p>Describe how to write a test for a new measurement using virtual instrument drivers so
@@ -173,9 +177,9 @@ the test can run in CI without hardware.</p>
 </div>
 </section>
 <section id="documenting-the-measurement">
-<h2>Documenting the measurement<a class="headerlink" href="#documenting-the-measurement" title="Link to this heading"></a></h2>
+<h2>Documenting the measurement<a class="headerlink" href="#documenting-the-measurement" title="Permalink to this heading"></a></h2>
 <p>Add a new <code class="docutils literal notranslate"><span class="pre">.rst</span></code> file to <code class="docutils literal notranslate"><span class="pre">docs/source/measurements/</span></code> following the template of existing
-pages (<a class="reference internal" href="../measurements/hysteresis.html"><span class="doc">Hysteresis Loop</span></a>, <a class="reference internal" href="../measurements/pund.html"><span class="doc">Three-Pulse PUND</span></a>, etc.). Then add it to
+pages (<span class="xref std std-doc">../measurements/hysteresis</span>, <span class="xref std std-doc">../measurements/pund</span>, etc.). Then add it to
 the <code class="docutils literal notranslate"><span class="pre">Measurements</span></code> toctree in <code class="docutils literal notranslate"><span class="pre">docs/source/index.rst</span></code>.</p>
 </section>
 </section>

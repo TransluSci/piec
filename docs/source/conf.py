@@ -23,7 +23,15 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
+    'myst_parser',
+    'sphinx.ext.mathjax',
+    'sphinx_math_dollar',
 ]
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 # Show todo directives in the built docs
 todo_include_todos = True
@@ -81,6 +89,12 @@ autosummary_generate = True
 # -- HTML output
 
 html_theme = 'sphinx_rtd_theme'
+
+# html_static_path = ['_static']
+
+# html_css_files = [
+#     'custom.css',
+# ]
 
 # -- EPUB output
 

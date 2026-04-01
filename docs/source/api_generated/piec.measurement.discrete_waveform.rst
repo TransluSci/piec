@@ -4,6 +4,15 @@ piec.measurement.discrete\_waveform
 .. automodule:: piec.measurement.discrete_waveform
 
    
+   
+   
+
+   
+   
+   
+
+   
+   
    .. rubric:: Classes
 
    .. autosummary::
@@ -12,3 +21,11 @@ piec.measurement.discrete\_waveform
       HysteresisLoop
       ThreePulsePund
    
+   
+
+   
+   
+   
+
+
+

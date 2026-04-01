@@ -4,6 +4,11 @@ piec.drivers.instrument
 .. automodule:: piec.drivers.instrument
 
    
+   
+   
+
+   
+   
    .. rubric:: Functions
 
    .. autosummary::
@@ -17,6 +22,10 @@ piec.drivers.instrument
       is_value_between
       recursive_lower
    
+   
+
+   
+   
    .. rubric:: Classes
 
    .. autosummary::
@@ -25,3 +34,11 @@ piec.drivers.instrument
       Instrument
       VirtualRMInstrument
    
+   
+
+   
+   
+   
+
+
+

@@ -1,25 +1,27 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../">
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quickstart &mdash; piec 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
   
-      <script src="../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="GUIs" href="../user_guide/guis.html" />
+    <link rel="next" title="The Driver" href="../user_guide/the_driver.html" />
     <link rel="prev" title="Installation" href="installation.html" /> 
 </head>
 
@@ -34,6 +36,9 @@
           <a href="../index.html" class="icon icon-home">
             piec
           </a>
+              <div class="version">
+                0.1.2
+              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -54,19 +59,18 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/the_driver.html">The Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/finding_address.html">Finding Your Instrument’s Address</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/running_measurements.html">Running Measurements</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">AMR Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">DCIV Measurement Documentation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
 <ul>
@@ -78,7 +82,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
 </ul>
@@ -115,7 +119,7 @@
            <div itemprop="articleBody">
              
   <section id="quickstart">
-<h1>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading"></a></h1>
+<h1>Quickstart<a class="headerlink" href="#quickstart" title="Permalink to this heading"></a></h1>
 <p>This page walks you through a minimal example using PIEC’s <strong>virtual instrument mode</strong> — no
 real hardware required. You can run this example immediately after installing PIEC.</p>
 <div class="admonition note">
@@ -125,7 +129,7 @@ test and develop measurement workflows without physical hardware. See
 <a class="reference internal" href="../user_guide/finding_address.html"><span class="doc">Finding Your Instrument’s Address</span></a> for details on virtual mode.</p>
 </div>
 <section id="running-a-virtual-hysteresis-measurement">
-<h2>Running a virtual hysteresis measurement<a class="headerlink" href="#running-a-virtual-hysteresis-measurement" title="Link to this heading"></a></h2>
+<h2>Running a virtual hysteresis measurement<a class="headerlink" href="#running-a-virtual-hysteresis-measurement" title="Permalink to this heading"></a></h2>
 <div class="admonition-todo admonition" id="id1">
 <p class="admonition-title">Todo</p>
 <p>Add a self-contained virtual instrument example here that a new user can copy-paste and
@@ -139,11 +143,11 @@ run immediately after <code class="docutils literal notranslate"><span class="pr
 </div>
 </section>
 <section id="next-steps">
-<h2>Next steps<a class="headerlink" href="#next-steps" title="Link to this heading"></a></h2>
+<h2>Next steps<a class="headerlink" href="#next-steps" title="Permalink to this heading"></a></h2>
 <ul class="simple">
 <li><p>Learn about the <a class="reference internal" href="../user_guide/guis.html"><span class="doc">GUIs</span></a> for a no-code interface.</p></li>
 <li><p>Read <a class="reference internal" href="../user_guide/running_measurements.html"><span class="doc">Running Measurements</span></a> for a deeper look at how measurements work.</p></li>
-<li><p>Browse <a class="reference internal" href="../measurements/hysteresis.html"><span class="doc">Hysteresis Loop</span></a>, <a class="reference internal" href="../measurements/pund.html"><span class="doc">Three-Pulse PUND</span></a>, and other measurement
+<li><p>Browse <span class="xref std std-doc">../measurements/hysteresis</span>, <span class="xref std std-doc">../measurements/pund</span>, and other measurement
 pages for experiment-specific documentation.</p></li>
 </ul>
 </section>
@@ -154,7 +158,7 @@ pages for experiment-specific documentation.</p></li>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="../user_guide/guis.html" class="btn btn-neutral float-right" title="GUIs" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../user_guide/the_driver.html" class="btn btn-neutral float-right" title="The Driver" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

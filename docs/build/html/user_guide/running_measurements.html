@@ -1,21 +1,23 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../">
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Running Measurements &mdash; piec 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
   
-      <script src="../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -34,6 +36,9 @@
           <a href="../index.html" class="icon icon-home">
             piec
           </a>
+              <div class="version">
+                0.1.2
+              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -50,8 +55,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="jupyter_examples.html">Jupyter Notebook Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="the_driver.html">The Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="finding_address.html">Finding Your Instrument’s Address</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Running Measurements</a><ul>
@@ -60,13 +63,14 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">AMR Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">DCIV Measurement Documentation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
 <ul>
@@ -78,7 +82,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
 </ul>
@@ -115,13 +119,13 @@
            <div itemprop="articleBody">
              
   <section id="running-measurements">
-<h1>Running Measurements<a class="headerlink" href="#running-measurements" title="Link to this heading"></a></h1>
+<h1>Running Measurements<a class="headerlink" href="#running-measurements" title="Permalink to this heading"></a></h1>
 <p>PIEC organizes experiments as <strong>measurement classes</strong> — Python objects that bundle instrument
 configuration, waveform generation, and data analysis into a single
 <code class="docutils literal notranslate"><span class="pre">run_experiment()</span></code> call. This page explains the general workflow that applies to all
 measurement types.</p>
 <section id="general-workflow">
-<h2>General workflow<a class="headerlink" href="#general-workflow" title="Link to this heading"></a></h2>
+<h2>General workflow<a class="headerlink" href="#general-workflow" title="Permalink to this heading"></a></h2>
 <ol class="arabic">
 <li><p><strong>Initialize instruments</strong></p>
 <p>Import and instantiate the driver(s) your measurement requires, passing each instrument’s
@@ -174,7 +178,7 @@ how to reload and post-process data.</p>
 </ol>
 </section>
 <section id="measurement-class-structure">
-<h2>Measurement class structure<a class="headerlink" href="#measurement-class-structure" title="Link to this heading"></a></h2>
+<h2>Measurement class structure<a class="headerlink" href="#measurement-class-structure" title="Permalink to this heading"></a></h2>
 <p>All measurement classes follow the same pattern:</p>
 <dl class="simple">
 <dt><code class="docutils literal notranslate"><span class="pre">__init__(self,</span> <span class="pre">...)</span></code></dt><dd><p>Accepts instrument objects and measurement parameters. Stores them as instance attributes
@@ -191,8 +195,8 @@ physical quantities (polarization, resistance, etc.), and generates plots.</p>
 </dd>
 </dl>
 <p>For experiment-specific parameters and examples, see the individual measurement pages:
-<a class="reference internal" href="../measurements/hysteresis.html"><span class="doc">Hysteresis Loop</span></a>, <a class="reference internal" href="../measurements/pund.html"><span class="doc">Three-Pulse PUND</span></a>, <a class="reference internal" href="../measurements/amr.html"><span class="doc">Anisotropic Magnetoresistance (AMR)</span></a>,
-<a class="reference internal" href="../measurements/iv_sweep.html"><span class="doc">IV Sweep</span></a>.</p>
+<span class="xref std std-doc">../measurements/hysteresis</span>, <span class="xref std std-doc">../measurements/pund</span>, <a class="reference internal" href="../measurements/amr.html"><span class="doc">AMR Measurement Documentation</span></a>,
+<a class="reference internal" href="../measurements/iv_sweep.html"><span class="doc">DCIV Measurement Documentation</span></a>.</p>
 </section>
 </section>
 

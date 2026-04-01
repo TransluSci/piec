@@ -4,6 +4,11 @@ piec.drivers.z\_old.mccdig
 .. automodule:: piec.drivers.z_old.mccdig
 
    
+   
+   
+
+   
+   
    .. rubric:: Functions
 
    .. autosummary::
@@ -17,6 +22,10 @@ piec.drivers.z\_old.mccdig
       is_device_connected
       make_sin_wave
    
+   
+
+   
+   
    .. rubric:: Classes
 
    .. autosummary::
@@ -24,3 +33,11 @@ piec.drivers.z\_old.mccdig
       MCC_DAQ
       Waveform_holder
    
+   
+
+   
+   
+   
+
+
+

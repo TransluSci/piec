@@ -1,26 +1,28 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../">
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Jupyter Notebook Examples &mdash; piec 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
   
-      <script src="../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="The Driver" href="the_driver.html" />
-    <link rel="prev" title="GUIs" href="guis.html" /> 
+    <link rel="next" title="GUIs" href="guis.html" />
+    <link rel="prev" title="Data and Analysis" href="data_and_analysis.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -34,6 +36,9 @@
           <a href="../index.html" class="icon icon-home">
             piec
           </a>
+              <div class="version">
+                0.1.2
+              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -50,24 +55,23 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="the_driver.html">The Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="finding_address.html">Finding Your Instrument’s Address</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running_measurements.html">Running Measurements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_and_analysis.html">Data and Analysis</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Jupyter Notebook Examples</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#accessing-the-notebooks">Accessing the notebooks</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#available-notebooks">Available notebooks</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-notebooks">How to use the notebooks</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="the_driver.html">The Driver</a></li>
-<li class="toctree-l1"><a class="reference internal" href="finding_address.html">Finding Your Instrument’s Address</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running_measurements.html">Running Measurements</a></li>
-<li class="toctree-l1"><a class="reference internal" href="data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">AMR Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">DCIV Measurement Documentation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
 <ul>
@@ -79,7 +83,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
 </ul>
@@ -116,12 +120,12 @@
            <div itemprop="articleBody">
              
   <section id="jupyter-notebook-examples">
-<h1>Jupyter Notebook Examples<a class="headerlink" href="#jupyter-notebook-examples" title="Link to this heading"></a></h1>
+<h1>Jupyter Notebook Examples<a class="headerlink" href="#jupyter-notebook-examples" title="Permalink to this heading"></a></h1>
 <p>PIEC ships with a collection of Jupyter notebooks that demonstrate how to set up instruments,
 configure measurements, run experiments, and analyze data. Notebooks offer more flexibility
 than the GUIs and are a good starting point for custom experiment workflows.</p>
 <section id="accessing-the-notebooks">
-<h2>Accessing the notebooks<a class="headerlink" href="#accessing-the-notebooks" title="Link to this heading"></a></h2>
+<h2>Accessing the notebooks<a class="headerlink" href="#accessing-the-notebooks" title="Permalink to this heading"></a></h2>
 <p>Notebooks are located in the <code class="docutils literal notranslate"><span class="pre">notebooks/</span></code> directory of the repository. To open them:</p>
 <ol class="arabic">
 <li><p>Install Jupyter Lab if you haven’t already:</p>
@@ -142,7 +146,7 @@ than the GUIs and are a good starting point for custom experiment workflows.</p>
 </div>
 </section>
 <section id="available-notebooks">
-<h2>Available notebooks<a class="headerlink" href="#available-notebooks" title="Link to this heading"></a></h2>
+<h2>Available notebooks<a class="headerlink" href="#available-notebooks" title="Permalink to this heading"></a></h2>
 <ul class="simple">
 <li><p><strong>FE_testing.ipynb</strong> — Demonstrates hysteresis loop and PUND measurements on a ferroelectric
 device.</p></li>
@@ -158,7 +162,7 @@ versions (e.g., on GitHub or nbviewer) where possible.</p>
 </div>
 </section>
 <section id="how-to-use-the-notebooks">
-<h2>How to use the notebooks<a class="headerlink" href="#how-to-use-the-notebooks" title="Link to this heading"></a></h2>
+<h2>How to use the notebooks<a class="headerlink" href="#how-to-use-the-notebooks" title="Permalink to this heading"></a></h2>
 <p>Each notebook is self-contained and includes comments explaining each step. The general
 pattern is:</p>
 <ol class="arabic simple">
@@ -175,8 +179,8 @@ pattern is:</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="guis.html" class="btn btn-neutral float-left" title="GUIs" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="the_driver.html" class="btn btn-neutral float-right" title="The Driver" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="data_and_analysis.html" class="btn btn-neutral float-left" title="Data and Analysis" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="guis.html" class="btn btn-neutral float-right" title="GUIs" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

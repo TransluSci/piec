@@ -38,6 +38,7 @@ Available notebooks
 
 * **Arduino_Stepper_Example.ipynb** — Shows how to interface with an Arduino for stepper motor
   control.
+
 .. todo::
    Add remaining notebooks with brief descriptions as they are created. Link to rendered
    versions (e.g., on GitHub or nbviewer) where possible.

@@ -1,21 +1,23 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../">
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Finding Your Instrument’s Address &mdash; piec 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
   
-      <script src="../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -34,6 +36,9 @@
           <a href="../index.html" class="icon icon-home">
             piec
           </a>
+              <div class="version">
+                0.1.2
+              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -50,8 +55,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="jupyter_examples.html">Jupyter Notebook Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="the_driver.html">The Driver</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Finding Your Instrument’s Address</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#listing-available-instruments">Listing available instruments</a></li>
@@ -62,13 +65,14 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="running_measurements.html">Running Measurements</a></li>
 <li class="toctree-l1"><a class="reference internal" href="data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guis.html">GUIs</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">AMR Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">DCIV Measurement Documentation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
 <ul>
@@ -80,7 +84,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
 </ul>
@@ -117,13 +121,13 @@
            <div itemprop="articleBody">
              
   <section id="finding-your-instrument-s-address">
-<h1>Finding Your Instrument’s Address<a class="headerlink" href="#finding-your-instrument-s-address" title="Link to this heading"></a></h1>
+<h1>Finding Your Instrument’s Address<a class="headerlink" href="#finding-your-instrument-s-address" title="Permalink to this heading"></a></h1>
 <p>Before connecting to an instrument, you need its <strong>VISA resource string</strong> (also called its
 address). This is a string like <code class="docutils literal notranslate"><span class="pre">'GPIB0::7::INSTR'</span></code> or
 <code class="docutils literal notranslate"><span class="pre">'USB0::0x0958::0x17A7::MY62080068::0::INSTR'</span></code> that uniquely identifies the instrument on
 your computer.</p>
 <section id="listing-available-instruments">
-<h2>Listing available instruments<a class="headerlink" href="#listing-available-instruments" title="Link to this heading"></a></h2>
+<h2>Listing available instruments<a class="headerlink" href="#listing-available-instruments" title="Permalink to this heading"></a></h2>
 <p>Use pyvisa (installed automatically with PIEC) to scan for connected instruments:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pyvisa</span> <span class="kn">import</span> <span class="n">ResourceManager</span>
 
@@ -138,19 +142,19 @@ instrument by its GPIB address (set on the instrument’s front panel) or by its
 product ID.</p>
 </section>
 <section id="gpib-addresses">
-<h2>GPIB addresses<a class="headerlink" href="#gpib-addresses" title="Link to this heading"></a></h2>
+<h2>GPIB addresses<a class="headerlink" href="#gpib-addresses" title="Permalink to this heading"></a></h2>
 <p>For GPIB instruments, the address takes the form <code class="docutils literal notranslate"><span class="pre">GPIB&lt;bus&gt;::&lt;primary_address&gt;::INSTR</span></code>.
 The primary address (e.g., <code class="docutils literal notranslate"><span class="pre">7</span></code>) is configured on the instrument itself — check the front
 panel menu or the instrument manual.</p>
 </section>
 <section id="usb-addresses">
-<h2>USB addresses<a class="headerlink" href="#usb-addresses" title="Link to this heading"></a></h2>
+<h2>USB addresses<a class="headerlink" href="#usb-addresses" title="Permalink to this heading"></a></h2>
 <p>USB instrument addresses are determined automatically by pyvisa. The vendor ID (e.g.,
 <code class="docutils literal notranslate"><span class="pre">0x0958</span></code>) and product ID identify the manufacturer and model; the serial number
 (e.g., <code class="docutils literal notranslate"><span class="pre">MY62080068</span></code>) uniquely identifies the specific unit.</p>
 </section>
 <section id="virtual-mode">
-<h2>Virtual mode<a class="headerlink" href="#virtual-mode" title="Link to this heading"></a></h2>
+<h2>Virtual mode<a class="headerlink" href="#virtual-mode" title="Permalink to this heading"></a></h2>
 <p>PIEC drivers support a <strong>virtual mode</strong> that simulates instrument responses without any
 physical hardware. This is useful for developing and testing measurement workflows offline.</p>
 <p>To use virtual mode, pass <code class="docutils literal notranslate"><span class="pre">'virtual'</span></code> as the address when instantiating a driver:</p>

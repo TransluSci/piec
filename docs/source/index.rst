@@ -27,10 +27,9 @@ that enables scientists to quickly test and build new experimental setups.
    :maxdepth: 2
    :caption: Measurements
 
-   measurements/hysteresis
-   measurements/pund
-   measurements/iv_sweep
    measurements/amr
+   measurements/ferroelectric
+   measurements/iv_sweep
 
 .. toctree::
    :maxdepth: 2

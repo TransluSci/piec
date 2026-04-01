@@ -4,12 +4,30 @@
 .. automodule:: piec.analysis
 
    
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+
 .. rubric:: Modules
 
 .. autosummary::
    :toctree:
    :recursive:
 
-   hysteresis
-   pund
-   utilities
+   piec.analysis.hysteresis
+   piec.analysis.pund
+   piec.analysis.utilities
+

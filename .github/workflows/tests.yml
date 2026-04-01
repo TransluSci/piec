@@ -1,0 +1,52 @@
+# .github/workflows/tests.yml
+#
+# Runs the piec test suite automatically on every pull request and every push
+# to the master branch. 
+
+name: Tests
+
+on:
+  # Run on every pull request targeting master
+  pull_request:
+    branches: [master]
+  # Also run on direct pushes to master
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    # Use the latest Ubuntu runner
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        # Test against the minimum supported version and the latest stable release
+        python-version: ["3.9", "3.11"]
+
+    steps:
+      # 1. Check out the repository code
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # 2. Set up the requested Python version
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # 3. Upgrade pip
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # 4. Install the package
+      - name: Install piec and test dependencies
+        run: |
+          pip install pytest
+          pip install -e . --no-deps
+          pip install pandas numpy matplotlib scipy pyvisa PyVISA-py IPython
+
+      # 5. Run the full test suite
+      - name: Run tests
+        env:
+          MPLBACKEND: Agg
+        run: pytest tests/ -v --tb=short

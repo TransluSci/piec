@@ -1,21 +1,23 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../">
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>piec.drivers.z_old &mdash; piec 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
   
-      <script src="../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=e031e9a9"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -34,6 +36,9 @@
           <a href="../index.html" class="icon icon-home">
             piec
           </a>
+              <div class="version">
+                0.1.2
+              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -44,25 +49,24 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is piec?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/what_is_piec.html">What is PIEC?</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../getting_started/installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../getting_started/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/the_driver.html">The Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/finding_address.html">Finding Your Instrument’s Address</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/running_measurements.html">Running Measurements</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/data_and_analysis.html">Data and Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/jupyter_examples.html">Jupyter Notebook Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/guis.html">GUIs</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Measurements</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/hysteresis.html">Hysteresis Loop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/pund.html">Three-Pulse PUND</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">IV Sweep</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">Anisotropic Magnetoresistance (AMR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/amr.html">AMR Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/ferroelectric.html">Ferroelectric Measurement Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../measurements/iv_sweep.html">DCIV Measurement Documentation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Supported Instruments</span></p>
 <ul>
@@ -107,7 +111,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to piec</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing to PIEC</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_driver.html">Adding a Driver</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/adding_measurement.html">Adding a Measurement</a></li>
 </ul>
@@ -146,7 +150,7 @@
            <div itemprop="articleBody">
              
   <section id="module-piec.drivers.z_old">
-<span id="piec-drivers-z-old"></span><h1>piec.drivers.z_old<a class="headerlink" href="#module-piec.drivers.z_old" title="Link to this heading"></a></h1>
+<span id="piec-drivers-z-old"></span><h1>piec.drivers.z_old<a class="headerlink" href="#module-piec.drivers.z_old" title="Permalink to this heading"></a></h1>
 <p>from .instrument import *
 from .scpi_instrument import *
 from .arduino import *
@@ -154,22 +158,22 @@ from .mccdig import *</p>
 <p class="rubric">Modules</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="piec.drivers.z_old.arduino.html#module-piec.drivers.z_old.arduino" title="piec.drivers.z_old.arduino"><code class="xref py py-obj docutils literal notranslate"><span class="pre">arduino</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="piec.drivers.z_old.arduino.html#module-piec.drivers.z_old.arduino" title="piec.drivers.z_old.arduino"><code class="xref py py-obj docutils literal notranslate"><span class="pre">piec.drivers.z_old.arduino</span></code></a></p></td>
 <td><p>Set's up the arduino instrument class that all arduino instruments will inherit basic functionlity from.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="piec.drivers.z_old.edc522.html#module-piec.drivers.z_old.edc522" title="piec.drivers.z_old.edc522"><code class="xref py py-obj docutils literal notranslate"><span class="pre">edc522</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="piec.drivers.z_old.edc522.html#module-piec.drivers.z_old.edc522" title="piec.drivers.z_old.edc522"><code class="xref py py-obj docutils literal notranslate"><span class="pre">piec.drivers.z_old.edc522</span></code></a></p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="piec.drivers.z_old.instrument.html#module-piec.drivers.z_old.instrument" title="piec.drivers.z_old.instrument"><code class="xref py py-obj docutils literal notranslate"><span class="pre">instrument</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="piec.drivers.z_old.instrument.html#module-piec.drivers.z_old.instrument" title="piec.drivers.z_old.instrument"><code class="xref py py-obj docutils literal notranslate"><span class="pre">piec.drivers.z_old.instrument</span></code></a></p></td>
 <td><p>This is the top level instrument that dictates if something is scpi, dac, arduino, etc.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="piec.drivers.z_old.keithley193a.html#module-piec.drivers.z_old.keithley193a" title="piec.drivers.z_old.keithley193a"><code class="xref py py-obj docutils literal notranslate"><span class="pre">keithley193a</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="piec.drivers.z_old.keithley193a.html#module-piec.drivers.z_old.keithley193a" title="piec.drivers.z_old.keithley193a"><code class="xref py py-obj docutils literal notranslate"><span class="pre">piec.drivers.z_old.keithley193a</span></code></a></p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="piec.drivers.z_old.mccdig.html#module-piec.drivers.z_old.mccdig" title="piec.drivers.z_old.mccdig"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mccdig</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="piec.drivers.z_old.mccdig.html#module-piec.drivers.z_old.mccdig" title="piec.drivers.z_old.mccdig"><code class="xref py py-obj docutils literal notranslate"><span class="pre">piec.drivers.z_old.mccdig</span></code></a></p></td>
 <td><p>Set's up the digilent instrument class that uses wrappers to the mcculw library Realistically this should be setup like the SCPI classes and then you have subclasses for the DAQ model.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="piec.drivers.z_old.utilities.html#module-piec.drivers.z_old.utilities" title="piec.drivers.z_old.utilities"><code class="xref py py-obj docutils literal notranslate"><span class="pre">utilities</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="piec.drivers.z_old.utilities.html#module-piec.drivers.z_old.utilities" title="piec.drivers.z_old.utilities"><code class="xref py py-obj docutils literal notranslate"><span class="pre">piec.drivers.z_old.utilities</span></code></a></p></td>
 <td><p>This is a temp thing to override ResourceManager</p></td>
 </tr>
 </tbody>
