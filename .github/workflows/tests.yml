@@ -7,11 +7,10 @@ name: Tests
 
 on:
   # Run on every pull request targeting master
-  pull_request:
-    branches: [master]
+  # pull_request:
+  #   branches: [master]
   # Also run on direct pushes to master
-  push:
-    branches: [docs-branch]
+  [push]
 
 jobs:
   test:
