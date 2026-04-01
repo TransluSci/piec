@@ -188,3 +188,42 @@ class TektronixTDS2000(Oscilloscope, Scpi):
         data_time = [i * xincr + xzero for i in range(len(raw_data))]
         
         return pd.DataFrame({'Time': data_time, 'Voltage': data_volts})
+
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine.
+        Tektronix TDS2000: MEASUrement:IMMed:SOUrce CH{ch}; TYPe {type}; VALue?
+        """
+        MEAS_MAP = {
+            'VPP': 'PK2pk', 'VMAX': 'MAXImum', 'VMIN': 'MINImum', 'VRMS': 'RMS',
+            'FREQ': 'FREQuency', 'PERIOD': 'PERIod', 'RISE': 'RISe',
+            'FALL': 'FALL', 'PWIDTH': 'PWIdth', 'NWIDTH': 'NWIdth',
+            'DUTYCYCLE': 'PDUty', 'AMPLITUDE': 'AMPlitude'
+        }
+        meas = MEAS_MAP.get(measurement_type.upper(), measurement_type)
+        self.instrument.write(f"MEASUrement:IMMed:SOUrce CH{channel}")
+        self.instrument.write(f"MEASUrement:IMMed:TYPe {meas}")
+        result = self.instrument.query("MEASUrement:IMMed:VALue?")
+        return float(result)
+
+    def screenshot(self):
+        """
+        Captures the current display as a PNG image.
+        Tektronix TDS2000: HARDCopy format BMP, converted to PNG.
+        returns:
+            (bytes): PNG image data
+        """
+        from io import BytesIO
+        try:
+            from PIL import Image
+        except ImportError:
+            print("screenshot() requires Pillow for BMP→PNG conversion. Install with: pip install Pillow")
+            return None
+        self.instrument.write("HARDCopy:FORMat BMP")
+        self.instrument.write("HARDCopy:PORT GPI")
+        raw = self.instrument.query_binary_values("HARDCopy STARt", datatype='B')
+        bmp_data = bytes(raw)
+        img = Image.open(BytesIO(bmp_data))
+        png_buffer = BytesIO()
+        img.save(png_buffer, format='PNG')
+        return png_buffer.getvalue()

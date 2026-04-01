@@ -1,7 +1,7 @@
 """
 An awg (arbitrary waveform generator) is defined as an instrument that has the typical features on expects an awg to have
 """
-from ..instrument import Instrument
+from ..instrument import Instrument, optional
 
 class Awg(Instrument):
     # Class attributes for parameter restrictions
@@ -24,6 +24,13 @@ class Awg(Instrument):
     trigger_mode = ["EDGE", "LEV"] #[EDGE (edge), LEV (level)]
     slew_rate = None #useful information about the instrument, but need not be implemented
     arb_data_range = (None, None) #range of data points for arbitrary waveform generation
+
+    # --- Optional feature class attributes ---
+    burst_mode = ['TRIG', 'GAT', 'INF']
+    burst_count = (None, None)
+    phase = (0, 360)
+    sweep_mode = ['LIN', 'LOG']
+    modulation_type = ['AM', 'FM', 'PM', 'FSK', 'PWM']
 
 
     """
@@ -275,3 +282,160 @@ class Awg(Instrument):
             """
             Outputs the trigger signal for the awg. This is typically used to synchronize the output of the awg with other instruments or systems. Typically the same as manually triggering the awg from the front panel.
             """
+
+    # --- Optional Features ---
+    # These are features that not all AWGs support.
+    # If a driver does not override these, they will gracefully skip.
+
+    @optional
+    def set_burst_mode(self, channel, burst_mode):
+        """
+        Sets the burst mode type.
+        args:
+            channel (int): The channel
+            burst_mode (str): 'TRIG' (N-cycle on trigger), 'GAT' (gated), 'INF' (infinite)
+        """
+
+    @optional
+    def set_burst_count(self, channel, burst_count):
+        """
+        Sets the number of waveform cycles per burst trigger.
+        args:
+            channel (int): The channel
+            burst_count (int): Number of cycles per burst
+        """
+
+    @optional
+    def configure_burst(self, channel, burst_mode=None, burst_count=None):
+        """
+        Configures burst mode. Calls set_burst_mode and set_burst_count.
+        args:
+            channel (int): The channel
+            burst_mode (str): 'TRIG', 'GAT', or 'INF'
+            burst_count (int): Number of cycles per burst
+        """
+        if burst_mode is not None:
+            self.set_burst_mode(channel, burst_mode)
+        if burst_count is not None:
+            self.set_burst_count(channel, burst_count)
+
+    @optional
+    def set_phase(self, channel, phase):
+        """
+        Sets the phase offset of the waveform on the selected channel.
+        args:
+            channel (int): The channel
+            phase (float): Phase offset in degrees (0-360)
+        """
+
+    @optional
+    def set_sweep_mode(self, channel, sweep_mode):
+        """
+        Sets the sweep type (linear or logarithmic).
+        args:
+            channel (int): The channel
+            sweep_mode (str): 'LIN' or 'LOG'
+        """
+
+    @optional
+    def set_sweep_start_freq(self, channel, start_freq):
+        """
+        Sets the sweep start frequency.
+        args:
+            channel (int): The channel
+            start_freq (float): Start frequency in Hz
+        """
+
+    @optional
+    def set_sweep_stop_freq(self, channel, stop_freq):
+        """
+        Sets the sweep stop frequency.
+        args:
+            channel (int): The channel
+            stop_freq (float): Stop frequency in Hz
+        """
+
+    @optional
+    def set_sweep_time(self, channel, sweep_time):
+        """
+        Sets the sweep duration.
+        args:
+            channel (int): The channel
+            sweep_time (float): Sweep time in seconds
+        """
+
+    @optional
+    def configure_sweep(self, channel, sweep_mode=None, start_freq=None, stop_freq=None, sweep_time=None):
+        """
+        Configures frequency sweep. Calls individual set_ methods.
+        args:
+            channel (int): The channel
+            sweep_mode (str): 'LIN' or 'LOG'
+            start_freq (float): Start frequency in Hz
+            stop_freq (float): Stop frequency in Hz
+            sweep_time (float): Sweep time in seconds
+        """
+        if sweep_mode is not None:
+            self.set_sweep_mode(channel, sweep_mode)
+        if start_freq is not None:
+            self.set_sweep_start_freq(channel, start_freq)
+        if stop_freq is not None:
+            self.set_sweep_stop_freq(channel, stop_freq)
+        if sweep_time is not None:
+            self.set_sweep_time(channel, sweep_time)
+
+    @optional
+    def set_modulation_type(self, channel, mod_type):
+        """
+        Sets the modulation type.
+        args:
+            channel (int): The channel
+            mod_type (str): 'AM', 'FM', 'PM', 'FSK', 'PWM'
+        """
+
+    @optional
+    def set_modulation_depth(self, channel, depth):
+        """
+        Sets the modulation depth/deviation.
+        args:
+            channel (int): The channel
+            depth (float): Modulation depth (AM: 0-100%, FM: deviation in Hz)
+        """
+
+    @optional
+    def set_modulation_frequency(self, channel, frequency):
+        """
+        Sets the modulating signal frequency.
+        args:
+            channel (int): The channel
+            frequency (float): Internal modulation frequency in Hz
+        """
+
+    @optional
+    def set_modulation_source(self, channel, source):
+        """
+        Sets the modulation source.
+        args:
+            channel (int): The channel
+            source (str): 'INT' or 'EXT'
+        """
+
+    @optional
+    def configure_modulation(self, channel, mod_type=None, depth=None, frequency=None, source=None):
+        """
+        Configures modulation. Calls individual set_ methods.
+        args:
+            channel (int): The channel
+            mod_type (str): 'AM', 'FM', 'PM', 'FSK', 'PWM'
+            depth (float): Modulation depth/deviation
+            frequency (float): Modulation frequency in Hz
+            source (str): 'INT' or 'EXT'
+        """
+        if mod_type is not None:
+            self.set_modulation_type(channel, mod_type)
+        if depth is not None:
+            self.set_modulation_depth(channel, depth)
+        if frequency is not None:
+            self.set_modulation_frequency(channel, frequency)
+        if source is not None:
+            self.set_modulation_source(channel, source)

@@ -185,3 +185,28 @@ class RigolDS1000Z(Oscilloscope, Scpi):
         data_time = [i * xinc + xorig for i in range(len(raw_data))]
         
         return pd.DataFrame({'Time': data_time, 'Voltage': data_volts})
+
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine.
+        Rigol DS1000Z SCPI: :MEASure:ITEM? {type},CHANnel{ch}
+        """
+        MEAS_MAP = {
+            'VPP': 'VPP', 'VMAX': 'VMAX', 'VMIN': 'VMIN', 'VRMS': 'VRMS',
+            'FREQ': 'FREQ', 'PERIOD': 'PER', 'RISE': 'RTIMe',
+            'FALL': 'FTIMe', 'PWIDTH': 'PWIDth', 'NWIDTH': 'NWIDth',
+            'DUTYCYCLE': 'PDUTy', 'AMPLITUDE': 'VAMP'
+        }
+        meas = MEAS_MAP.get(measurement_type.upper(), measurement_type)
+        result = self.instrument.query(f":MEASure:ITEM? {meas},CHANnel{channel}")
+        return float(result)
+
+    def screenshot(self):
+        """
+        Captures the current display as a PNG image.
+        Rigol DS1000Z: :DISPlay:DATA? ON,OFF,PNG
+        returns:
+            (bytes): PNG image data
+        """
+        raw = self.instrument.query_binary_values(":DISPlay:DATA? ON,OFF,PNG", datatype='B')
+        return bytes(raw)

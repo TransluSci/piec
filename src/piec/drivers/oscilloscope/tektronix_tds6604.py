@@ -6,7 +6,6 @@ from ..scpi import Scpi
 class TDS6604(Oscilloscope, Scpi):
     """
     Tektronix TDS6604 Oscilloscope
-    Note: The CH<x>:BANDWIDTH SCPI command was removed as it does not exist in the generic Oscilloscope parent interface.
     """
     
     AUTODETECT_ID = "TDS6604"
@@ -32,6 +31,9 @@ class TDS6604(Oscilloscope, Scpi):
     
     acquisition_mode = ["SAMPLE", "AVERAGE", "PEAKDETECT", "ENVELOPE"]
     acquisition_points = None
+
+    # Child-specific class attributes (auto-optional — not in parent Oscilloscope)
+    bandwidth = ["FULL", 20e6, 250e6]  # FULL=6GHz, 20e6=20MHz, 250e6=250MHz
 
     def autoscale(self):
         """Autoscales the oscilloscope"""
@@ -69,6 +71,21 @@ class TDS6604(Oscilloscope, Scpi):
             self.instrument.write(f"CH{channel}:IMPedance ONEMEG")
         else:
             self.instrument.write(f"CH{channel}:IMPedance {channel_impedance}")
+
+    def set_channel_bandwidth(self, channel, bandwidth):
+        """
+        Sets the bandwidth limit for the specified channel.
+        
+        This is a TDS6604-specific method (auto-optional). If measurement code
+        calls this on a scope that doesn't support it, it will be skipped.
+        
+        args:
+            channel (int): The channel to set the bandwidth on
+            bandwidth: The bandwidth setting — 'FULL' (6GHz), 20 (20MHz), or 250 (250MHz)
+        """
+        BANDWIDTH_MAP = {20e6: 'TWEnty', 250e6: 'TWOfifty', 'FULL': 'FULl'}
+        bw = BANDWIDTH_MAP.get(bandwidth, bandwidth)
+        self.instrument.write(f"CH{channel}:BANdwidth {bw}")
 
     def set_horizontal_scale(self, tdiv=None, x_range=None):
         """Sets the timebase in either time/division or in absolute range"""
@@ -198,3 +215,42 @@ class TDS6604(Oscilloscope, Scpi):
         df['Time'] = time_array
         df[f'Voltage_CH{ch}'] = voltage
         return df
+    
+    def get_measurement(self, channel, measurement_type):
+        """
+        Uses the scope's built-in measurement engine.
+        Tektronix TDS6604: MEASUrement:IMMed:SOUrce CH{ch}; TYPe {type}; VALue?
+        """
+        MEAS_MAP = {
+            'VPP': 'PK2pk', 'VMAX': 'MAXImum', 'VMIN': 'MINImum', 'VRMS': 'RMS',
+            'FREQ': 'FREQuency', 'PERIOD': 'PERIod', 'RISE': 'RISe',
+            'FALL': 'FALL', 'PWIDTH': 'PWIdth', 'NWIDTH': 'NWIdth',
+            'DUTYCYCLE': 'PDUty', 'AMPLITUDE': 'AMPlitude'
+        }
+        meas = MEAS_MAP.get(measurement_type.upper(), measurement_type)
+        self.instrument.write(f"MEASUrement:IMMed:SOUrce CH{channel}")
+        self.instrument.write(f"MEASUrement:IMMed:TYPe {meas}")
+        result = self.instrument.query("MEASUrement:IMMed:VALue?")
+        return float(result)
+
+    def screenshot(self):
+        """
+        Captures the current display as a PNG image.
+        Tektronix TDS6604: EXPort format BMP, read via FILESystem.
+        returns:
+            (bytes): PNG image data
+        """
+        from io import BytesIO
+        try:
+            from PIL import Image
+        except ImportError:
+            print("screenshot() requires Pillow for BMP→PNG conversion. Install with: pip install Pillow")
+            return None
+        self.instrument.write("HARDCopy:FORMat BMP")
+        self.instrument.write("HARDCopy:PORT GPI")
+        raw = self.instrument.query_binary_values("HARDCopy STARt", datatype='B')
+        bmp_data = bytes(raw)
+        img = Image.open(BytesIO(bmp_data))
+        png_buffer = BytesIO()
+        img.save(png_buffer, format='PNG')
+        return png_buffer.getvalue()

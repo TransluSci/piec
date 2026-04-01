@@ -3,7 +3,7 @@ This is an outline for what the sourcemeter.py file should be like.
 
 A sourcemeter is defined as an instrument that has the typical features one expects a sourcemeter to have
 """
-from ..instrument import Instrument
+from ..instrument import Instrument, optional
 
 class Sourcemeter(Instrument):
     # Class attributes defining the "contract" for any implementing class.
@@ -142,5 +142,39 @@ class Sourcemeter(Instrument):
             channel (int): The channel to read from. Default is 1.
         returns:
             (float): The measured current in Amps.
+        """
+
+    # --- Optional Features ---
+    # These are features that not all sourcemeters support.
+    # If a driver does not override these, they will gracefully skip.
+
+    @optional
+    def run_voltage_sweep(self, start, stop, steps, current_compliance, delay=0):
+        """
+        Executes a hardware-controlled voltage sweep and returns results.
+        The instrument performs the entire sweep internally at hardware speed.
+        args:
+            start (float): Start voltage in V
+            stop (float): Stop voltage in V
+            steps (int): Number of measurement points
+            current_compliance (float): Current compliance in A
+            delay (float): Delay between points in seconds (default: 0)
+        returns:
+            (DataFrame): Pandas DataFrame with 'Voltage' and 'Current' columns
+        """
+
+    @optional
+    def run_current_sweep(self, start, stop, steps, voltage_compliance, delay=0):
+        """
+        Executes a hardware-controlled current sweep and returns results.
+        The instrument performs the entire sweep internally at hardware speed.
+        args:
+            start (float): Start current in A
+            stop (float): Stop current in A
+            steps (int): Number of measurement points
+            voltage_compliance (float): Voltage compliance in V
+            delay (float): Delay between points in seconds (default: 0)
+        returns:
+            (DataFrame): Pandas DataFrame with 'Voltage' and 'Current' columns
         """
 

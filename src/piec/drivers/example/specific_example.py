@@ -6,81 +6,111 @@ It explains the purpose of each key component required for the autodetect system
 # --- 1. IMPORT STATEMENTS ---
 # Import the base classes that your driver will inherit from.
 # - The first import should be the generic instrument type (e.g., Awg, Oscilloscope).
-# - The second import should be the communication protocol class (e.g., Scpi).
+# - The second import should be (if applicable) convenience classes (e.g., Scpi).
 # Using relative imports (like . and ..) is standard practice within a package.
-import numpy as np
 from .example import Example
 from ..scpi import Scpi #in the case that the instrument is SCPI based, includes all base SCPI commands
 
-"""
-below is shown an example of an awg, like the 81150a from Keysight
-"""
 # --- 2. CLASS DEFINITION ---
-# The class name should be descriptive and unique.
+# The class name should be descriptive and unique (typically the model of the instrument).
 # It must inherit from the appropriate base classes imported above.
-class AnnotatedAwgDriver(Example, Scpi):
+class SpecificExample(Example, Scpi):
     """
-    This is the main docstring for your driver.
-    Explain what the instrument is and any key details about the driver's implementation.
+    This is an example of a specific instrument driver that implements 
+    the generic Example interface. 
+    It represents a hypothetical "Generic Instrument Model X".
     """
 
     # --- 3. AUTODETECT IDENTIFIER ---
-    # This is the most important attribute for the autodetect system.
-    # The `autodetect_instrument` function will look for this class attribute.
-    # It must contain a unique string (or list of strings) that is present
-    # in the instrument's response to the '*IDN?' query.
-
-    # Option A: For a driver that controls a single instrument model.
-    # AUTODETECT_ID = "81150A"
-
-    # Option B: For a driver that can control multiple, similar models.
-    # The autodetect system is smart enough to handle a list of strings.
-    AUTODETECT_ID = ["81150A", "33522B", "33622A"]
+    AUTODETECT_ID = "GENERIC_MODEL_X"
 
 
-    # --- 4. INSTRUMENT PARAMETERS (Optional but Recommended) ---
-    # It is good practice to define the known limits and capabilities of the
-    # instrument as class attributes. This provides a quick reference and can
-    # be used for input validation.
+    # --- 4. INSTRUMENT CAPABILITIES & LIMITS ---
+    # Define the specific boundaries for this model.
     channel = [1, 2]
-    waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    frequency_range = (1e-6, 240e6) # in Hz
-    amplitude_range = (0, 5)      # in Volts peak-to-peak
+    mode = ['CONSTANT', 'SWEEP']
+    voltage = (0.0, 5.0) 
+    
+    # Example of a dependent attribute:
+    # The valid range of 'current' depends on the value of 'mode'.
+    current = {
+        'mode': {
+            'CONSTANT': (0.0, 0.5), # 500mA limit in constant mode
+            'SWEEP': (0.0, 0.2)     # 200mA limit in sweep mode
+        }
+    }
 
 
-    # --- 5. INITIALIZATION METHOD ---
-    # The __init__ method is what gets called when a connection is successful.
-    # For SCPI instruments, it's standard to call the parent class's __init__
-    # which handles the VISA connection setup.
+    # --- 5. INITIALIZATION ---
+    # The __init__ method is where you perform any setup required immediately 
+    # after the connection is established.
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # 1. SYNC INITIAL STATE
+        # Upon connection, all tracked attributes ('self._current_') are None by default.
+        # Professional drivers can query the hardware now so that initial 
+        # dependent parameter checks or model-specific logic don't fail.
+        try:
+            # Hypothetical query for the current mode
+            initial_mode = self.instrument.query(":SOUR:MODE?")
+            self._current_mode = initial_mode.strip().lower()
+        except Exception:
+            self._current_mode = 'CONSTANT'
+
+        # 2. COMMAND MAPPING
+        # If an instrument uses integer codes (0, 1, 2) instead of strings 
+        # ('CONSTANT', 'SWEEP'), it is best practice to create a mapping 
+        # dict here to avoid hard-coding numbers in your methods.
+        self._mode_map = {'constant': 0, 'sweep': 1}
 
 
-    # --- 6. DRIVER-SPECIFIC METHODS ---
-    # These are the methods that implement the instrument's specific commands.
-    # They should use the `self.instrument` object (created by the parent class)
-    # to send and receive data.
-    #THESE ARE TAKEN FROM THE PARENT CLASS AND WE OVERRIED THEM HERE WITH ACTUAL IMPLEMENTATIONS
+    # --- 6. IMPLEMENTED METHODS ---
 
-    def output(self, channel, on=True):
+    def set_voltage(self, channel, voltage):
         """
-        Turns the output of a specified channel on or off.
+        Sets the voltage.
         """
-        # Validate the channel input against the class attribute.
-        if channel not in self.channel:
-            raise ValueError(f"Invalid channel. Must be one of {self.channel}")
+        self.instrument.write(f":SOUR{channel}:VOLT {voltage}")
 
-        if on:
-            self.instrument.write(f":OUTP{channel} ON")
-        else:
-            self.instrument.write(f":OUTP{channel} OFF")
-
-    def set_frequency(self, channel, frequency):
+    def set_mode(self, channel, mode):
         """
-        Sets the frequency for the specified channel.
+        Sets the operating mode.
         """
-        # Validate the frequency input against the class attribute.
-        if not (self.frequency_range[0] <= frequency <= self.frequency_range[1]):
-            raise ValueError(f"Frequency out of range. Must be between {self.frequency_range}")
+        code = self._mode_map[mode.lower()]
+        self.instrument.write(f":SOUR{channel}:MODE {code}")
 
-        self.instrument.write(f":FREQ{channel} {frequency}")
+    def configure_instrument(self, channel, voltage=None, mode=None):
+        """
+        Wrapper example. Calls parent logic or implements specific wrapping.
+        """
+        super().configure_instrument(channel, voltage=voltage, mode=mode)
 
-    # ... Add as many other methods as needed to control the instrument ...
+    def get_voltage(self, channel):
+        """
+        Retrieves a single scalar measurement.
+        """
+        response = self.instrument.query(f":MEAS{channel}:VOLT?")
+        return float(response)
+
+    # --- 7. CHILD-SPECIFIC (AUTO-OPTIONAL) METHODS ---
+    # Methods not in the parent class are automatically optional.
+
+    def read_waveform(self, channel):
+        """
+        Retrieves formatted waveform data (pandas.DataFrame).
+        """
+        # Example: Query the hardware for a comma-separated list of points
+        response = self.instrument.query(f":WAV:DATA? {channel}")
+        data = [float(x) for x in response.split(',')]
+        return pd.DataFrame({'Voltage': data})
+
+    # Note: 'set_optional' from the Example interface is NOT implemented here 
+    # to demonstrate that Level 3 drivers can choose to ignore @optional stubs.
+
+    def quick_read(self, channel):
+        """
+        A specific convenience function.
+        """
+        # Example: Query the hardware cursor value
+        return float(self.instrument.query(":MEAS:CURS?"))

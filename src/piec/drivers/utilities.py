@@ -94,3 +94,159 @@ def list_mcc_resources():
     except Exception as e:
         # Catch any other UL errors
         return []
+
+
+def _probe_scpi(address, verbose=False):
+    """
+    Opens a temporary VISA connection and probes for an IDN string.
+
+    Tries *IDN?, then ID?, then ? (EDC-522 fallback).
+    Returns the IDN string or an empty string on failure.
+    Closes the connection before returning.
+
+    Args:
+        address (str): The VISA resource address string.
+        verbose (bool): If True, prints debug information.
+
+    Returns:
+        str: The IDN response, or '' if probing failed.
+    """
+    import pyvisa
+    rm = None
+    inst = None
+    try:
+        rm = pyvisa.ResourceManager()
+        inst = rm.open_resource(address)
+
+        def _query(cmd):
+            try:
+                res = inst.query(cmd).strip()
+                # Echo handling: some instruments echo the command back
+                if cmd in res:
+                    res = inst.read().strip()
+                return res
+            except Exception:
+                return ""
+
+        idn = _query("*IDN?")
+        if not idn or idn.isdigit() or idn == "0":
+            idn = _query("ID?")
+
+        # EDC-522 fallback: status probe
+        if not idn or idn.isdigit() or idn == "0":
+            status = _query("?")
+            if status and any(x in status.upper() for x in ["NOTHING WRONG", "NOT PROGRAMMED", "DATA ERROR", "OVERLOAD"]):
+                idn = status
+
+        return idn
+    except Exception as e:
+        if verbose:
+            print(f"  -> Could not probe {address}: {e}")
+        return ""
+    finally:
+        try:
+            if inst is not None:
+                inst.close()
+            if rm is not None:
+                rm.close()
+        except Exception:
+            pass
+
+
+def list_instruments(verbose=False):
+    """
+    Discovers all connected instruments and returns their identifying information.
+
+    Loops through all resources from PiecManager.list_resources(), probes each
+    VISA instrument with *IDN? to identify it, and attempts to match it against
+    known drivers using the autodetect registry cache.
+
+    Args:
+        verbose (bool): If True, prints progress messages during discovery.
+
+    Returns:
+        list[dict]: Each dict has keys:
+            - 'address' (str): The resource address.
+            - 'idn' (str): The identification string (or product name for MCC).
+            - 'type' (str): 'visa' or 'mcc'.
+            - 'driver' (str): The name of the matching driver class, or 'Unknown'.
+            - 'category' (str): The instrument category (e.g., 'awg', 'dmm').
+    """
+    # Import locally to avoid circular import
+    from .autodetect import _load_registry_cache, _dynamic_driver_scan, _import_class_from_path, _save_registry_cache
+
+    pm = PiecManager()
+    resources = pm.list_resources()
+    results = []
+
+    if verbose:
+        print(f"Found {len(resources)} resource(s). Probing...\n")
+
+    registry = _load_registry_cache()
+    registry_updated = False
+
+    for address in resources:
+        addr_str = str(address)
+        idn = "Unknown"
+        res_type = ""
+
+        if "MCC" in addr_str or "Digilent" in addr_str:
+            # MCC/Digilent device
+            idn = addr_str
+            res_type = "mcc"
+            driver_class = "Digilent"
+            category = "digilent"
+            if verbose:
+                print(f"  [MCC]  {addr_str}")
+        else:
+            # VISA instrument
+            if verbose:
+                print(f"  Probing {addr_str}...", end=" ")
+            probed_idn = _probe_scpi(addr_str, verbose=verbose)
+            if probed_idn:
+                idn = probed_idn
+            res_type = "visa"
+            driver_class = "Scpi"
+            category = "scpi"
+            if verbose:
+                print(f"-> {idn}")
+
+        if idn != "Unknown":
+            match = next((v for k, v in registry.items() if k in idn), None)
+            
+            # If not found, run dynamic scan once and retry
+            if not match and not registry_updated:
+                new_reg = _dynamic_driver_scan(verbose=verbose)
+                if new_reg:
+                    registry.update(new_reg)
+                    _save_registry_cache(registry)
+                registry_updated = True
+                match = next((v for k, v in registry.items() if k in idn), None)
+            
+            if match:
+                cls = _import_class_from_path(match)
+                if cls:
+                    driver_class = cls.__name__
+                parts = match.split('.')
+                if len(parts) >= 3:
+                    category = parts[2]
+
+        # Explicit lookup by address logic since autodetect does it and MCC does but let's just stick to the idn for resolving
+        results.append({
+            "address": addr_str,
+            "idn": idn,
+            "type": res_type,
+            "driver": driver_class,
+            "category": category
+        })
+
+    # Print summary table
+    if results:
+        print(f"\n{'Address':<35} {'Driver':<20} {'Category':<15} {'IDN'}")
+        print("-" * 110)
+        for r in results:
+            print(f"{r['address']:<35} {r['driver']:<20} {r['category']:<15} {r['idn']}")
+    else:
+        print("No instruments found.")
+
+    return results
