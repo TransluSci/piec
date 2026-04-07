@@ -4,11 +4,6 @@ piec.measurement.magneto\_transport
 .. automodule:: piec.measurement.magneto_transport
 
    
-   
-   
-
-   
-   
    .. rubric:: Functions
 
    .. autosummary::
@@ -17,10 +12,6 @@ piec.measurement.magneto\_transport
       convert_field_to_voltage
       convert_steps_to_angle
    
-   
-
-   
-   
    .. rubric:: Classes
 
    .. autosummary::
@@ -28,11 +19,3 @@ piec.measurement.magneto\_transport
       AMR
       MagnetoTransport
    
-   
-
-   
-   
-   
-
-
-

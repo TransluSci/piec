@@ -7,7 +7,7 @@ Core Packages
 -------------
 
 * **:py:mod:`piec.drivers`**:
-    This package contains the instrument driver framework. It includes base classes like :class:`~piec.drivers.instrument.Instrument` and :class:`~piec.drivers.scpi_instrument.SCPI_Instrument`, as well as specific drivers for various pieces of laboratory equipment (e.g., AWGs, oscilloscopes, DMMs, lock-in amplifiers). For more details, see the :doc:`drivers_overview` and the :mod:`piec.drivers` API documentation.
+    This package contains the instrument driver framework. It includes base classes like :class:`~piec.drivers.instrument.Instrument` and :class:`~piec.drivers.scpi.Scpi`, as well as specific drivers for various pieces of laboratory equipment (e.g., AWGs, oscilloscopes, DMMs, lock-in amplifiers). See :doc:`user_guide/the_driver` for a description of the driver hierarchy.
 
 * **:py:mod:`piec.measurement`**:
     This package implements the classes responsible for carrying out specific experimental measurements. Examples include :class:`~piec.measurement.discrete_waveform.HysteresisLoop`, :class:`~piec.measurement.discrete_waveform.ThreePulsePund`, and :class:`~piec.measurement.magneto_transport.AMR`. These classes typically orchestrate instrument control, data acquisition, and basic analysis. Refer to the :doc:`measurements_overview` and the :mod:`piec.measurement` API documentation.

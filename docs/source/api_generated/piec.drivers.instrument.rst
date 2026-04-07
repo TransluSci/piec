@@ -4,11 +4,6 @@ piec.drivers.instrument
 .. automodule:: piec.drivers.instrument
 
    
-   
-   
-
-   
-   
    .. rubric:: Functions
 
    .. autosummary::
@@ -20,11 +15,8 @@ piec.drivers.instrument
       get_matching_keys
       is_contained
       is_value_between
+      optional
       recursive_lower
-   
-   
-
-   
    
    .. rubric:: Classes
 
@@ -34,11 +26,3 @@ piec.drivers.instrument
       Instrument
       VirtualRMInstrument
    
-   
-
-   
-   
-   
-
-
-

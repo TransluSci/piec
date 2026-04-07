@@ -6,38 +6,48 @@ This page explains how to add support for a new instrument by writing a piec dri
 Where to put the file
 ---------------------
 
-Each driver lives in its own subdirectory under ``src/piec/drivers/``. The directory name
-should be a short, lowercase identifier for the instrument model (e.g., ``keysight81150a``).
-Inside it, create a ``core.py`` file containing the driver class:
+Drivers are organized by instrument category under ``src/piec/drivers/``. Place your
+driver file directly in the appropriate category folder alongside the interface file:
 
 .. code-block:: text
 
    src/piec/drivers/
-   └── your_instrument/
-       ├── __init__.py
-       └── core.py
+   └── oscilloscope/            # Category folder
+       ├── oscilloscope.py      # Level 2 interface
+       ├── k_dsox3024a.py       # Level 3 driver (yours goes here)
+       └── virtual_oscilloscope.py
 
-Export the class from ``__init__.py`` so it can be imported as
-``from piec.drivers.your_instrument import YourInstrument``.
+If a suitable category folder does not exist, create one with a matching interface file.
 
 Choosing the right base class
 ------------------------------
 
-Select the base class that matches your instrument:
+PIEC uses a 3-level hierarchy. Your driver (Level 3) should inherit from:
 
-* Inherits from ``SCPI_Instrument`` if the instrument uses SCPI commands.
-* Inherits from ``Instrument`` directly for non-SCPI instruments (serial, vendor API, etc.).
-* Also inherit from the appropriate generic category class (e.g., ``Oscilloscope``, ``AWG``)
-  so that measurement classes can use your driver interchangeably with others of the same
+* The **Level 2 category class** (e.g., ``Oscilloscope``, ``Awg``, ``Dmm``, ``Lockin``)
+  so that measurement code can use your driver interchangeably with others of the same
   type.
+* The **Level 1 convenience class** ``Scpi`` if the instrument uses SCPI commands, or
+  ``Instrument`` directly for non-SCPI instruments (serial, vendor API, etc.).
+
+.. code-block:: python
+
+   from .oscilloscope import Oscilloscope
+   from ..scpi import Scpi
+
+   class MyNewScope(Oscilloscope, Scpi):
+       AUTODETECT_ID = "MY_SCOPE_MODEL"
+       # Implementation ...
 
 See :doc:`../user_guide/the_driver` for a full description of the hierarchy.
 
 Implementing virtual mode
 --------------------------
 
-Every driver should support virtual mode — instantiation with ``'virtual'`` as the address —
-so contributors and users can test without physical hardware.
+Every driver should support virtual mode — instantiation with ``'VIRTUAL'`` as the address —
+so contributors and users can test without physical hardware. Each category also provides a
+``VirtualInstrument`` (e.g., ``VirtualScope``) that returns simulated responses for
+development and testing.
 
 .. todo::
    Document the virtual mode convention in detail: which base class methods to override, how

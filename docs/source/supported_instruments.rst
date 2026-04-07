@@ -47,7 +47,7 @@ Driver categories
 -----------------
 
 Drivers are grouped by instrument category in ``piec.drivers``. Each category defines a
-common interface (Level 3 in the driver hierarchy) that specific model drivers implement.
+common interface (Level 2 in the driver hierarchy) that specific model drivers implement.
 See :doc:`user_guide/the_driver` for a description of the hierarchy.
 
 **Arbitrary waveform generators (AWG)**
