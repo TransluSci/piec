@@ -6,7 +6,7 @@ from ..scpi import Scpi
 
 class TektronixTDS2000(Oscilloscope, Scpi):
     """
-    Driver for the Tektronix TDS 2000 Series Oscilloscopes.
+    Driver for the Tektronix TDS 2000 Series Oscilloscope.
     e.g. TDS 2002, TDS 2012, TDS 2022, TDS 2024
     """
     

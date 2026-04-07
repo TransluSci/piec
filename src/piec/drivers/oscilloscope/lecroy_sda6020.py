@@ -12,7 +12,7 @@ import struct
 
 class LeCroySDA6020(Oscilloscope, Scpi):
     """
-    Specific Class for the Teledyne LeCroy SDA 6020 oscilloscope.
+    Driver for the Teledyne LeCroy SDA 6020 Oscilloscope.
     """
 
     AUTODETECT_ID = "SDA6020"

@@ -2,7 +2,32 @@ import os
 import ast
 from pathlib import Path
 
-def extract_metadata_from_ast(file_path):
+def clean_model_name(name):
+    """
+    Strips 'Driver for the', 'Specific Class for', etc.
+    to leave just the model name for the documentation table.
+    """
+    prefixes = [
+        "Driver for the ",
+        "Driver for ",
+        "Specific Class for the ",
+        "Specific Class for this exact model of ",
+        "Specific Class for ",
+        "Specific of the ",
+        "Specific class for ",
+        "MODEL "
+    ]
+    
+    cleaned = name.strip()
+    for p in prefixes:
+        if cleaned.lower().startswith(p.lower()):
+            cleaned = cleaned[len(p):]
+            break
+            
+    # Remove trailing periods and extra whitespace
+    return cleaned.strip().rstrip('.')
+
+def extract_metadata_from_ast(file_path, valid_bases):
     """
     Parses a Python file using AST to find classes and their metadata
     without importing the module.
@@ -15,6 +40,9 @@ def extract_metadata_from_ast(file_path):
 
     drivers = []
     
+    # Pre-calculate lowercase versions for easier matching
+    valid_bases_lower = [b.lower() for b in valid_bases]
+    
     # 1. Detect if this file imports Digilent/mcculw (Heuristic for protocol)
     imports_digilent = False
     for node in ast.walk(tree):
@@ -25,8 +53,10 @@ def extract_metadata_from_ast(file_path):
 
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
-            # We look for classes that have an AUTODETECT_ID
-            # or appear to be Level 3 drivers (subclasses of something else)
+            # To be a driver, it must inherit from a known Base (Instrument, Scpi, AWG, etc.)
+            # and not be the base definition itself.
+            is_base_definition = node.name in valid_bases
+            
             autodetect_id = None
             docstring = ast.get_docstring(node)
             
@@ -38,16 +68,36 @@ def extract_metadata_from_ast(file_path):
                             if isinstance(item.value, ast.Constant):
                                 autodetect_id = item.value.value
                             elif isinstance(item.value, ast.List):
-                                # Handle list of strings
                                 autodetect_id = ", ".join(str(el.value) for el in item.value.elts if hasattr(el, 'value'))
-                            elif isinstance(item.value, (ast.Str, ast.Bytes)): # Legacy support
+                            elif isinstance(item.value, (ast.Str, ast.Bytes)):
                                 autodetect_id = item.value.s
             
-            # Heuristic: Is it a candidate for a "Supported Instrument"?
-            # Must have some bases (inheritance) and not be a base category class
-            # We filter by looking for an AUTODETECT_ID OR a non-empty docstring
-            # and ensuring it's not the name of the folder (Level 2 base)
-            is_probably_l3 = (autodetect_id is not None)
+            # Inherits from a known base?
+            inherited_from_core = False
+            for base in node.bases:
+                b_name = base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute) else ""
+                if b_name.lower() in valid_bases_lower:
+                    inherited_from_core = True
+                    break
+
+            is_probably_l3 = (autodetect_id is not None or inherited_from_core) and not is_base_definition
+            
+            if is_probably_l3:
+                # Infer Protocol/Binary
+                protocol = "SCPI"
+                binary_req = "NI-VISA"
+                
+                # Check bases for specialized reqs
+                bases_text = str([ast.dump(b) for b in node.bases]).lower()
+                if 'digilent' in bases_text or imports_digilent:
+                    protocol = "Digilent VBS"
+                    binary_req = "Requires mcculw"
+                elif 'scpi' in bases_text:
+                    protocol = "SCPI"
+                elif 'instrument' not in bases_text:
+                    protocol = "Custom Serial/Vendor"
+
+                raw_model = (docstring or "").split('\n')[0].strip() or autodetect_id or node.name
             
             if is_probably_l3:
                 # Infer Protocol/Binary
@@ -64,9 +114,11 @@ def extract_metadata_from_ast(file_path):
                 elif 'instrument' not in bases_text:
                     protocol = "Custom Serial/Vendor"
 
+                raw_model = (docstring or "").split('\n')[0].strip() or autodetect_id or node.name
+                
                 drivers.append({
                     'class_name': node.name,
-                    'model': (docstring or "").split('\n')[0].strip() or autodetect_id or node.name,
+                    'model': clean_model_name(raw_model),
                     'protocol': protocol,
                     'binary': binary_req
                 })
@@ -77,6 +129,19 @@ def get_driver_info():
     drivers_root = Path(__file__).parent.parent.parent.parent / "src" / "piec" / "drivers"
     categories = {}
     
+    # 1. Discover Global Base Classes (instrument.py, scpi.py, virtual_instrument.py)
+    global_bases = set(['Instrument', 'Scpi', 'VirtualInstrument', 'Digilent'])
+    for base_file in ['instrument.py', 'scpi.py', 'virtual_instrument.py', 'digilent.py']:
+        path = drivers_root / base_file
+        if path.exists():
+            with open(path, "r") as f:
+                try:
+                    tree = ast.parse(f.read())
+                    for node in tree.body:
+                        if isinstance(node, ast.ClassDef):
+                            global_bases.add(node.name)
+                except: pass
+
     # Exclude list
     exclude_folders = ['example', 'emulators', 'old', 'z_old', 'tests', '__pycache__']
     
@@ -85,13 +150,25 @@ def get_driver_info():
             category_name = folder.name.replace("_", " ").title()
             categories[category_name] = []
             
+            # 2. Find Category-Specific Base Classes (e.g. dmm/dmm.py)
+            category_bases = set(global_bases)
+            base_file = folder / f"{folder.name}.py"
+            if base_file.exists():
+                with open(base_file, "r") as f:
+                    try:
+                        tree = ast.parse(f.read())
+                        for node in tree.body:
+                            if isinstance(node, ast.ClassDef):
+                                category_bases.add(node.name)
+                    except: pass
+            
             for py_file in folder.glob("*.py"):
                 # Skip __init__, base category files, and virtual drivers
                 if py_file.name.startswith('__') or py_file.name == f"{folder.name}.py" or "virtual" in py_file.name:
                     continue
                 
                 try:
-                    file_drivers = extract_metadata_from_ast(py_file)
+                    file_drivers = extract_metadata_from_ast(py_file, category_bases)
                     for d in file_drivers:
                         # Construct module path
                         module_path = f"piec.drivers.{folder.name}.{py_file.stem}"

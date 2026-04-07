@@ -6,7 +6,7 @@ from ..scpi import Scpi
 
 class AgilentDSOX5000(Oscilloscope, Scpi):
     """
-    Driver for the Agilent/Keysight InfiniVision 5000 X-Series Oscilloscopes.
+    Driver for the Agilent/Keysight InfiniVision 5000 X-Series Oscilloscope.
     e.g. DSO-X 5032A, DSO-X 5034A, DSO-X 5054A
     """
     

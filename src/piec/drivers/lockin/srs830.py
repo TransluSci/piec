@@ -11,8 +11,8 @@ from ..scpi import Scpi
 
 class SRS830(Lockin, Scpi):
     """
-    Driver for the SRS830 Lock-In Amplifier.
-    
+    Driver for the SRS 830 Lock-In Amplifier.
+
     Implements the methods defined in the parent Lockin class
     using SR830-specific SCPI commands.
     """

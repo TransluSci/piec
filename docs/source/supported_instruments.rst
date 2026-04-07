@@ -32,12 +32,14 @@ Category Overview
    * - :ref:`Dmm <dmm>`
      - 3 supported models
    * - :ref:`Lockin <lockin>`
-     - 1 supported model
+     - 2 supported models
    * - :ref:`Oscilloscope <oscilloscope>`
      - 6 supported models
    * - :ref:`Pulser <pulser>`
      - 1 supported model
    * - :ref:`Sourcemeter <sourcemeter>`
+     - 1 supported model
+   * - :ref:`Stepper Motor <stepper-motor>`
      - 1 supported model
 
 .. _awg:
@@ -57,28 +59,28 @@ Awg
         - Driver Class
         - Protocol
         - Requirements
-      * - Driver for the Agilent 33220A Arbitrary Waveform Generator.
+      * - Agilent 33220A Arbitrary Waveform Generator
         - :py:class:`~piec.drivers.awg.agilent_33220a.Agilent33220A`
         - SCPI
         - NI-VISA
-      * - Driver for the Agilent 33500 Series Arbitrary Waveform Generators.
+      * - Agilent 33500 Series Arbitrary Waveform Generators
         - :py:class:`~piec.drivers.awg.agilent_33500.Agilent33500`
         - SCPI
         - NI-VISA
-      * - Driver for the Rigol DG1000 Series Arbitrary Waveform Generators.
+      * - Keysight 81150A Arbitrary Waveform Generator
+        - :py:class:`~piec.drivers.awg.k_81150a.Keysight81150a`
+        - SCPI
+        - NI-VISA
+      * - Rigol DG1000 Series Arbitrary Waveform Generators
         - :py:class:`~piec.drivers.awg.rigol_dg1000.RigolDG1000`
         - SCPI
         - NI-VISA
-      * - Driver for the Rigol DG4000 Series Arbitrary Waveform Generators.
+      * - Rigol DG4000 Series Arbitrary Waveform Generators
         - :py:class:`~piec.drivers.awg.rigol_dg4000.RigolDG4000`
         - SCPI
         - NI-VISA
-      * - Driver for the Siglent SDG2000X Series Arbitrary Waveform Generator.
+      * - Siglent SDG2000X Series Arbitrary Waveform Generator
         - :py:class:`~piec.drivers.awg.sdg2000.SDG2000X`
-        - SCPI
-        - NI-VISA
-      * - Specific Class for this exact model of awg: Keysight 81150A. Created by human.
-        - :py:class:`~piec.drivers.awg.k_81150a.Keysight81150a`
         - SCPI
         - NI-VISA
 
@@ -99,10 +101,10 @@ Daq
         - Driver Class
         - Protocol
         - Requirements
-      * - Driver for the Measurement Computing (MCC) USB-231 DAQ device.
+      * - MCC USB-231 DAQ device
         - :py:class:`~piec.drivers.daq.usb231.USB231`
         - Digilent VBS
-        - Requires 'pip install mcculw'
+        - Requires mcculw
 
 .. _dc-callibrator:
 
@@ -121,7 +123,7 @@ Dc Callibrator
         - Driver Class
         - Protocol
         - Requirements
-      * - Specific Class for EDC Model 522. Supporting voltage and current sourcing.
+      * - EDC Model 522 DC Calibrator. Supporting voltage and current sourcing
         - :py:class:`~piec.drivers.dc_callibrator.edc522.EDC522`
         - Custom Serial/Vendor
         - NI-VISA
@@ -143,15 +145,15 @@ Dmm
         - Driver Class
         - Protocol
         - Requirements
-      * - Driver for the Agilent 34410A Digital Multimeter.
+      * - Agilent 34410A Digital Multimeter
         - :py:class:`~piec.drivers.dmm.agilent_34410a.Agilent34410A`
         - SCPI
         - NI-VISA
-      * - Driver for the Keithley 193A Digital Multimeter.
+      * - Keithley 193A Digital Multimeter
         - :py:class:`~piec.drivers.dmm.keithley193a.Keithley193a`
         - Custom Serial/Vendor
         - NI-VISA
-      * - Driver for the Keithley 2000 Digital Multimeter.
+      * - Keithley 2000 Digital Multimeter
         - :py:class:`~piec.drivers.dmm.keithley_2000.Keithley2000`
         - SCPI
         - NI-VISA
@@ -173,8 +175,12 @@ Lockin
         - Driver Class
         - Protocol
         - Requirements
-      * - Driver for the SRS830 Lock-In Amplifier.
+      * - SRS 830 Lock-In Amplifier
         - :py:class:`~piec.drivers.lockin.srs830.SRS830`
+        - SCPI
+        - NI-VISA
+      * - Stanford Research Systems SR830 Lock-In Amplifier
+        - :py:class:`~piec.drivers.lockin.srs830_old.SRS830`
         - SCPI
         - NI-VISA
 
@@ -195,28 +201,28 @@ Oscilloscope
         - Driver Class
         - Protocol
         - Requirements
-      * - Driver for the Agilent/Keysight InfiniVision 5000 X-Series Oscilloscopes.
+      * - Agilent/Keysight InfiniVision 5000 X-Series Oscilloscope
         - :py:class:`~piec.drivers.oscilloscope.agilent_dsox5000.AgilentDSOX5000`
         - SCPI
         - NI-VISA
-      * - Driver for the Rigol DS1000Z Series Oscilloscopes.
-        - :py:class:`~piec.drivers.oscilloscope.rigol_ds1000z.RigolDS1000Z`
-        - SCPI
-        - NI-VISA
-      * - Driver for the Tektronix TDS 2000 Series Oscilloscopes.
-        - :py:class:`~piec.drivers.oscilloscope.tektronix_tds2000.TektronixTDS2000`
-        - SCPI
-        - NI-VISA
-      * - Specific Class for the Teledyne LeCroy SDA 6020 oscilloscope.
-        - :py:class:`~piec.drivers.oscilloscope.lecroy_sda6020.LeCroySDA6020`
-        - SCPI
-        - NI-VISA
-      * - Specific Class for this exact model of scope: Keysight DSOX3024a. Mostly AI Generated.
+      * - Keysight DSOX3024A Oscilloscope
         - :py:class:`~piec.drivers.oscilloscope.k_dsox3024a.KeysightDSOX3024a`
         - SCPI
         - NI-VISA
-      * - Tektronix TDS6604 Oscilloscope
+      * - Rigol DS1000Z Series Oscilloscope
+        - :py:class:`~piec.drivers.oscilloscope.rigol_ds1000z.RigolDS1000Z`
+        - SCPI
+        - NI-VISA
+      * - Tektronix TDS 2000 Series Oscilloscope
+        - :py:class:`~piec.drivers.oscilloscope.tektronix_tds2000.TektronixTDS2000`
+        - SCPI
+        - NI-VISA
+      * - Tektronix TDS 6604 Oscilloscope
         - :py:class:`~piec.drivers.oscilloscope.tektronix_tds6604.TDS6604`
+        - SCPI
+        - NI-VISA
+      * - Teledyne LeCroy SDA 6020 Oscilloscope
+        - :py:class:`~piec.drivers.oscilloscope.lecroy_sda6020.LeCroySDA6020`
         - SCPI
         - NI-VISA
 
@@ -259,7 +265,29 @@ Sourcemeter
         - Driver Class
         - Protocol
         - Requirements
-      * - MODEL 2400
+      * - Keithley 2400 Sourcemeter
         - :py:class:`~piec.drivers.sourcemeter.keithley2400.Keithley2400`
         - SCPI
+        - NI-VISA
+
+.. _stepper-motor:
+
+Stepper Motor
+-------------
+
+.. dropdown:: Click to view supported Stepper Motor models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Arduino Stepper. Requires motor_control_serial_piec.ino from the motor_control_serial_piec directory
+        - :py:class:`~piec.drivers.stepper_motor.arduino_stepper.Geos_Stepper`
+        - Custom Serial/Vendor
         - NI-VISA

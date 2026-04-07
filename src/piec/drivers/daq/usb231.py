@@ -12,9 +12,9 @@ except ImportError:
     AnalogInputMode = None
     ScanOptions = None
 
-class USB231(Digilent, Daq):
+class USB231(Daq, Digilent):
     """
-    Driver for the Measurement Computing (MCC) USB-231 DAQ device.
+    Driver for the MCC USB-231 DAQ device.
     
     Based on Manual:
     - [cite_start]8 Single-Ended Analog Inputs (16-bit, +/- 10V) [cite: 668]

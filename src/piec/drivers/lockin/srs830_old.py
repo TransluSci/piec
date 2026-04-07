@@ -6,7 +6,7 @@ Fully AI generated, untested atm. Minor corrections on import statements.
 """
 class SRS830(Lockin, Scpi):
     """
-    Driver for the Stanford Research Systems SR830 DSP Lock-In Amplifier.
+    Driver for the Stanford Research Systems SR830 Lock-In Amplifier.
 
     This driver is based on the SR830 manual and inherits from a generic
     Lockin and SCPI class.

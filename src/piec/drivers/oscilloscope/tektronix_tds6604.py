@@ -5,7 +5,7 @@ from ..scpi import Scpi
 
 class TDS6604(Oscilloscope, Scpi):
     """
-    Tektronix TDS6604 Oscilloscope
+    Driver for the Tektronix TDS 6604 Oscilloscope.
     """
     
     AUTODETECT_ID = "TDS6604"

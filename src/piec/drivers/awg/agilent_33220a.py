@@ -2,7 +2,7 @@
 from ..scpi import Scpi
 from .awg import Awg
 
-class Agilent33220A(Scpi, Awg):
+class Agilent33220A(Awg, Scpi):
     """
     Driver for the Agilent 33220A Arbitrary Waveform Generator.
     """

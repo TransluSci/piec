@@ -2,9 +2,9 @@
 from ..scpi import Scpi
 from .awg import Awg
 
-class RigolDG1000(Scpi, Awg):
+class RigolDG1000(Awg, Scpi):
     """
-    Driver for the Rigol DG1000 Series Arbitrary Waveform Generators.
+    Driver for the Rigol DG1000 Series Arbitrary Waveform Generators
     and DG1000Z series.
     """
     

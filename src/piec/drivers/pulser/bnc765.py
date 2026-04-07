@@ -4,7 +4,7 @@ from ..scpi import Scpi
 
 class BNC765(Pulser, Scpi):
     """
-    Berkeley Nucleonics 765 Pulse Generator
+    Driver for the Berkeley Nucleonics 765 Pulse Generator.
     """
 
     AUTODETECT_ID = "BNC765"

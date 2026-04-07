@@ -8,6 +8,9 @@ from .sourcemeter import Sourcemeter
 from ..scpi import Scpi
 
 class Keithley2400(Sourcemeter, Scpi):
+    """
+    Driver for the Keithley 2400 Sourcemeter.
+    """
     # Class attributes defining the "contract" for any implementing class.
     AUTODETECT_ID = "MODEL 2400"  # Identifier string for the instrument
     # All sourcemeters must support these basic functions and modes.

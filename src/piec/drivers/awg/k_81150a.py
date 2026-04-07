@@ -10,7 +10,7 @@ from ..scpi import Scpi
 
 class Keysight81150a(Awg, Scpi):
     """
-    Specific Class for this exact model of awg: Keysight 81150A. Created by human.
+    Driver for the Keysight 81150A Arbitrary Waveform Generator.
     """
 
     # Class attributes for parameter restrictions, named after function arguments.

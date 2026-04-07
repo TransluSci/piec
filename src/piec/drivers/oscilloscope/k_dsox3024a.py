@@ -10,8 +10,7 @@ from ..scpi import Scpi
 
 class KeysightDSOX3024a(Oscilloscope, Scpi):
     """
-    Specific Class for this exact model of scope: Keysight DSOX3024a. Mostly AI Generated.
-    NOTE: Not tested yet
+    Driver for the Keysight DSOX3024A Oscilloscope.
     """
 
     # Class attributes for parameter restrictions, named after function arguments.

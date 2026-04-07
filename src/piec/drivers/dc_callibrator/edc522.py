@@ -8,8 +8,7 @@ from .dc_callibrator import DCCalibrator
 
 class EDC522(DCCalibrator):
     """
-    Specific Class for EDC Model 522. Supporting voltage and current sourcing.
-    Inherits from the general DCCalibrator base class.
+    Driver for the EDC Model 522 DC Calibrator. Supporting voltage and current sourcing.
     """
     AUTODETECT_ID = ["522", "KROHN-HITE", "NOT PROGRAMMED", "NOTHING WRONG"]
     

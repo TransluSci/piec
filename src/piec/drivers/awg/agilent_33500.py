@@ -2,7 +2,7 @@
 from ..scpi import Scpi
 from .awg import Awg
 
-class Agilent33500(Scpi, Awg):
+class Agilent33500(Awg, Scpi):
     """
     Driver for the Agilent 33500 Series Arbitrary Waveform Generators.
     Covering models like 33511B, 33512B, 33521A, 33522A, etc.

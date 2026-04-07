@@ -2,7 +2,7 @@
 from ..scpi import Scpi
 from .awg import Awg
 
-class RigolDG4000(Scpi, Awg):
+class RigolDG4000(Awg, Scpi):
     """
     Driver for the Rigol DG4000 Series Arbitrary Waveform Generators.
     e.g. DG4062, DG4102, DG4162, DG4202
