@@ -23,7 +23,7 @@ General workflow
       osc = KeysightDSOX3024A('GPIB0::7::INSTR')
 
    Use ``'virtual'`` as the address to run without hardware (see
-   :doc:`finding_address`).
+   :doc:`connecting_to_instrument`).
 
 2. **Create the measurement object**
 
@@ -87,5 +87,5 @@ All measurement classes follow the same pattern:
    physical quantities (polarization, resistance, etc.), and generates plots.
 
 For experiment-specific parameters and examples, see the individual measurement pages:
-:doc:`../measurements/hysteresis`, :doc:`../measurements/pund`, :doc:`../measurements/amr`,
+:doc:`../measurements/ferroelectric`, :doc:`../measurements/amr`,
 :doc:`../measurements/iv_sweep`.

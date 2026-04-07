@@ -17,7 +17,7 @@ that enables scientists to quickly test and build new experimental setups.
    :caption: User Guide
 
    user_guide/the_driver
-   user_guide/finding_address
+   user_guide/connecting_to_instrument
    user_guide/running_measurements
    user_guide/data_and_analysis
    user_guide/jupyter_examples

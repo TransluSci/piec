@@ -7,7 +7,7 @@ real hardware required. You can run this example immediately after installing PI
 .. note::
    Virtual mode is built into every PIEC driver. It simulates instrument responses so you can
    test and develop measurement workflows without physical hardware. See
-   :doc:`../user_guide/finding_address` for details on virtual mode.
+   :doc:`../user_guide/connecting_to_instrument` for details on virtual mode.
 
 Running a virtual hysteresis measurement
 -----------------------------------------
@@ -26,5 +26,5 @@ Next steps
 
 * Learn about the :doc:`../user_guide/guis` for a no-code interface.
 * Read :doc:`../user_guide/running_measurements` for a deeper look at how measurements work.
-* Browse :doc:`../measurements/hysteresis`, :doc:`../measurements/pund`, and other measurement
+* Browse :doc:`../measurements/ferroelectric`, and other measurement
   pages for experiment-specific documentation.

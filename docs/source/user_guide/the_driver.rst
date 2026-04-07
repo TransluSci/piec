@@ -49,7 +49,8 @@ What each level provides
      initialization.
    * Opens and manages the connection via PyVISA (or falls back to a virtual backend).
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
-     state tracking.
+     state tracking based on class attributes. Setting a class attribute to ``None``
+     bypasses this validation, allowing for custom driver-side handling.
    * Exposes ``read()``, ``write()``, and ``query()`` methods used by all subclasses.
 
 **Level 1 — Scpi** (``piec.drivers.scpi.Scpi``)
@@ -72,7 +73,10 @@ What each level provides
    defines the set of methods and class attributes that a measurement class can rely on.
    For example, an ``Oscilloscope`` is expected to have methods for setting the timebase,
    configuring channels, and capturing a waveform. These files contain no specific SCPI
-   command strings — only the "vocabulary" of the instrument type.
+   command strings — only the "vocabulary" of the instrument type. Level 2 interfaces
+   also support optional functionality. Methods can be decorated with ``@optional``, or
+   custom Level 3 driver methods can be automatically treated as optional. This allows
+   measurement routines to skip unsupported methods gracefully across different hardware.
 
 **Level 3 — Specific model drivers**
    These are the classes you instantiate in your code. They inherit from a Level 2
@@ -85,11 +89,23 @@ What each level provides
       from .awg import Awg
       from ..scpi import Scpi
 
-      class Agilent33220a(Awg, Scpi):
-          AUTODETECT_ID = "33220A"
+      class Keysight81150a(Awg, Scpi):
+          AUTODETECT_ID = "81150A"
           # Implementation ...
 
+   .. note::
+      To see a complete implementation template, refer to the ``src/piec/drivers/example/`` directory. It contains the ``Example`` Level 2 interface and the ``SpecificExample`` Level 3 driver. Please read the :doc:`adding a driver <../contributing/adding_driver>` guide before writing custom drivers.
+
    For the full list of available drivers, see :doc:`../supported_instruments`.
+
+Folder structure
+----------------
+
+The driver hierarchy maps directly to the folder structure within ``src/piec/drivers/``:
+
+* **Level 1** base files (e.g., ``instrument.py``, ``scpi.py``) sit directly in the root ``drivers/`` directory.
+* **Level 2** interface files are located in a folder named after the instrument category, and the Python file shares this name (e.g., ``oscilloscope/oscilloscope.py``).
+* **Level 3** specific model files are placed alongside their Level 2 interface in the same category folder (e.g., ``oscilloscope/k_dsox3024a.py``).
 
 Virtual instruments
 -------------------
@@ -118,4 +134,4 @@ Import the specific driver class and instantiate it with the instrument's addres
    awg = Keysight81150a('GPIB0::8::INSTR')
    print(awg.idn())   # Confirms connection
 
-For help finding an instrument's address, see :doc:`finding_address`.
+For help connecting or finding an instrument's address, see :doc:`connecting_to_instrument`.

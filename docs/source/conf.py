@@ -1,6 +1,7 @@
 # Configuration file for the Sphinx documentation builder.
 import os
 import sys
+from pathlib import Path
 sys.path.insert(0, os.path.abspath('../../src/'))
 
 
@@ -26,6 +27,7 @@ extensions = [
     'myst_parser',
     'sphinx.ext.mathjax',
     'sphinx_math_dollar',
+    'sphinx_design',
 ]
 
 source_suffix = {
@@ -99,3 +101,15 @@ html_theme = 'sphinx_rtd_theme'
 # -- EPUB output
 
 epub_show_urls = 'footnote'
+
+# -- Generate Supported Instruments
+# This script runs every time Sphinx builds to keep the table in sync
+# with the actual drivers in src/piec/drivers/
+try:
+    print("Generating supported_instruments.rst...")
+    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'gen_instruments.py')
+    with open(script_path, 'r', encoding='utf-8') as f:
+        code = f.read()
+        exec(code, {'__file__': script_path, 'os': os, 'sys': sys, 'Path': Path})
+except Exception as e:
+    print(f"Warning: Failed to generate supported_instruments.rst: {e}")

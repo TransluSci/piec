@@ -44,24 +44,24 @@ body {
     color: #FFFFFF !important;
 }
 
-.wy-menu-vertical li.current > a,
-.wy-menu-vertical li.current > a:hover {
+.wy-menu-vertical li.current>a,
+.wy-menu-vertical li.current>a:hover {
     background: #383838 !important;
     color: #FFFFFF !important;
     border-right: 2px solid #E0E0E0 !important;
 }
 
-.wy-menu-vertical li.toctree-l1.current > a {
+.wy-menu-vertical li.toctree-l1.current>a {
     background: #2B2B2B !important;
 }
 
-.wy-menu-vertical li.toctree-l2 > a,
-.wy-menu-vertical li.toctree-l3 > a {
+.wy-menu-vertical li.toctree-l2>a,
+.wy-menu-vertical li.toctree-l3>a {
     color: #C0C0C0 !important;
 }
 
-.wy-menu-vertical li.toctree-l2.current > a,
-.wy-menu-vertical li.toctree-l3.current > a {
+.wy-menu-vertical li.toctree-l2.current>a,
+.wy-menu-vertical li.toctree-l3.current>a {
     background: #383838 !important;
     color: #FFFFFF !important;
 }
@@ -86,7 +86,12 @@ body {
 }
 
 /* Headings */
-h1, h2, h3, h4, h5, h6,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
 .wy-nav-content h1,
 .wy-nav-content h2,
 .wy-nav-content h3 {
@@ -114,7 +119,8 @@ a:hover {
     color: #E0E0E0 !important;
 }
 
-code, tt {
+code,
+tt {
     background: #383838 !important;
     color: #E0E0E0 !important;
     border: 1px solid #3E3E42 !important;

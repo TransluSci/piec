@@ -1,75 +1,265 @@
 Supported Instruments
 =====================
 
-The table below lists all instruments with drivers currently included in piec. Each row gives
-the driver class name, instrument category, connection type, and a link to the API
-documentation for that driver.
+Universal Requirements
+----------------------
+
+* **NI-VISA**: Required for all standard VISA-based instruments.
+* **NI-488.2**: Required for physical GPIB cards from National Instruments.
+
+Verified Versions
+-----------------
+
+* **Python**: 3.8+
+* **NI-VISA**: 2024+
+* **OS**: Windows (Primary support)
+
+Category Overview
+-----------------
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 20 15 35
+   :widths: 40 60
 
-   * - Driver class
-     - Category
-     - Connection
-     - Notes
-   * - ``Keysight81150a``
-     - AWG
-     - GPIB
-     - Dual-channel pulse/function generator
-   * - ``KeysightDSOX3024A``
-     - Oscilloscope
-     - GPIB / USB
-     - 4-channel mixed-signal oscilloscope
-   * - ``SR830``
-     - Lock-in amplifier
-     - GPIB
-     - Stanford Research Systems lock-in
-   * - ``EDC522``
-     - DC calibrator
-     - GPIB
-     - Voltage/current source used for field control
-   * - ``Keithley193A``
-     - DMM
-     - GPIB
-     - Digital multimeter for DC resistance / voltage
-   * - ``Arduino``
-     - Stepper motor controller
-     - Serial (USB)
-     - Used for rotating sample stages
-   * - ``MCCDig``
-     - DAQ
-     - USB
-     - Digilent / MCC data acquisition device
+   * - Category
+     - Description
+   * - :ref:`Awg <awg>`
+     - 6 supported models
+   * - :ref:`Daq <daq>`
+     - 1 supported model
+   * - :ref:`Dc Callibrator <dc-callibrator>`
+     - 1 supported model
+   * - :ref:`Dmm <dmm>`
+     - 3 supported models
+   * - :ref:`Lockin <lockin>`
+     - 1 supported model
+   * - :ref:`Oscilloscope <oscilloscope>`
+     - 6 supported models
+   * - :ref:`Pulser <pulser>`
+     - 1 supported model
+   * - :ref:`Sourcemeter <sourcemeter>`
+     - 1 supported model
 
+.. _awg:
 
-Driver categories
------------------
+Awg
+---
 
-Drivers are grouped by instrument category in ``piec.drivers``. Each category defines a
-common interface (Level 2 in the driver hierarchy) that specific model drivers implement.
-See :doc:`user_guide/the_driver` for a description of the hierarchy.
+.. dropdown:: Click to view supported Awg models
+   :color: primary
+   :icon: device-desktop
 
-**Arbitrary waveform generators (AWG)**
-   Output arbitrary voltage waveforms. Used by hysteresis and PUND measurements.
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
 
-**Oscilloscopes**
-   Capture time-domain voltage traces. Used as the response measurement instrument in
-   waveform-based experiments.
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Driver for the Agilent 33220A Arbitrary Waveform Generator.
+        - :py:class:`~piec.drivers.awg.agilent_33220a.Agilent33220A`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Agilent 33500 Series Arbitrary Waveform Generators.
+        - :py:class:`~piec.drivers.awg.agilent_33500.Agilent33500`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Rigol DG1000 Series Arbitrary Waveform Generators.
+        - :py:class:`~piec.drivers.awg.rigol_dg1000.RigolDG1000`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Rigol DG4000 Series Arbitrary Waveform Generators.
+        - :py:class:`~piec.drivers.awg.rigol_dg4000.RigolDG4000`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Siglent SDG2000X Series Arbitrary Waveform Generator.
+        - :py:class:`~piec.drivers.awg.sdg2000.SDG2000X`
+        - SCPI
+        - NI-VISA
+      * - Specific Class for this exact model of awg: Keysight 81150A. Created by human.
+        - :py:class:`~piec.drivers.awg.k_81150a.Keysight81150a`
+        - SCPI
+        - NI-VISA
 
-**Lock-in amplifiers**
-   Narrow-band AC measurement. Used in AMR and other low-signal transport measurements.
+.. _daq:
 
-**DMMs**
-   DC voltage and resistance measurement.
+Daq
+---
 
-**DC calibrators / source meters**
-   Precision voltage/current sources used for field control or biasing.
+.. dropdown:: Click to view supported Daq models
+   :color: primary
+   :icon: device-desktop
 
-**Stepper motor controllers**
-   Control sample rotation stages for angle-dependent measurements (e.g., AMR).
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
 
-**DAQ devices**
-   General-purpose data acquisition.
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Driver for the Measurement Computing (MCC) USB-231 DAQ device.
+        - :py:class:`~piec.drivers.daq.usb231.USB231`
+        - Digilent VBS
+        - Requires 'pip install mcculw'
 
-For the auto-generated API documentation for all drivers, see :doc:`api_reference`.
+.. _dc-callibrator:
+
+Dc Callibrator
+--------------
+
+.. dropdown:: Click to view supported Dc Callibrator models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Specific Class for EDC Model 522. Supporting voltage and current sourcing.
+        - :py:class:`~piec.drivers.dc_callibrator.edc522.EDC522`
+        - Custom Serial/Vendor
+        - NI-VISA
+
+.. _dmm:
+
+Dmm
+---
+
+.. dropdown:: Click to view supported Dmm models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Driver for the Agilent 34410A Digital Multimeter.
+        - :py:class:`~piec.drivers.dmm.agilent_34410a.Agilent34410A`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Keithley 193A Digital Multimeter.
+        - :py:class:`~piec.drivers.dmm.keithley193a.Keithley193a`
+        - Custom Serial/Vendor
+        - NI-VISA
+      * - Driver for the Keithley 2000 Digital Multimeter.
+        - :py:class:`~piec.drivers.dmm.keithley_2000.Keithley2000`
+        - SCPI
+        - NI-VISA
+
+.. _lockin:
+
+Lockin
+------
+
+.. dropdown:: Click to view supported Lockin models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Driver for the SRS830 Lock-In Amplifier.
+        - :py:class:`~piec.drivers.lockin.srs830.SRS830`
+        - SCPI
+        - NI-VISA
+
+.. _oscilloscope:
+
+Oscilloscope
+------------
+
+.. dropdown:: Click to view supported Oscilloscope models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Driver for the Agilent/Keysight InfiniVision 5000 X-Series Oscilloscopes.
+        - :py:class:`~piec.drivers.oscilloscope.agilent_dsox5000.AgilentDSOX5000`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Rigol DS1000Z Series Oscilloscopes.
+        - :py:class:`~piec.drivers.oscilloscope.rigol_ds1000z.RigolDS1000Z`
+        - SCPI
+        - NI-VISA
+      * - Driver for the Tektronix TDS 2000 Series Oscilloscopes.
+        - :py:class:`~piec.drivers.oscilloscope.tektronix_tds2000.TektronixTDS2000`
+        - SCPI
+        - NI-VISA
+      * - Specific Class for the Teledyne LeCroy SDA 6020 oscilloscope.
+        - :py:class:`~piec.drivers.oscilloscope.lecroy_sda6020.LeCroySDA6020`
+        - SCPI
+        - NI-VISA
+      * - Specific Class for this exact model of scope: Keysight DSOX3024a. Mostly AI Generated.
+        - :py:class:`~piec.drivers.oscilloscope.k_dsox3024a.KeysightDSOX3024a`
+        - SCPI
+        - NI-VISA
+      * - Tektronix TDS6604 Oscilloscope
+        - :py:class:`~piec.drivers.oscilloscope.tektronix_tds6604.TDS6604`
+        - SCPI
+        - NI-VISA
+
+.. _pulser:
+
+Pulser
+------
+
+.. dropdown:: Click to view supported Pulser models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - Berkeley Nucleonics 765 Pulse Generator
+        - :py:class:`~piec.drivers.pulser.bnc765.BNC765`
+        - SCPI
+        - NI-VISA
+
+.. _sourcemeter:
+
+Sourcemeter
+-----------
+
+.. dropdown:: Click to view supported Sourcemeter models
+   :color: primary
+   :icon: device-desktop
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 30 25 20 25
+
+      * - Model / Description
+        - Driver Class
+        - Protocol
+        - Requirements
+      * - MODEL 2400
+        - :py:class:`~piec.drivers.sourcemeter.keithley2400.Keithley2400`
+        - SCPI
+        - NI-VISA

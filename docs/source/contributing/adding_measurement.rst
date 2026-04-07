@@ -59,5 +59,5 @@ Documenting the measurement
 -----------------------------
 
 Add a new ``.rst`` file to ``docs/source/measurements/`` following the template of existing
-pages (:doc:`../measurements/hysteresis`, :doc:`../measurements/pund`, etc.). Then add it to
+pages (:doc:`../measurements/ferroelectric`, etc.). Then add it to
 the ``Measurements`` toctree in ``docs/source/index.rst``.
