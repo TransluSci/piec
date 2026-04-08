@@ -143,7 +143,7 @@ def get_driver_info():
                 except: pass
 
     # Exclude list
-    exclude_folders = ['example', 'emulators', 'old', 'z_old', 'tests', '__pycache__']
+    exclude_folders = ['example', 'emulators', 'tests', '__pycache__']
     
     for folder in drivers_root.iterdir():
         if folder.is_dir() and folder.name not in exclude_folders and not folder.name.startswith('_'):
