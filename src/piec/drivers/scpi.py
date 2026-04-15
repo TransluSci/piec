@@ -1,9 +1,9 @@
 """
 This is the top level instrument that dictates if something is scpi, dac, arduino, etc.
 """
-from .instrument import Instrument # Assuming instrument.py is in the same directory
 
-class Scpi(Instrument):
+
+class Scpi():
     # Initializer / Instance attributes
     """
     All SCPI instruments must allow for all base SCPI commands to work!
