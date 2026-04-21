@@ -9,9 +9,9 @@ import numpy as np
 
 from ..virtual_instrument import VirtualInstrument
 from .awg import Awg
-from ..scpi import Scpi
 
-class VirtualAwg(VirtualInstrument, Awg, Scpi):
+
+class VirtualAwg(VirtualInstrument, Awg):
     """
     Virtual version of the Keysight81150a AWG for simulation/testing.
     Stores state internally and generates synthetic output.

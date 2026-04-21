@@ -6,10 +6,9 @@ import numpy as np
 import pandas as pd
 
 from .oscilloscope import Oscilloscope
-from ..scpi import Scpi
 from ..virtual_instrument import VirtualInstrument
 
-class VirtualScope(VirtualInstrument, Oscilloscope, Scpi):
+class VirtualScope(VirtualInstrument, Oscilloscope):
     """
     Virtual version of the KeysightDSOX3024a oscilloscope for simulation/testing.
     Stores state internally and generates synthetic data.
