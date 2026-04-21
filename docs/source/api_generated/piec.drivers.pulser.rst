@@ -4,11 +4,29 @@ piec.drivers.pulser
 .. automodule:: piec.drivers.pulser
 
    
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+
 .. rubric:: Modules
 
 .. autosummary::
    :toctree:
    :recursive:
 
-   bnc765
-   pulser
+   piec.drivers.pulser.bnc765
+   piec.drivers.pulser.pulser
+

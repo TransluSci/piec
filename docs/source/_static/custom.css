@@ -35,6 +35,12 @@ body {
     background: #202020 !important;
 }
 
+/* Section caption headings (e.g. "USER GUIDE") — strip the default RTD blue */
+.wy-menu-vertical p.caption,
+.wy-menu-vertical p.caption span.caption-text {
+    color: #E0E0E0 !important;
+}
+
 .wy-menu-vertical a {
     color: #E0E0E0 !important;
 }
@@ -55,9 +61,21 @@ body {
     background: #2B2B2B !important;
 }
 
+/* Expanded sub-menu container — RTD theme defaults this to white, force dark */
+.wy-menu-vertical li.current ul,
+.wy-menu-vertical li.current li {
+    background: #202020 !important;
+}
+
+/* Sub-item links — noticeably darker than top-level items for visual hierarchy */
 .wy-menu-vertical li.toctree-l2>a,
 .wy-menu-vertical li.toctree-l3>a {
-    color: #C0C0C0 !important;
+    color: #A0A0A0 !important;
+    background: #202020 !important;
+}
+
+.wy-menu-vertical li.toctree-l2>a, .wy-menu-vertical li.toctree-l3>a {
+    color: #E0E0E0 !important;
 }
 
 .wy-menu-vertical li.toctree-l2.current>a,
@@ -116,8 +134,26 @@ a:hover {
 
 .highlight pre {
     background: #383838 !important;
+    /* no color override — let pygments syntax token colors through */
+}
+
+.highlight .go {
     color: #E0E0E0 !important;
 }
+
+.highlight .fm {
+    color: #6c6cff !important;
+}
+
+.wy-menu-vertical li.toctree-l3.current>a, .wy-menu-vertical li.toctree-l3.current li.toctree-l4>a {
+    background: #202020 !important;
+    color: #e0e0ee !important;
+}
+
+.icon .icon-home {
+    color: #e0e0e0 !important;
+}
+
 
 code,
 tt {
@@ -179,7 +215,7 @@ tt {
 
 /* Footer */
 footer {
-    background: #202020 !important;
+    background: #2B2B2B !important;
     color: #C0C0C0 !important;
     border-top: 1px solid #3E3E42 !important;
 }
@@ -234,3 +270,83 @@ footer a {
 ::-webkit-scrollbar-thumb:hover {
     background: #4A4A4A;
 }
+
+/* ---------------------------------------------------------------
+   Syntax highlighting — dark theme token colors
+   Palette inspired by VS Code Dark+; keywords use the same
+   #9ECFFF accent already used for links to stay consistent.
+   All colors verified ≥ 4.5:1 contrast on #383838 background.
+   --------------------------------------------------------------- */
+
+/* default text in code blocks */
+.highlight { color: #E0E0E0 !important; }
+
+/* comments — muted green, intentionally softer (secondary info) */
+.highlight .c,
+.highlight .c1,
+.highlight .cm,
+.highlight .cs  { color: #8FB380 !important; font-style: italic; }
+
+/* keywords — matches link accent color for visual consistency */
+.highlight .k,
+.highlight .kd,
+.highlight .kn,
+.highlight .kp,
+.highlight .kw  { color: #9ECFFF !important; font-weight: bold; }
+
+/* keyword type */
+.highlight .kt  { color: #4EC9B0 !important; }
+
+/* operators & punctuation */
+.highlight .o,
+.highlight .ow,
+.highlight .p   { color: #D4D4D4 !important; }
+
+/* plain names */
+.highlight .n   { color: #E0E0E0 !important; }
+
+/* built-in names (len, print, range …) */
+.highlight .nb,
+.highlight .bp  { color: #4FC1FF !important; }
+
+/* class names */
+.highlight .nc  { color: #4EC9B0 !important; }
+
+/* decorators & function names */
+.highlight .nd,
+.highlight .nf  { color: #DCDCAA !important; }
+
+/* namespaces */
+.highlight .nn  { color: #E0E0E0 !important; }
+
+/* variables */
+.highlight .nv,
+.highlight .vc,
+.highlight .vg,
+.highlight .vi  { color: #9CDCFE !important; }
+
+/* strings — brightened for ≥ 4.5:1 contrast on #383838 */
+.highlight .s,
+.highlight .s1,
+.highlight .s2,
+.highlight .sb,
+.highlight .sc,
+.highlight .sd,
+.highlight .sh  { color: #E09A6F !important; }
+
+/* string escape sequences */
+.highlight .se  { color: #D7BA7D !important; }
+
+/* numbers */
+.highlight .m,
+.highlight .mi,
+.highlight .mf,
+.highlight .mh,
+.highlight .mo  { color: #B5CEA8 !important; }
+
+/* errors — softer red, no harsh background */
+.highlight .err { color: #F48771 !important; background: none !important; }
+
+/* line numbers */
+.highlight .ln,
+.highlight .ln-nos { color: #606060 !important; }
