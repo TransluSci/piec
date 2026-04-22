@@ -11,7 +11,7 @@ from piec.drivers.dmm.keithley193a import Keithley193a
 from piec.drivers.dc_callibrator.edc522 import EDC522
 from piec.drivers.stepper_motor.arduino_stepper import Geos_Stepper
 from piec.drivers.lockin.srs830 import SRS830
-from piec.measurement.magneto_transport import AMR
+from piec.measurement.amr import AMR
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.gui_utils import MeasurementApp
 
