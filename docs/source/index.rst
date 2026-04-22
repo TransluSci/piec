@@ -1,3 +1,8 @@
+.. image:: _static/home_image.png
+   :alt: piec logo
+   :align: center
+   :width: 300px
+
 Welcome to piec's documentation!
 ==================================
 
