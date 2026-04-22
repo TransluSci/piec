@@ -1,4 +1,4 @@
-# `piec` Instrument Driver Development Guide
+# Instrument Driver Development Guide
 
 This guide outlines the strict requirements and conventions for creating new instrument drivers within the `piec` library. Adhering to these rules ensures a globally consistent, interface-compliant, and minimal codebase across all supported instruments.
 

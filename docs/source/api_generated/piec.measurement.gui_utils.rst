@@ -4,6 +4,15 @@ piec.measurement.gui\_utils
 .. automodule:: piec.measurement.gui_utils
 
    
+   
+   
+
+   
+   
+   
+
+   
+   
    .. rubric:: Classes
 
    .. autosummary::
@@ -11,3 +20,11 @@ piec.measurement.gui\_utils
       ConsoleRedirector
       MeasurementApp
    
+   
+
+   
+   
+   
+
+
+

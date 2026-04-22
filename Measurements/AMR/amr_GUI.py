@@ -22,7 +22,7 @@ DEFAULTS = {
     "calibrator_address": "VIRTUAL",
     "stepper_address": "VIRTUAL",
     "lockin_address": "VIRTUAL",
-    "save_dir": r"\\files22.brown.edu\research\ENG_Caretta_Shared\Group\big_magnet\amr\test",
+    "save_dir": r"your\default\save\directory",
     "field": 100.0,
     "angle_step": 10.0,
     "total_angle": 360.0,

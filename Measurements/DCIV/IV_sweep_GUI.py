@@ -12,7 +12,7 @@ from piec.measurement.gui_utils import MeasurementApp
 
 DEFAULTS = {
     "sm_address": "VIRTUAL",
-    "save_dir": r"C:\Users\Jesalina Phan\OneDrive - Brown University\Desktop\piec\data",
+    "save_dir": r"your\default\save\directory",
     "v_start": 0.0,
     "v_stop": 1.0,
     "num_steps": 50,
