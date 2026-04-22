@@ -27,7 +27,7 @@ Name: Lucas Caretta
 affiliations:
   - name: Brown University, Providence, Rhode Island, USA
     index: 1
-date: 03 March 2026
+date: '03 March 2026'
 bibliography: paper.bib
 ---
 
