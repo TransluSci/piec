@@ -1,0 +1,31 @@
+name: Build JOSS Paper
+
+on:
+  push:
+    paths:
+      - paper.md
+      - paper.bib
+  pull_request:
+    paths:
+      - paper.md
+      - paper.bib
+  workflow_dispatch:
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build PDF with JOSS inara
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          paper-path: paper.md
+
+      - name: Upload paper PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: paper.pdf
