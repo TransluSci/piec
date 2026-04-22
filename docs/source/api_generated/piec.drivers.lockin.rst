@@ -4,13 +4,31 @@ piec.drivers.lockin
 .. automodule:: piec.drivers.lockin
 
    
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+
 .. rubric:: Modules
 
 .. autosummary::
    :toctree:
    :recursive:
 
-   lockin
-   srs830
-   srs830_old
-   virtual_lockin
+   piec.drivers.lockin.lockin
+   piec.drivers.lockin.srs830
+   piec.drivers.lockin.srs830_old
+   piec.drivers.lockin.virtual_lockin
+

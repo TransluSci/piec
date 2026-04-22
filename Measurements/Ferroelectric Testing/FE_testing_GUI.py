@@ -13,7 +13,7 @@ from piec.measurement.gui_utils import MeasurementApp
 
 DEFAULTS = {"awg_address":"VIRTUAL",
             "osc_address":"VIRTUAL",
-            "save_dir":r"\\files22.brown.edu\Research\ENG_Caretta_Shared\Group\probe_station\test",
+            "save_dir":r"your\default\save\directory",
             "vdiv":0.01,
             "area":'1.0e-5**2',
             "time_offset":100,
