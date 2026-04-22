@@ -9,15 +9,12 @@ tags:
   - measurement automation
 authors:
   - name: Geo Fratian
-    orcid: 0000-XXXX-XXXX-XXXX  #replace with actual ORCID
     affiliation: 1
   - name: Alexander Qualls
-    orcid: 0000-XXXX-XXXX-XXXX  #replace with actual ORCID
     affiliation: 1
 affiliations:
   - name: Brown University, Providence, Rhode Island, USA
     index: 1
-    ror: 05gq02987
 date: 03 March 2026
 bibliography: paper.bib
 ---
