@@ -1,4 +1,4 @@
-# AMR Measurement Documentation (THIS MEASURMENT IS UNDER CONSTRUCTION)
+# AMR Measurement Documentation
 
 This document explains the Anisotropic Magnetoresistance (AMR) measurement setup, the software architecture behind it, and how to operate the system using both the Jupyter Notebook and the Graphical User Interface (GUI).
 
