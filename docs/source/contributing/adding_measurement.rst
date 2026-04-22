@@ -48,13 +48,6 @@ If your measurement requires new analysis code, add it to the appropriate module
 Document each public function with a docstring that describes arguments, return values, and
 units.
 
-Writing tests
---------------
-
-.. todo::
-   Describe how to write a test for a new measurement using virtual instrument drivers so
-   the test can run in CI without hardware.
-
 Documenting the measurement
 -----------------------------
 

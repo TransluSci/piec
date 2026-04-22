@@ -5,6 +5,10 @@ body {
     color: #E0E0E0 !important;
 }
 
+img {
+    filter: invert(100%);
+}
+
 /* Main content area */
 .wy-nav-content {
     background: #2B2B2B !important;
