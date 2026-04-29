@@ -35,8 +35,8 @@ class VirtualAwg(VirtualInstrument, Awg):
 
     channel = [1, 2]
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    amplitude = (0, 5)
-    offset = amplitude
+    amplitude = (0, 50)
+    offset = (-50, 50)
     polarity = ['NORM', 'INV']
     duty_cycle = (0.0, 100.0)
     symmetry = (0.0, 100.0)
@@ -111,17 +111,20 @@ class VirtualAwg(VirtualInstrument, Awg):
         if command.upper() == '*TRG' or command.upper() == ':TRIG':
             
             v = self.get_waveform(self.state['acquisition_channel'])
-            
+
             freq = self.state['frequency'][self.state['acquisition_channel']]
-            duration = 1.0 / freq  # one period
-            
-            # Prepend zeros to simulate trigger delay and baseline for analysis
-            prep_points = max(20, len(v) // 10)
+            duration = 1.0 / freq  # one period (analysis reconstructs v_applied from this)
+
+            # Prepend 20 zero-volt points so the DC-offset correction in
+            # process_raw_hyst (which subtracts mean of first 20 points) sees a
+            # quiet baseline rather than live displacement current.
+            prep_points = 20
             v = np.concatenate([np.zeros(prep_points), v])
-            t = np.linspace(0, duration * (1 + prep_points / (len(v) - prep_points)), len(v))
-            
+            t = np.linspace(0, duration * len(v) / (len(v) - prep_points), len(v))
+            self.sample.prep_points = prep_points
+
             print("Applying waveform to virtual sample...")
-           
+
             self.sample.apply_waveform(v, t)
         else: 
             pass
