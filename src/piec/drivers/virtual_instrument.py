@@ -40,27 +40,46 @@ class VirtualInstrument(Instrument):
         """
         if VirtualInstrument._shared_fe_sample is None:
             default_fe_material = {
-                'ferroelectric': { #PZT
-                    'a0': 824800,  # J m / (C^2 K)
-                    'b': -838800000,  # J m^5 / C^4 (Negative for first-order transition)
-                    'c': 7764000000,  # J m^9 / C^6
-                    'T0': 388,    # Curie-Weiss Temp (K)
-                    'Q12': -0.034,  # m^4 / C^2 (Electrostrictive coefficient)
-                    's11': 12.7e-12,  # m^2 / N (Elastic compliance)
-                    's12': -4.2e-12,  # m^2 / N (Elastic compliance)
-                    'lattice_a': 0.402e-9,  # meters
-                    "film_thickness": 5e-9,  # meters
-                    'epsilon_r': 100,  # no unit
-                    'leakage_resistance': 3e4,  # Ohms
-                    'kinetic_damping': 1e-8, # V s m^2 / C
+                # SRO / PZT(52/48) / Pt stack — calibrated to give
+                # Pr ≈ 50 µC/cm², Vc ≈ 2 V for a 30 nm film.
+                #
+                # Landau convention: E = a·P + b·P³ + c·P⁵,  V = E·d
+                # Renormalized at run-time:
+                #   a_tilde = a0·(T − T0) + a_strain + a_depol
+                #   b_tilde = b + 4·Q12²/(s11+s12)
+                #   c_tilde = c
+                #
+                # With lattice_a(fe) == lattice_a(substrate) the strain term
+                # is zero, so a_tilde ≈ a0·(300 − 673) = −2.0×10⁸ J·m/C².
+                # With permittivity_e = 1e6 the depolarization term is ~0.
+                # b_tilde = −1.287×10⁹ + 8.87×10⁸ = −4.0×10⁸  (first-order)
+                # c_tilde = 5.0×10⁹
+                # → Pr ≈ 0.494 C/m² = 49 µC/cm², Ec ≈ 61 MV/m, Vc(30nm) ≈ 1.8 V
+                #
+                # kinetic_damping adds frequency dependence via
+                #   dP/dt = (V − V_Landau(P)) / γ
+                # γ = 2×10⁻⁷ V·s·m²/C  →  characteristic switching time ≈ 200 ns
+                # so loops shrink noticeably above ~1 MHz.
+                'ferroelectric': {
+                    'a0': 5.362e5,      # J·m/(C²·K)  — positive (ferroelectric below T0)
+                    'b': -1.287e9,      # J·m⁵/C⁴     — negative (first-order transition)
+                    'c': 5.0e9,         # J·m⁹/C⁶
+                    'T0': 673.0,        # K  (PZT 52/48 Curie temperature)
+                    'Q12': -0.046,      # m⁴/C²  electrostrictive coefficient
+                    's11': 14.1e-12,    # m²/N   elastic compliance
+                    's12': -4.56e-12,   # m²/N
+                    'lattice_a': 0.395e-9,   # m  (matched to SRO → zero epitaxial strain)
+                    'film_thickness': 20e-9, # m
+                    'epsilon_r': 50,         # relative permittivity (reduced for clean demo loop)
+                    'leakage_resistance': 10e12,  # Ω  (low-leakage device)
                 },
-                'substrate': {  # SrTiO3 substrate
-                    'lattice_a': 0.3905e-9  # meters
+                'substrate': {   # SrRuO3 bottom electrode / substrate
+                    'lattice_a': 0.395e-9  # m
                 },
-                'electrode': {  # Platinum electrodes
-                    'screening_lambda': 0.05e-9,  # meters
-                    'permittivity_e': 8.0,  # dimensionless
-                    'area': 1.0e-10  # meters^2
+                'electrode': {   # Pt top electrode
+                    'screening_lambda': 0.05e-9,  # m  (Thomas-Fermi length)
+                    'permittivity_e': 1e6,         # large → depolarization ≈ 0
+                    'area': 1.0e-10               # m²
                 }
             }
             VirtualInstrument._shared_fe_sample = Ferroelectric(material_dict=default_fe_material)

@@ -371,7 +371,9 @@ class FEMeasurementApp(MeasurementApp):
 
         v_div = float(self.vdiv_entry.get())
         area = float(eval(str(self.area_entry.get())))
-        time_offset = float(self.timeshift_entry.get())*1.0e-9
+        time_offset = float(self.timeshift_entry.get() or 0)*1.0e-9
+        if awg_address == "VIRTUAL":
+            time_offset = 0.0
         save_plots = bool(self.saveplots_entry.get())
         show_plots = save_plots
         auto_timeshift = bool(self.auto_timeshift_entry.get())
