@@ -120,6 +120,13 @@ The `piec` framework automatically tracks the "last set" value of any parameter 
 * These attributes are useful for **dependent parameter checks** (handled by the framework) and for **driver-side conditional logic**.
 * **Example:** If you need to know the current `mode` to set the correct `voltage` range, you can access `self._current_mode`.
 
+## 8a. Automatic String Lowercasing
+The `auto_check_params` decorator **automatically converts all string arguments to lowercase** before they are passed into your driver method. This means:
+* Driver implementations should always expect lowercase strings (e.g. `'sin'`, not `'SIN'`).
+* You do **not** need to call `.lower()` inside your methods — the framework handles it.
+* Validation is case-insensitive regardless of how class attribute values are written — the validation function lowercases both sides before comparing, so `'sin'`, `'SIN'`, and `'Sin'` all pass against `['SIN', 'SQU', 'RAMP']` or `['sin', 'squ', 'ramp']` equally.
+* If your instrument requires an uppercase string in its command (e.g. the instrument rejects `FUNC sin`), call `.upper()` on the argument inside your method before writing it to the instrument.
+
 > [!CAUTION]  
 > **Initial State is `None`:** Upon first connection, all tracked attributes are initialized to `None`. This means the first few `set_` calls (where one parameter depends on another) might skip validation or cause errors if your logic expects a value. Always perform a hardware query in `__init__` (see Rule 2) to synchronize these states immediately.
 

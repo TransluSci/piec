@@ -111,5 +111,5 @@ DeepSeek R1). When using AI tools in contributions:
 * Disclose significant AI assistance in your pull request description.
 
 .. todo::
-   Add recommended prompts for common contribution tasks (e.g., scaffolding a new driver,
-   writing a virtual mode response).
+   Add recommended prompts for virtual mode driver responses. The general driver scaffolding
+   prompts have been documented in :doc:`adding_driver`.
