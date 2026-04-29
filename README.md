@@ -1,119 +1,85 @@
-# PIEC — Python Integrated Experimental Control
+<p align="center">
+  <img src="docs/source/_static/logo.png" alt="PIEC logo" width="80"/>
+</p>
 
-[![Documentation Status](https://readthedocs.org/projects/piec/badge/?version=latest)](https://piec.readthedocs.io/en/latest/?badge=latest)
-[![PyPI version](https://badge.fury.io/py/piec.svg)](https://pypi.org/project/piec/)
-[![PyPI license](https://img.shields.io/pypi/l/piec.svg)](https://pypi.org/project/piec/)
+<h1 align="center">PIEC — Python Integrated Experimental Control</h1>
 
-<!-- TODO: Replace with a real figure (e.g. a ferroelectric hysteresis loop collected and analyzed with piec) -->
-<!-- [![Example Figure](imgs/placeholder.png)](https://piec.readthedocs.io) -->
+<p align="center">
+  <a href="https://piec.readthedocs.io/en/latest/?badge=latest"><img src="https://readthedocs.org/projects/piec/badge/?version=latest" alt="Documentation Status"/></a>
+  <a href="https://pypi.org/project/piec/"><img src="https://badge.fury.io/py/piec.svg" alt="PyPI version"/></a>
+  <a href="https://pypi.org/project/piec/"><img src="https://img.shields.io/pypi/l/piec.svg" alt="PyPI license"/></a>
+</p>
 
-A Python instrument control and measurement library for condensed matter physics experiments — featuring automatic driver detection, a standardized driver hierarchy, and built-in virtual instrument support for offline development.
+<p align="center">
+  <img src="docs/source/_static/example_data.png" alt="Example ferroelectric PUND current traces and polarization hysteresis loop collected and analyzed with piec" width="700"/>
+</p>
 
-- [Overview](#overview)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Supported Instruments](#supported-instruments)
-- [Contributing](#contributing)
-- [Support](#support)
-- [Citation](#citation)
-
----
-
-# Overview
-
-Running experiments across multiple instruments — AWGs, oscilloscopes, source meters, lock-in amplifiers, DMMs — typically means writing bespoke control code for every hardware combination. When you swap an instrument, you rewrite code. When you hand off to a student, they learn everything from scratch.
-
-**piec** solves this with a standardized 3-level driver hierarchy:
-
-```
-Level 1 — Instrument          Base connection management + parameter validation
-Level 2 — Category Interface  e.g. Awg, Oscilloscope, Lockin, Sourcemeter, DMM
-Level 3 — Specific Model      e.g. Keysight81150a, RigolDS1000Z, Keithley2400
-```
-
-Measurement code talks to the **Level 2 interface**, so instruments are interchangeable without any code changes. Swap a Keysight oscilloscope for a Rigol — the measurement script stays the same.
-
-### Key Features
-
-- **Autodetection** — connect any supported instrument and piec finds and loads the correct driver automatically via `autodetect()`. Subsequent connections are instant thanks to a local registry cache.
-- **Virtual Mode** — every driver supports `address='VIRTUAL'` for offline development and testing. Write and debug measurement code without any physical hardware.
-- **Parameter Validation** — optional `check_params=True` flag validates method arguments against the instrument's known ranges before sending any command, preventing invalid configurations from reaching hardware.
-- **State Tracking** — the framework automatically records every successfully set parameter, enabling dependent validation (e.g. knowing the current waveform to validate the frequency range) without extra instrument queries.
-- **Measurement Classes** — pre-built experiment workflows for common condensed matter measurements (ferroelectric hysteresis, PUND, IV sweeps, AMR) that handle instrument configuration, data acquisition, and analysis in a single `run_experiment()` call.
+`PIEC` is an open-source Python library that provides infrastructure for laboratory experiment design and operation through a standardized, hierarchical, object-oriented framework. Originally developed at Brown University as a fork of the ferroelectric testing-focused [EKPY](https://github.com/eparsonnet93/ekpmeasure) Python suite, `PIEC` is designed to be extended to any experimental domain that requires programmable instrument control.
 
 ---
 
-# Installation
-
-Install piec from PyPI:
+## Installation
 
 ```bash
 pip install piec
 ```
 
-or upgrade to the latest version:
-
-```bash
-pip install -U piec
-```
-
-### Additional Requirements
-
-Depending on your instruments, you may need one or more of the following:
+Depending on your instruments, you may also need:
 
 | Requirement | When needed | Download |
 |---|---|---|
-| **NI-488.2** | GPIB instruments | [ni.com/downloads](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
-| **NI-VISA** | USB-TMC, Ethernet, or GPIB instruments via NI-VISA | [ni.com/downloads](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
-| **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards (e.g. USB-231) | [mccdaq.com/swdownload](http://www.mccdaq.com/swdownload) |
-
-For installation issues, see the [Issue Tracker](https://github.com/TransluSci/piec/issues).
+| **NI-488.2** | GPIB instruments | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
+| **NI-VISA** | USB-TMC / Ethernet / GPIB via NI-VISA | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
+| **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards | [mccdaq.com](http://www.mccdaq.com/swdownload) |
 
 ---
 
-# Quick Start
+## Overview
 
-No hardware? No problem. Every piec driver works in virtual mode out of the box:
+Instrument drivers in `PIEC` follow a **type-first** architecture with three layers of abstraction:
+
+| Layer | Role | Examples |
+|---|---|---|
+| **Level 1 — Instrument** | Base connection management and parameter validation (wraps PyVISA) | `Instrument`, `Scpi` |
+| **Level 2 — Category** | Defines required methods and parameter standards for each instrument type | `Awg`, `Oscilloscope`, `Lockin`, `Sourcemeter` |
+| **Level 3 — Model** | Implements hardware-specific logic for a particular instrument | `Keysight81150a`, `RigolDS1000Z`, `Keithley2400` |
+
+Measurement code targets the **Level 2 interface**, so instruments are interchangeable without code changes. Each category also provides a **Virtual Instrument** that returns simulated responses, enabling development and testing without physical hardware.
+
+On top of this driver layer, **Measurement classes** coordinate multiple instruments to execute complete experiment protocols — configuring waveforms, triggering acquisition, processing data, and saving results — in a single method call. Pre-built **GUIs** and **Jupyter notebooks** are also provided for routine tasks.
+
+---
+
+## Quick Start
+
+**Virtual mode** — no hardware required:
 
 ```python
 from piec.drivers.awg.virtual_awg import VirtualAwg
 
 awg = VirtualAwg()
-print(awg.idn())             # 'Piec_Virtual_Instrument,...'
 awg.set_waveform(1, 'sin')
 awg.set_frequency(1, 1000)
 awg.set_amplitude(1, 1.0)
 awg.output(1, on=True)
 ```
 
-With real hardware, use `autodetect()` to find and connect to your instruments automatically:
+**Autodetection** — connect and go:
 
 ```python
 from piec.drivers.autodetect import autodetect
 
-awg = autodetect('awg')       # Scans the bus and loads the correct driver
+awg   = autodetect('awg')
 scope = autodetect('scope')
-
-print(awg.idn())
-print(scope.idn())
-```
-
-Or connect manually with a known VISA address:
-
-```python
-from piec.drivers.awg.k_81150a import Keysight81150a
-
-awg = Keysight81150a('GPIB0::8::INSTR')
-print(awg.idn())
 ```
 
 For a complete walkthrough, see the [User Guide](https://piec.readthedocs.io/en/latest/user_guide/the_driver.html).
 
 ---
 
-# Supported Instruments
+## Supported Instruments
 
-| Category | Supported Models |
+| Category | Models |
 |---|---|
 | Arbitrary Waveform Generator | Keysight 81150A, Agilent 33220A, Agilent 33500, Rigol DG1000, Rigol DG4000, Siglent SDG2000X |
 | Oscilloscope | Keysight DSOX3024A, Agilent DSOX5000, Rigol DS1000Z, Tektronix TDS2000, Tektronix TDS6604, LeCroy SDA6020 |
@@ -125,39 +91,32 @@ For a complete walkthrough, see the [User Guide](https://piec.readthedocs.io/en/
 | DC Calibrator | EDC 522 |
 | Stepper Motor | Arduino Stepper (custom serial) |
 
-Each category also provides a **virtual instrument** for hardware-free development and testing.
-
 **[Full instrument list →](https://piec.readthedocs.io/en/latest/supported_instruments.html)**
 
 ---
 
-# Contributing
+## Contributing
 
-We welcome contributions! New drivers can be added by following the structured workflow in the [Adding a Driver](https://piec.readthedocs.io/en/latest/contributing/adding_driver.html) guide. The process uses an AI coding assistant together with the instrument's programming manual and our standardized [Driver Development Guide](https://github.com/TransluSci/piec/blob/master/src/piec/drivers/example/DRIVER_DEVELOPMENT_GUIDE.md) to generate a driver skeleton, which is then validated against a hardware test notebook.
+New drivers can be added by implementing a driver subclass alongside its Virtual Instrument, following the [Driver Development Guide](https://github.com/TransluSci/piec/blob/master/src/piec/drivers/example/DRIVER_DEVELOPMENT_GUIDE.md). New experiment types require implementing a Measurement subclass without modifying existing code.
 
-For general contribution guidelines, see the [Contributing Guide](https://piec.readthedocs.io/en/latest/contributing/index.html).
+For general guidelines, see the [Contributing Guide](https://piec.readthedocs.io/en/latest/contributing/index.html).
 
 ---
 
-# Support
+## Support
 
-Code issues, bug reports, and feature requests can be created in the [Issue Tracker](https://github.com/TransluSci/piec/issues).
+Issues, bug reports, and feature requests: [Issue Tracker](https://github.com/TransluSci/piec/issues)
 
 Maintainer: Geo Fratian — geo_fratian@brown.edu
 
 ---
 
-# Citation
+## Citation
 
 Please cite this software following the [CITATION.cff](https://github.com/TransluSci/piec/blob/master/CITATION.cff).
 
 ```
-Fratian, G. (2026). PIEC: Python Integrated Experimental Control [Software].
+Fratian, G., Qualls, A., Phan, J., Pankaj, R., & Caretta, L. (2026).
+PIEC: A Python Library for Integrated Experimental Control [Software].
 https://github.com/TransluSci/piec
 ```
-
-## Cited By
-
-<!-- Add publications that use piec here -->
-<!-- Example format: -->
-<!-- 1. G. Fratian *et al.*, Title of Paper, *Journal* **Vol**, Page (Year). -->
