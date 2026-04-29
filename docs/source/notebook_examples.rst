@@ -14,7 +14,7 @@ The Jupyter notebooks are typically located in the ``notebooks/`` or ``src/piec/
 
 Available Notebooks
 -------------------
-(You might want to list a few key notebooks here with brief descriptions if they are central to the user experience, e.g., based on files like `elpsykurisu/piec/piec-537adb7afb32347bf4cd6e7583797f3d36bcf9b7/notebooks/FE_testing.ipynb`, `elpsykurisu/piec/piec-537adb7afb32347bf4cd6e7583797f3d36bcf9b7/notebooks/amr.ipynb` etc.)
+(You might want to list a few key notebooks here with brief descriptions if they are central to the user experience, e.g., based on files like `TransluSci/piec/notebooks/FE_testing.ipynb`, `TransluSci/piec/notebooks/amr.ipynb` etc.)
 
 * **Ferroelectric Testing (FE_testing.ipynb)**: Demonstrates hysteresis and PUND measurements.
 * **Anisotropic Magnetoresistance (amr.ipynb)**: Example of setting up and running an AMR experiment.
