@@ -7,9 +7,9 @@ It handles shared sample management and default material properties for ferroele
 
 from piec.simulation.fe_material import Ferroelectric
 from piec.simulation.magnetic_material import MagneticSample
-from piec.drivers.instrument import Instrument
 
-class VirtualInstrument(Instrument):
+
+class VirtualInstrument():
     """
     Base class for all virtual instruments that share a common sample instance.
     
