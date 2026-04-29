@@ -24,7 +24,6 @@ Running a virtual hysteresis measurement
 Next steps
 ----------
 
-* Learn about the :doc:`../user_guide/guis` for a no-code interface.
 * Read :doc:`../user_guide/running_measurements` for a deeper look at how measurements work.
 * Browse :doc:`../measurements/ferroelectric`, and other measurement
   pages for experiment-specific documentation.

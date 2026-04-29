@@ -25,8 +25,6 @@ that enables scientists to quickly test and build new experimental setups.
    user_guide/connecting_to_instrument
    user_guide/running_measurements
    user_guide/data_and_analysis
-   user_guide/jupyter_examples
-   user_guide/guis
 
 .. toctree::
    :maxdepth: 2

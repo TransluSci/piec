@@ -5,8 +5,12 @@ body {
     color: #E0E0E0 !important;
 }
 
-img {
+img:not(.no-invert) {
     filter: invert(100%);
+}
+
+.no-invert {
+    padding-bottom: 20px;
 }
 
 /* Main content area */
