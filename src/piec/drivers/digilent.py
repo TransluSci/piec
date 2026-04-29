@@ -8,7 +8,7 @@ identification, and utility framework for all UL-based devices.
 This driver requires the 'mcculw' library to be installed.
 """
 
-from .instrument import Instrument
+
 
 # --- Import the actual MCC Universal Library ---
 # We try to import the library. If it fails, we set the
@@ -31,7 +31,7 @@ except:
     mcc_ul_imported = False
 
 
-class Digilent(Instrument):
+class Digilent():
     """
     Parent class for Digilent/MCC instruments using the Universal Library.
     

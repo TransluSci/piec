@@ -135,3 +135,92 @@ Import the specific driver class and instantiate it with the instrument's addres
    print(awg.idn())   # Confirms connection
 
 For help connecting or finding an instrument's address, see :doc:`connecting_to_instrument`.
+
+Parameter validation
+--------------------
+
+Every piec driver has built-in parameter validation that checks method arguments against
+the instrument's known capabilities before sending any command to hardware. This is
+controlled by the ``check_params`` flag at instantiation and is **off by default**:
+
+.. code-block:: python
+
+   # Default — no validation performed (fastest for scripting)
+   awg = Keysight81150a('GPIB0::8::INSTR')
+
+   # Validation enabled — arguments are checked on every method call
+   awg = Keysight81150a('GPIB0::8::INSTR', check_params=True)
+
+When ``check_params=True``, every method call validates its arguments against the driver's
+class attributes before executing:
+
+* **List** (e.g. ``waveform = ['SIN', 'SQU', 'RAMP']``) — the argument must be one of the
+  listed values.
+* **Tuple** (e.g. ``amplitude = (0.01, 10.0)``) — the argument must fall within that
+  numeric range (inclusive).
+* **Dictionary** (e.g. ``frequency = {'waveform': {'SIN': (1e-6, 30e6), ...}}``) — the
+  valid range depends on the current value of another parameter. piec resolves the
+  dependency automatically using the current instrument state.
+* **None** — validation for that parameter is skipped entirely. The driver handles it
+  internally. This is the standard way for a driver to opt out of automatic checking for
+  a specific parameter.
+
+If a value fails validation, a ``ValueError`` is raised before any command is sent to the
+instrument.
+
+.. note::
+   **String arguments are automatically lowercased** before validation and before being
+   passed to the driver method, so ``'SIN'``, ``'sin'``, and ``'Sin'`` are all equivalent
+   from the caller's perspective.
+
+   Validation is case-insensitive regardless of how class attribute values are written —
+   the validator lowercases both sides before comparing. If a driver needs to send an
+   uppercase string to the instrument, it should call ``.upper()`` on the argument inside
+   the method body before writing it.
+
+Class attributes
+----------------
+
+Every driver class exposes its valid parameter ranges as **class attributes**. You can
+inspect these directly — without connecting to any hardware — to understand what values
+an instrument accepts:
+
+.. code-block:: python
+
+   from piec.drivers.awg.k_81150a import Keysight81150a
+
+   print(Keysight81150a.channel)    # [1, 2]
+   print(Keysight81150a.amplitude)  # (0.01, 10.0)
+   print(Keysight81150a.waveform)   # ['SIN', 'SQU', 'RAMP', 'PULS', ...]
+
+Attribute values follow a consistent syntax:
+
+* **List** — a finite set of accepted values (e.g. channel numbers, waveform types)
+* **Tuple** — a continuous numeric range ``(min, max)``
+* **Dictionary** — a nested structure where the valid range depends on another argument
+* **None** — no automatic bounds; the driver validates this parameter itself
+
+These attributes are defined at the Level 2 interface for the instrument category and
+overridden at Level 3 with the specific model's real values. The parent Level 2 class
+defines the *vocabulary* (attribute names that must exist); the Level 3 driver fills in
+the actual numbers from the instrument manual.
+
+State tracking
+--------------
+
+Whenever a ``set_`` method completes successfully, piec automatically records the
+value that was set as an instance attribute ``self._current_<name>``. For example,
+after calling ``awg.set_waveform(1, 'sin')``, the driver stores
+``awg._current_waveform = 'sin'``.
+
+All state attributes are initialized to ``None`` at connection time and updated as
+methods are called. They serve two purposes:
+
+1. **Dependent validation** — when ``check_params=True``, if a parameter's valid range
+   depends on another (e.g. ``frequency`` depends on ``waveform``), piec looks up the
+   current state automatically so you do not need to pass the dependency explicitly
+   every time.
+
+2. **Driver-side logic** — driver implementations can read ``self._current_<attr>`` to
+   make decisions based on the last known hardware state without issuing an extra query
+   to the instrument.
