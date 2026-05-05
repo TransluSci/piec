@@ -12,14 +12,30 @@ real hardware required. You can run this example immediately after installing PI
 Running a virtual hysteresis measurement
 -----------------------------------------
 
-.. todo::
-   Add a self-contained virtual instrument example here that a new user can copy-paste and
-   run immediately after ``pip install piec``. The example should:
+.. code-block:: python
 
-   * Import the relevant driver(s) in virtual mode.
-   * Create a ``HysteresisLoop`` measurement object.
-   * Call ``run_experiment()``.
-   * Show what the output looks like.
+   from piec.drivers.awg.virtual_awg import VirtualAwg
+   from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+   from piec.measurement.discrete_waveform import HysteresisLoop
+
+   awg = VirtualAwg()
+   osc = VirtualScope()
+   experiment = HysteresisLoop(awg, osc, save_dir='.')
+   experiment.run_experiment()  # configures, captures, saves, and analyzes
+
+``run_experiment()`` executes the full workflow: it configures both instruments,
+generates a triangle waveform, triggers acquisition, saves the raw data to CSV,
+and runs the hysteresis analysis automatically.
+
+Swap ``VirtualAwg`` / ``VirtualScope`` for real drivers (or use ``autodetect``)
+and the same code runs on hardware:
+
+.. code-block:: python
+
+   from piec.drivers.autodetect import autodetect
+
+   awg   = autodetect('awg')
+   scope = autodetect('scope')
 
 Next steps
 ----------
