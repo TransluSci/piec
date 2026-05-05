@@ -14,6 +14,12 @@ PIEC provides:
 * **GUIs and notebooks** — graphical interfaces and Jupyter notebook examples for interactive
   use without writing code from scratch.
 
+.. image:: ../_static/PIEC_diagram.png
+   :alt: piec logo
+   :align: center
+   :width: 450px
+   :class: no-invert
+
 Who is PIEC for?
 ----------------
 PIEC is aimed at experimental scientists and engineers who:
