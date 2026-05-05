@@ -17,18 +17,16 @@ authors:
   - name: Jesalina Phan
     orcid: 0009-0007-7216-8506
     affiliation: 1
-Name: Rohan Pankaj
-    orcid: 0009-0005-0445-9323 
+  - name: Rohan Pankaj
+    orcid: 0009-0005-0445-9323
     affiliation: 1
-Name: Lucas Caretta
-    orcid: 0000-0001-7229-7980 
+  - name: Lucas Caretta
+    orcid: 0000-0001-7229-7980
     affiliation: 1
-
 affiliations:
   - name: Brown University, Providence, Rhode Island, USA
     index: 1
-    ror: 05gq02987
-date: 03 March 2026
+date: '03 March 2026'
 bibliography: paper.bib
 ---
 
