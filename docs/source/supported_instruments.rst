@@ -10,7 +10,7 @@ Universal Requirements
 Verified Versions
 -----------------
 
-* **Python**: 3.6+
+* **Python**: 3.9+
 * **NI-VISA**: 2024+
 * **OS**: Windows (Primary support)
 

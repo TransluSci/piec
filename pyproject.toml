@@ -1,6 +1,42 @@
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
-]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "piec"
+dynamic = ["version"]
+description = "A collection of control and analysis code for experiments"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "Geo Fratian", email = "geo_fratian@brown.edu" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pandas>=1.3.2",
+    "numpy>=1.19.2",
+    "matplotlib>=3.3.4",
+    "scipy>=1.6.2",
+    "pyvisa>=1.11.3",
+    "PyVISA-py>=0.7.2",
+    "IPython>=7.22.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ElPsyKurisu/piec"
+"Bug Tracker" = "https://github.com/ElPsyKurisu/piec/issues"
+Documentation = "https://piec.readthedocs.io"
+Repository = "https://github.com/ElPsyKurisu/piec"
+
+[tool.setuptools.dynamic]
+version = { attr = "piec._version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*_notebook.ipynb", "*.json", "*.csv"]

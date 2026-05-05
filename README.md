@@ -20,7 +20,7 @@
 
 ## Installation
 
-`PIEC` requires python 3.6 or higher. To install `PIEC`, run the following command in the terminal:
+`PIEC` requires python 3.9 or higher. To install `PIEC`, run the following command in the terminal:
 
 ```bash
 pip install piec
