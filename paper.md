@@ -69,6 +69,11 @@ On top of this three-level standardized instrument control, within `piec.measure
 
 Finally, in the top-level Measurement repository, GUIs are provided using a class in ‘piec.measurement.gui_utils.py’ which leverages tkinter and Matplotlib [@hunter2007matplotlib], as well as python notebooks where the measurement and driver classes can be run directly. Useful background on measurements is included in the notebooks as well as markdown files in the same directory.
 
+<div style="text-align: center;">
+<img src="docs/source/_static/PIEC_diagram.png" width="50%">
+<p>Figure 1: Diagram of PIEC architecture</p>
+</div>
+
 The layered architecture means that a researcher can work at whatever level their experiment requires, whether that is coding driver methods for new setups, creating `Measurement` classes for running experiments, or using the pre-existing graphical interfaces for routine tasks without writing code. Throughout the workflow, standard Python packages such as NumPy [@harris2020array], and Pandas @[the_pandas_development_team_2026_19340003].
 
 In the case that an instrument isn't supported or a new measurement class is needed, extending `PIEC` only requires implementing a driver subclass alongside its `VirtualInstrument`, and adding a new experiment type requires implementing a `Measurement` subclass, without modifying other existing code.
