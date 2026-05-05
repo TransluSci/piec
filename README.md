@@ -20,11 +20,13 @@
 
 ## Installation
 
+`PIEC` requires python 3.6 or higher. To install `PIEC`, run the following command in the terminal:
+
 ```bash
 pip install piec
 ```
 
-Depending on your instruments, you may also need:
+After this, decide whether you would like to run a specific measurment with a GUI or notebook (in which case you'll need to download the appropriate files from the `Measurements` folder). Otherwise, see below for information on how to start scripting. Depending on your instruments, you may also need:
 
 | Requirement | When needed | Download |
 |---|---|---|
