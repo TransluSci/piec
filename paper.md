@@ -65,13 +65,19 @@ The main principle behind `PIEC`'s instrument control design is to provide a use
 
 Within `piec.drivers`, the base `Instrument` class (Level 1) is a parent class which defines the minimum requirements of any instrument driver in general, wrapping PyVISA [@pyvisa] for resource management. The `Scpi` child class optionally extends this with vetted implementations for Standard Commands for Programmable Instruments (SCPI)-compliant devices [@scpi1999spec]. Driver classes (Level 2) — such as `Oscilloscope`, `Awg`, `lockin`—define the required methods and parameter standards for the drivers to implement. Specific instrument models (Level 3) inherit from these classes and implement the hardware-specific logic. Each instrument category also provides a `VirtualInstrument` that returns simulated responses, enabling development and testing without physical hardware.
 
+
+<div style="text-align: center;">
+<img src="docs/source/_static/piec_inheritance_diagram.png" width="80%">
+<p>Figure 1: Inheritance Diagram of PIEC Instruments</p>
+</div>
+
 On top of this three-level standardized instrument control, within `piec.measurement` we provide `Measurement` classes that coordinate multiple drivers to implement complete experiment protocols. For example, `HysteresisLoop` configures an AWG to output a triangular voltage waveform, triggers an oscilloscope to capture applied voltage and displacement current, integrates the current to compute polarization, and saves the P-E loop to a structured file, all in a single method call. Each `Measurement` class initializes using instrument objects that match the required instrument types for the particular measurement. It then calls functions from the instrument objects to produce the correct calls to the hardware. Further analysis methods in the `Measurement` class process the data, save data files in a standard ‘.csv’ format along with added metadata. The format consists of a metadata table with an arbitrary number of rows and one column at the top of the file, followed by a data table with an arbitrary number of rows and columns. This choice was made to provide human readability and ease of use, while maintaining a structured, machine-readable architecture required for automated analysis.
 
 Finally, in the top-level Measurement repository, GUIs are provided using a class in ‘piec.measurement.gui_utils.py’ which leverages tkinter and Matplotlib [@hunter2007matplotlib], as well as python notebooks where the measurement and driver classes can be run directly. Useful background on measurements is included in the notebooks as well as markdown files in the same directory.
 
 <div style="text-align: center;">
 <img src="docs/source/_static/PIEC_diagram.png" width="50%">
-<p>Figure 1: Diagram of PIEC architecture</p>
+<p>Figure 2: Diagram of PIEC architecture</p>
 </div>
 
 The layered architecture means that a researcher can work at whatever level their experiment requires, whether that is coding driver methods for new setups, creating `Measurement` classes for running experiments, or using the pre-existing graphical interfaces for routine tasks without writing code. Throughout the workflow, standard Python packages such as NumPy [@harris2020array], and Pandas @[the_pandas_development_team_2026_19340003].
