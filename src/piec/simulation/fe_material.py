@@ -69,7 +69,11 @@ class Ferroelectric(Material):
     # ------------------------------------------------------------------
 
     def _compute_renormalized_coefficients(self, temperature=None):
-        """Return (a_tilde, b_tilde, c_tilde, film_thickness, landau_V_fn, equation_fn)."""
+        """Return (a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s).
+
+        P_s is the spontaneous polarization computed from the equilibrium
+        condition dG/dP = 0  →  a + b·P² + c·P⁴ = 0  (quadratic in P²).
+        """
         if temperature is None:
             temperature = self.temperature
         fe  = self.material_dict['ferroelectric']
@@ -91,7 +95,15 @@ class Ferroelectric(Material):
         def residual(P, V_target):
             return landau_V(P) - V_target
 
-        return a_tilde, b_tilde, c_tilde, d, landau_V, residual
+        # Spontaneous polarization from a + b·P² + c·P⁴ = 0
+        disc = b_tilde**2 - 4 * c_tilde * a_tilde
+        if disc > 0:
+            u = (-b_tilde + np.sqrt(disc)) / (2 * c_tilde)
+            P_s = np.sqrt(u) if u > 0 else 0.01
+        else:
+            P_s = 0.01  # paraelectric / fallback
+
+        return a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s
 
     def _find_switching_voltages(self, a_tilde, b_tilde, c_tilde, landau_V):
         """Return (V_c_neg, V_c_pos) coercive voltages from Landau coefficients.
@@ -129,13 +141,13 @@ class Ferroelectric(Material):
         Returns:
             ndarray: Polarization response (C/m²).
         """
-        a_tilde, b_tilde, c_tilde, d, landau_V, residual = \
+        a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s = \
             self._compute_renormalized_coefficients(temperature)
 
         V_c_neg, V_c_pos = self._find_switching_voltages(a_tilde, b_tilde, c_tilde, landau_V)
 
         P_loop = np.zeros_like(V_applied_path)
-        P_current = fsolve(residual, x0=-0.5, args=(V_applied_path[0],))[0]
+        P_current = fsolve(residual, x0=-P_s, args=(V_applied_path[0],))[0]
         P_loop[0] = P_current
         on_upper_branch = P_current > 0
 
@@ -146,13 +158,18 @@ class Ferroelectric(Material):
 
             guess = P_current
             if going_up and not on_upper_branch and V_now >= V_c_pos:
-                guess = 0.5
+                guess = P_s
                 on_upper_branch = True
             elif not going_up and on_upper_branch and V_now <= V_c_neg:
-                guess = -0.5
+                guess = -P_s
                 on_upper_branch = False
 
-            P_current = fsolve(residual, x0=guess, args=(V_now,))[0]
+            sol, info, ier, _ = fsolve(residual, x0=guess, args=(V_now,), full_output=True)
+            if ier == 1:
+                P_current = sol[0]
+            else:
+                # Convergence failed — keep previous value as best estimate
+                P_current = np.clip(P_current, -2 * P_s, 2 * P_s)
             P_loop[i] = P_current
 
         return P_loop
@@ -172,12 +189,13 @@ class Ferroelectric(Material):
             P_loop (ndarray): Polarization (C/m²).
             dP_dt  (ndarray): Time-derivative of polarization (C/m²/s).
         """
-        a_tilde, b_tilde, c_tilde, d, landau_V, residual = \
+        a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s = \
             self._compute_renormalized_coefficients()
 
         fe    = self.material_dict['ferroelectric']
         gamma = fe['kinetic_damping']
         dt    = t[1] - t[0]  # assumes uniform timestep
+        P_max = 2 * P_s      # physical clamp bound
 
         def rate(P, V_target):
             return (V_target - landau_V(P)) / gamma
@@ -185,7 +203,7 @@ class Ferroelectric(Material):
         P_loop = np.zeros_like(v)
         dP_dt  = np.zeros_like(v)
 
-        P_current = fsolve(residual, x0=-0.5, args=(v[0],))[0]
+        P_current = fsolve(residual, x0=-P_s, args=(v[0],))[0]
         P_loop[0] = P_current
         dP_dt[0]  = rate(P_current, v[0])
 
@@ -196,7 +214,7 @@ class Ferroelectric(Material):
             k3 = rate(P_current + 0.5*dt*k2, V_target)
             k4 = rate(P_current +     dt*k3,  V_target)
             avg_rate   = (k1 + 2*k2 + 2*k3 + k4) / 6.0
-            P_current += dt * avg_rate
+            P_current  = np.clip(P_current + dt * avg_rate, -P_max, P_max)
             P_loop[i]  = P_current
             dP_dt[i]   = avg_rate
 
@@ -280,8 +298,27 @@ class Ferroelectric(Material):
             P_total, _ = self.add_parasitic_effects(v, P_ideal, t=t)
             self.output_voltage = np.gradient(P_total, t) * 50.0 * area
 
-        # Smooth the first few points where trigger-delay zeros end
-        self.output_voltage[:10] = self.output_voltage[10]
+        # --- post-processing ---------------------------------------------------
+        n_prep = getattr(self, 'prep_points', 10)
+
+        # 1. Gaussian bandwidth filter.
+        #    Fixed time-constant: higher-frequency loops get more smearing.
+        dt     = t[1] - t[0]
+        sigma  = 5e-9                          # Gaussian width (s)
+        n_half = max(1, int(3 * sigma / dt))   # 3-sigma half-width
+        if n_half > 1:
+            x = np.arange(-n_half, n_half + 1) * dt
+            kernel = np.exp(-0.5 * (x / sigma) ** 2)
+            kernel /= kernel.sum()
+            self.output_voltage = np.convolve(
+                self.output_voltage, kernel, mode='same')
+
+        # 2. Remove DC offset of the active (non-prep) region so that
+        #    cumulative integration in the analysis doesn't drift.
+        if 0 < n_prep < len(self.output_voltage):
+            active = self.output_voltage[n_prep:]
+            active -= np.mean(active)          # modifies slice in-place
+            self.output_voltage[:n_prep] = 0.0 # clean quiet baseline
 
     def get_voltage_response(self):
         """Return (output_voltage, time) as measured across the 50 Ω resistor."""

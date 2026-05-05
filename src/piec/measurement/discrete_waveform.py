@@ -64,6 +64,7 @@ class DiscreteWaveform:
         self.metadata = pd.DataFrame(params, index=[0])
 
         # Other info
+        self.metadata['mtype'] = self.mtype
         self.metadata['awg'] = self.awg.idn()
         self.metadata['osc'] = self.osc.idn()
         if hasattr(self, 'length'):
