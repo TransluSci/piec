@@ -54,19 +54,20 @@ On top of this driver layer, **Measurement classes** coordinate multiple instrum
 
 ## Quick Start
 
-**Virtual mode** — no hardware required:
+**Virtual hysteresis loop** — no hardware required:
 
 ```python
 from piec.drivers.awg.virtual_awg import VirtualAwg
+from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.measurement.discrete_waveform import HysteresisLoop
 
 awg = VirtualAwg()
-awg.set_waveform(1, 'sin')
-awg.set_frequency(1, 1000)
-awg.set_amplitude(1, 1.0)
-awg.output(1, on=True)
+osc = VirtualScope()
+experiment = HysteresisLoop(awg, osc, save_dir='.')
+experiment.run_experiment()  # configures, captures, saves, and analyzes
 ```
 
-**Autodetection** — connect and go:
+Swap `VirtualAwg` / `VirtualScope` for real drivers (or use `autodetect`) and the same code runs on hardware:
 
 ```python
 from piec.drivers.autodetect import autodetect

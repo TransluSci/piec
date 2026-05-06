@@ -47,7 +47,7 @@ class VirtualAwg(VirtualInstrument, Awg):
     trigger_mode = ['EDGE', 'LEV']
 
     arb_dac_value = (0, 16383) # Range for individual DAC points in arb_data_range data list
-    arb_data_range = (2, 1000) # Points, for arbitrary waveform data len
+    arb_data_range = (2, 4000)  # Points, for arbitrary waveform data len
 
     def __init__(self, address='123'):
         """
@@ -453,9 +453,9 @@ class VirtualAwg(VirtualInstrument, Awg):
             duty = self.state['duty_cycle'][channel] / 100.0
             v = amp * (np.mod(t, 1) < duty) + offset
         elif wf.upper() == 'NOIS':
-            v = amp * np.random.randn(self.arb_data_range) + offset
+            v = amp * np.random.randn(self.arb_data_range[1]) + offset
         elif wf.upper() == 'DC':
-            v = np.ones(self.arb_data_range) * offset
+            v = np.ones(self.arb_data_range[1]) * offset
         elif wf.upper() == 'USER' and self.state['arb_waveform'][channel] is not None:
             
             data = self.state['arb_waveform'][channel]

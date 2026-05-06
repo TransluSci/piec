@@ -246,7 +246,7 @@ class AMR(MagnetoTransport):
         :amplitude (float): Peak voltage amplitude in volts
         :frequency (float): Excitation frequency in Hz
     """
-    type = 'amr'
+    mtype = 'amr'
 
     def __init__(self, dmm=None, calibrator=None, arduino=None, lockin=None, field=None, angle_step=15, total_angle=360,
                  amplitude=1.0, frequency=10, measure_time=60, sensitivity='50uv/pa', save_dir=r'\scratch', voltage_callibration=10000,
@@ -282,14 +282,14 @@ class AMR(MagnetoTransport):
         self.notes = str(amplitude).replace('.', 'p')+'V_'+str(int(frequency))+'Hz' #i got nothing
         self.metadata = pd.DataFrame(locals(), index=[0])
         del self.metadata['self']
-        self.metadata['type'] = self.type
+        self.metadata['mtype'] = self.mtype
         self.metadata['lockin'] = self.lockin.idn()
         self.metadata['dmm'] = self.dmm.idn()
         #self.metadata['calibrator'] = self.calibrator.idn()
         self.metadata['arduino'] = self.arduino.idn()
         self.metadata['timestamp'] = time.time()
         self.metadata['processed'] = False
-        self.filename = create_measurement_filename(self.save_dir, self.type, self.notes) #create filename now so its blank
+        self.filename = create_measurement_filename(self.save_dir, self.mtype, self.notes) #create filename now so its blank
         self.angle = 0 #initial angle
 
     def analyze(self):
