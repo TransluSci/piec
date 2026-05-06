@@ -11,8 +11,9 @@ project = 'piec'
 copyright = '2025, Geo Fratian Alexander Qualls'
 author = 'Geo Fratian'
 
-release = '0.1'
-version = '0.1.2'
+import piec._version
+release = piec._version.__version__
+version = piec._version.__version__
 
 # -- General configuration
 
