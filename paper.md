@@ -67,7 +67,7 @@ Within `piec.drivers`, the base `Instrument` class (Level 1) is a parent class w
 
 
 <div style="text-align: center;">
-<img src="docs/source/_static/piec_inheritance_diagram.png" width="80%">
+<img src="https://github.com/TransluSci/piec/blob/master/docs/source/_static/piec_inheritance_diagram.png" width="80%">
 <p>Figure 1: Inheritance Diagram of PIEC Instruments</p>
 </div>
 
@@ -76,7 +76,7 @@ On top of this three-level standardized instrument control, within `piec.measure
 Finally, in the top-level Measurement repository, GUIs are provided using a class in ‘piec.measurement.gui_utils.py’ which leverages tkinter and Matplotlib [@hunter2007matplotlib], as well as python notebooks where the measurement and driver classes can be run directly. Useful background on measurements is included in the notebooks as well as markdown files in the same directory.
 
 <div style="text-align: center;">
-<img src="docs/source/_static/PIEC_diagram.png" width="50%">
+<img src="https://github.com/TransluSci/piec/blob/master/docs/source/_static/PIEC_diagram.png" width="50%">
 <p>Figure 2: Diagram of PIEC architecture</p>
 </div>
 
