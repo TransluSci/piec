@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/source/_static/logo.png" alt="PIEC logo" width="80"/>
+  <img src="https://raw.githubusercontent.com/ElPsyKurisu/piec/master/docs/source/_static/logo.png" alt="PIEC logo" width="80"/>
 </p>
 
 <h1 align="center">PIEC — Python Integrated Experimental Control</h1>
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/source/_static/example_data.png" alt="Example ferroelectric PUND current traces and polarization hysteresis loop collected and analyzed with piec" width="700"/>
+  <img src="https://raw.githubusercontent.com/ElPsyKurisu/piec/master/docs/source/_static/example_data.png" alt="Example ferroelectric PUND current traces and polarization hysteresis loop collected and analyzed with piec" width="700"/>
 </p>
 
 `PIEC` is an open-source Python library that provides infrastructure for laboratory experiment design and operation through a standardized, hierarchical, object-oriented framework. Originally developed at Brown University as a fork of the ferroelectric testing-focused [EKPY](https://github.com/ElPsyKurisu/ekpmeasure) Python suite, `PIEC` is designed to be extended to any experimental domain that requires programmable instrument control.
