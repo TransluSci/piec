@@ -48,7 +48,7 @@ Inconsistencies in communication protocols and in the structure of other open-so
 
 The landscape of laboratory automation is dominated by commercial platforms such as LabVIEW [@LabVIEW], which are widely deployed across experimental physics and materials science laboratories. While powerful, these solutions rely on proprietary programming environments and require licenses, making them cost-restrictive, inflexible, and difficult to integrate with modern version-control and data-science workflows.
 
-In the open-source ecosystem, several Python-based tools have emerged to address these limitations. General-purpose packages like PyMeasure [@rawlings2023pymeasure] and QCoDeS [@qcodes] provide extensive libraries of instrument wrappers, parameter validation, and sweep automation. Within specific subfields, targeted packages such as Hardware-Control [@hardware_control] and EKPY [@Parsonnet_ekpy] have been developed to handle automated testing and analysis for specific instrumentation, focusing on beamline and ferroelectric measurements respectively.
+In the open-source ecosystem, several Python-based tools have emerged to address these limitations. General-purpose packages like PyMeasure [@rawlings2023pymeasure] and QCoDeS [@qcodes] provide extensive libraries of instrument wrappers, parameter validation, and sweep automation. Within specific subfields, targeted packages such as Hardware-Control [@Giesbrecht2022] and EKPY [@Parsonnet_ekpy] have been developed to handle automated testing and analysis for specific instrumentation, focusing on beamline and ferroelectric measurements respectively.
 
 PIEC is developed to bridge the gap between generalized instrument wrappers and highly specialized, rigid test suites. It is a valuable alternative to the options listed above because of three major differences in design:
 
@@ -80,7 +80,7 @@ Finally, in the top-level Measurement repository, GUIs are provided using a clas
 <p>Figure 2: Diagram of PIEC architecture</p>
 </div>
 
-The layered architecture means that a researcher can work at whatever level their experiment requires, whether that is coding driver methods for new setups, creating `Measurement` classes for running experiments, or using the pre-existing graphical interfaces for routine tasks without writing code. Throughout the workflow, standard Python packages such as NumPy [@harris2020array], and Pandas @[the_pandas_development_team_2026_19340003].
+The layered architecture means that a researcher can work at whatever level their experiment requires, whether that is coding driver methods for new setups, creating `Measurement` classes for running experiments, or using the pre-existing graphical interfaces for routine tasks without writing code. Throughout the workflow, standard Python packages such as NumPy [@harris2020array], and Pandas [@the_pandas_development_team_2026_19340003].
 
 In the case that an instrument isn't supported or a new measurement class is needed, extending `PIEC` only requires implementing a driver subclass alongside its `VirtualInstrument`, and adding a new experiment type requires implementing a `Measurement` subclass, without modifying other existing code.
 
