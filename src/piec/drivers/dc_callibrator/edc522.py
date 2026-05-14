@@ -215,9 +215,48 @@ class EDC522(DCCalibrator):
 
     def reset(self):
         """
-        Resets the instrument to a safe, known state (e.g., crowbar output).
+        Resets the instrument to a safe, known state by engaging the crowbar
+        (output disabled / short-circuited).
         """
         return self.output(False)
+
+    def clear(self):
+        """
+        Not supported — the EDC 522 does not have a clearable status register.
+        """
+        print("[EDC522] clear() is not supported by this instrument — no-op.")
+
+    def wait(self):
+        """
+        Not supported — the EDC 522 does not have a pending-operation queue.
+        """
+        print("[EDC522] wait() is not supported by this instrument — no-op.")
+
+    def self_test(self):
+        """
+        Not supported — the EDC 522 does not have a built-in self-test routine.
+
+        Returns:
+            str: Always returns ``'1'`` (not supported).
+        """
+        print("[EDC522] self_test() is not supported by this instrument.")
+        return "1"
+
+    def operation_complete(self):
+        """
+        Not supported — the EDC 522 sets output immediately and has no
+        background operations.
+
+        Returns:
+            str: Always returns ``'1'`` (complete).
+        """
+        return "1"
+
+    def initialize(self):
+        """
+        Initialises the EDC 522 by engaging the crowbar (output off).
+        """
+        self.reset()
 
 def extract_number(input_string):
     """Helper for response parsing."""

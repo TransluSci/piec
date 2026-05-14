@@ -10,28 +10,56 @@ PIEC drivers follow a strict 3-level hierarchy to ensure consistency and modular
 All instruments in the library MUST inherit from the base `Instrument` class. This class handles the core VISA communication and standard PIEC behavior.
 
 ### Convenience Classes (e.g., `Scpi`)
-`Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard functions (like `reset`, `clear`, `idn`) that most SCPI-compliant instruments share. 
-* **Crucially**: If a method like `reset()` is expected for a certain instrument type, it MUST be defined in the Level 2 interface, even if the Level 3 driver eventually uses the `Scpi` implementation.
-* **Verification**: Always cross-check the instrument manual. If your instrument is SCPI-compliant but does *not* support a standard `Scpi` method (e.g., `*RST` isn't `reset`), or uses a different command string, you MUST override the method in your Level 3 driver or provide an alternative implementation following the Level 2 naming convention.
+`Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard IEEE 488.2 / SCPI-99 functions (like `idn`, `reset`, `clear`, `error`, `wait`, `self_test`, `operation_complete`, `initialize`) that most SCPI-compliant instruments share.
+
+**How it works with Level 2 base classes:**
+
+Every Level 2 base class (e.g., `Oscilloscope`, `Awg`) already defines **skeleton versions** of these SCPI commands — empty methods with full docstrings but no implementation. This means:
+
+* A driver that inherits **only** from the Level 2 class has the correct interface and can override each skeleton with its own native protocol commands.
+* A driver that **also** inherits from `Scpi` gets the real SCPI implementations for free via MRO — no extra work needed for standard `*IDN?`, `*RST`, `*CLS`, etc.
+
+> [!IMPORTANT]
+> **Verification**: Always cross-check the instrument manual. If your instrument is SCPI-compliant but does *not* support a standard `Scpi` method (e.g., `*RST` doesn't reset properly), or uses a different command string, you MUST override the method in your Level 3 driver.
 
 ### Level 2: Instrument-Type Interface (`example.py`, `oscilloscope.py`)
 These files define the **Template/Interface** for an entire category of instruments.
 * They list all **requirements** (methods and attributes) for that type.
+* They include **skeleton versions** of the standard SCPI commands (`idn`, `reset`, `clear`, etc.) so that the interface is complete even without `Scpi` inheritance.
 * They contain no specific SCPI command strings — only the "vocabulary" of the instrument type.
 
 ### Level 3: Specific Instrument Model (`agilent_33220a.py`)
 This is the **Actual Implementation** of the driver.
-* Inherits from the Level 2 Category (e.g., `Awg`) and a Level 1 base (usually `Scpi` or `Instrument`).
+* Inherits from the Level 2 Category (e.g., `Awg`) and optionally from the `Scpi` convenience class.
 * Implements the Level 2 interface using specific hardware commands.
 
+**Path A — SCPI-compliant instrument** (most common):
 ```python
 from .awg import Awg
 from ..scpi import Scpi
 
-# Level 3 Driver inherits from Level 2 (Awg) and a Convenience/Base (Scpi)
+# Inherits real SCPI implementations (idn, reset, clear, etc.) from Scpi
 class Agilent33220a(Awg, Scpi):
     AUTODETECT_ID = "33220A"
-    # Implementation...
+    # Only implement the instrument-specific methods...
+```
+
+**Path B — Non-SCPI instrument** (proprietary protocol):
+```python
+from .oscilloscope import Oscilloscope
+
+# No Scpi mixin — override the skeletons with native protocol commands
+class MyProprietaryScope(Oscilloscope):
+    AUTODETECT_ID = "PROPSCOPE"
+
+    def idn(self):
+        return self.instrument.query("ID?")
+
+    def reset(self):
+        self.instrument.write("FACTORY_RESET")
+        self.set_trigger_sweep("AUTO")  # ensure AUTO mode per the contract
+        self._initialize_state()
+    # ... override remaining skeletons ...
 ```
 
 ## 2. Constructor (`__init__`)
@@ -112,7 +140,8 @@ Function naming strictly determines scope:
 ## 7. Communication & Protocol Convenience
 * Read variables using `self.instrument.query("SCPI?")`.
 * Write variables using `self.instrument.write("SCPI")`.
-* **The Role of `Scpi`**: Inheritance from `Scpi` is a convenience to avoid rewriting the same basic commands. However, the driver developer is responsible for verifying that the inherited `reset()`, `clear()`, etc., map correctly to the instrument's manual.
+* **The Role of `Scpi`**: Inheritance from `Scpi` is a convenience to avoid rewriting the same basic `*IDN?`, `*RST`, `*CLS`, `*ESR?`, `*WAI`, `*TST?`, `*OPC?` commands. However, the driver developer is responsible for verifying that the inherited `reset()`, `clear()`, etc., map correctly to the instrument's manual.
+* **When to skip `Scpi`**: If your instrument does not speak SCPI at all (e.g., it uses a proprietary serial/binary protocol), simply inherit from the Level 2 category class alone. The skeleton methods defined there give you the correct interface — just override each one with your native protocol commands.
 
 ## 8. Automatic State Tracking
 The `piec` framework automatically tracks the "last set" value of any parameter that has a corresponding class attribute. 

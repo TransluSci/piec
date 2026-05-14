@@ -9,6 +9,132 @@ class Daq(Instrument):
     """
     All daqs must be able to acquire data and output signals. Need a way to get the list of analog and digital IO
     """
+
+    # --- Class Attributes (Capabilities & Limits) ---
+    # Child drivers MUST override these with their specific hardware values.
+    # See DRIVER_DEVELOPMENT_GUIDE.md Section 4 for formatting rules.
+
+    # Analog Input
+    ai_channel = [0]                    # List of valid analog input channel indices
+    ai_range = (None, None)             # (min_V, max_V) or list of supported (min, max) tuples
+    ai_mode = None                      # e.g. ['SE', 'DIFF'] if hardware supports mode switching
+    ai_sample_rate = (None, None)       # (min_Hz, max_Hz) for hardware-paced acquisition
+
+    # Analog Output
+    ao_channel = [0]                    # List of valid analog output channel indices
+    ao_range = (None, None)             # (min_V, max_V) or list of supported (min, max) tuples
+    ao_sample_rate = (None, None)       # (min_Hz, max_Hz) for hardware-paced output
+
+    # Digital I/O
+    dio_channel = [0]                   # List of valid digital I/O channel indices
+    dio_direction = ['I', 'O']          # Supported directions: Input, Output
+
+    # --- Default Convenience Command Skeletons ---
+    # These provide the standard instrument management interface.
+    # The method names mirror the SCPI class for consistency across all
+    # instrument types.  MCC/Digilent-based DAQs will inherit real
+    # implementations from Digilent.  DAQs using other protocols
+    # (NI-DAQmx, proprietary serial, etc.) should override these with
+    # their own native commands.
+
+    def idn(self):
+        """
+        Returns the identification string of the DAQ device.
+
+        For MCC/Digilent devices this queries the Universal Library board name.
+        Other DAQ platforms should override this to return an equivalent
+        identification string from their native SDK or protocol.
+
+        Returns:
+            str: Device identification string.
+        """
+
+    def reset(self):
+        """
+        Resets the DAQ device to its default / power-on state.
+
+        For MCC/Digilent devices there is no single ``*RST``-style command;
+        implementations should release and re-acquire the board, or call the
+        platform-specific reset routine.  Other DAQ platforms should override
+        this with their own reset mechanism.
+        """
+
+    def clear(self):
+        """
+        Clears the device's error / status state.
+
+        For MCC/Digilent devices this is a no-op since the Universal Library
+        does not maintain a persistent status register.  Other DAQ platforms
+        should override this if they have a clearable status queue.
+        """
+
+    def error(self):
+        """
+        Queries the device's most recent error status or message.
+
+        For MCC/Digilent devices this calls the Universal Library error
+        message retrieval.  Other DAQ platforms should override this to
+        return error information from their native SDK.
+
+        Returns:
+            str: The error message or status string.
+        """
+
+    def wait(self):
+        """
+        Blocks until all pending device operations have completed.
+
+        For MCC/Digilent devices this polls the scan status until idle.
+        Other DAQ platforms should override this with their own
+        synchronisation mechanism.
+        """
+
+    def self_test(self):
+        """
+        Runs the device's built-in self-test routine, if available.
+
+        Not all DAQ hardware supports self-test.  Implementations should
+        handle extended timeouts appropriately.
+
+        Returns:
+            str: Self-test result (typically ``'0'`` for pass).
+        """
+
+    def operation_complete(self):
+        """
+        Queries whether the last operation has finished.
+
+        For MCC/Digilent devices this checks the background scan status.
+        Other DAQ platforms should override this with their native
+        polling / synchronisation command.
+
+        Returns:
+            str: ``'1'`` when the operation is complete.
+        """
+
+    def close(self):
+        """
+        Releases the DAQ device and frees any associated resources.
+
+        For MCC/Digilent devices this releases the board from the Universal
+        Library.  Other DAQ platforms should override this with their own
+        cleanup / disconnection routine.
+        """
+
+    def initialize(self):
+        """
+        Convenience method that resets the DAQ and clears any pending errors
+        to bring it to a known good starting state.
+
+        The default implementation calls :meth:`reset` followed by
+        :meth:`clear`.  Override if additional initialisation steps are
+        needed for a specific platform.
+        """
+        self.reset()
+        self.clear()
+
+    # --- DAQ-Specific Methods ---
+
     #Core Information Functions
     """
     We should have some hardcoded information about the daq, such as the number of analog and digital channels, the sample rate, etc.
