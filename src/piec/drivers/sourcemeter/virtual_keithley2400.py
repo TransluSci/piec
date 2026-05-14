@@ -26,7 +26,7 @@ class VirtualKeithley2400(VirtualInstrument, Sourcemeter, Scpi):
     voltage_compliance = (-210, 210)
     current_compliance = (-1.05, 1.05)
 
-    def __init__(self, address='VIRTUAL'):
+    def __init__(self, address='VIRTUAL', **kwargs):
         VirtualInstrument.__init__(self, address=address)
         self.instrument = self
 

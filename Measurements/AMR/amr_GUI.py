@@ -8,7 +8,7 @@ import pandas as pd
 import time
 import os
 from piec.drivers.dmm.keithley193a import Keithley193a
-from piec.drivers.dc_callibrator.edc522 import EDC522
+from piec.drivers.dc_calibrator.edc522 import EDC522
 from piec.drivers.stepper_motor.arduino_stepper import Geos_Stepper
 from piec.drivers.lockin.srs830 import SRS830
 from piec.measurement.amr import AMR
@@ -179,7 +179,7 @@ class AMRApp(MeasurementApp):
         print("Autodetecting instruments... this may take a moment.")
         from piec.drivers.autodetect import autodetect, _safe_close
         from piec.drivers.dmm.dmm import DMM
-        from piec.drivers.dc_callibrator.dc_callibrator import DCCalibrator
+        from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
         from piec.drivers.stepper_motor.stepper_motor import Stepper
         from piec.drivers.lockin.lockin import Lockin
 
@@ -192,7 +192,7 @@ class AMRApp(MeasurementApp):
             print(f"Detected DMM at {addr}")
 
         # Calibrator
-        inst = autodetect(address="dc_callibrator", verbose=True, required_type=DCCalibrator)
+        inst = autodetect(address="dc_calibrator", verbose=True, required_type=DCCalibrator)
         if inst:
             addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
             self.calibrator_address_entry.set(addr)
@@ -252,7 +252,7 @@ class AMRApp(MeasurementApp):
         DEFAULTS["initialize_lockin"] = initialize_lockin
 
         from piec.drivers.dmm.virtual_dmm import VirtualDMM
-        from piec.drivers.dc_callibrator.virtual_calibrator import VirtualCalibrator
+        from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
         from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
         from piec.drivers.lockin.virtual_lockin import VirtualLockin
 

@@ -4,7 +4,7 @@ Does NOT use SCPI commands.
 Integrated from z_old/edc522/core.py.
 '''
 import re
-from .dc_callibrator import DCCalibrator
+from .dc_calibrator import DCCalibrator
 
 class EDC522(DCCalibrator):
     """

@@ -49,12 +49,13 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
     acquisition_mode = ["NORM", "AVER", "HRES", "PEAK"]
     acquisition_points = (100, 1000)
 
-    def __init__(self, address='abc'):
+    def __init__(self, address='abc', **kwargs):
         """
         Initialize virtual oscilloscope with default settings.
 
         Args:
             address (str): Virtual address for the instrument (default: 'abc')
+            **kwargs: Additional arguments
         """
         VirtualInstrument.__init__(self, address=address)
 

@@ -1,5 +1,5 @@
 """
-A dc_callibrator (DC Calibrator) is defined as an instrument that has the typical features one expects a DC Calibrator to have.
+A dc_calibrator (DC Calibrator) is defined as an instrument that has the typical features one expects a DC Calibrator to have.
 This is a template class meant to be inherited by specific DC Calibrator drivers.
 """
 from ..instrument import Instrument

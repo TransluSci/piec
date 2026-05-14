@@ -1,4 +1,4 @@
-from piec.drivers.dc_callibrator.dc_callibrator import DCCalibrator
+from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
 from piec.drivers.virtual_instrument import VirtualInstrument
 
 class VirtualCalibrator(VirtualInstrument, DCCalibrator):

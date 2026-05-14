@@ -49,14 +49,16 @@ class VirtualAwg(VirtualInstrument, Awg):
     arb_dac_value = (0, 16383) # Range for individual DAC points in arb_data_range data list
     arb_data_range = (2, 4000)  # Points, for arbitrary waveform data len
 
-    def __init__(self, address='123'):
+    def __init__(self, address='123', **kwargs):
         """
         Initialize the virtual AWG with default settings.
 
         Args:
             address (str, optional): Virtual address for the instrument. Defaults to '123'.
+            **kwargs: Additional arguments passed to parent classes.
         """
         VirtualInstrument.__init__(self, address=address)
+        Awg.__init__(self, address=address, **kwargs)
 
         self.instrument = self
         

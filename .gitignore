@@ -9,3 +9,4 @@ dist/
 .venv/
 piec-*/
 tmp/
+src/piec/testing/

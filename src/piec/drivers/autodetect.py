@@ -23,6 +23,18 @@ except:
 
 MCC_REGEX = re.compile(r'Device ADDRESS = (\S+)')
 
+# Map shorthand aliases to actual driver directory names
+INSTRUMENT_ALIASES = {
+    'calibrator': 'dc_calibrator',
+    'stepper': 'stepper_motor',
+    'scope': 'oscilloscope'
+}
+
+# Keywords that should bypass MCC detection (used when address is a generic string)
+NON_MCC_KEYWORDS = set(INSTRUMENT_ALIASES.keys()).union(INSTRUMENT_ALIASES.values()).union(
+    {'dmm', 'lockin', 'awg', 'pulser', 'rf_source', 'motor', 'arduino'}
+)
+
 def _get_registry_path():
     """Returns absolute path to registry_cache.json."""
     return Path(__file__).parent / "registry_cache.json"
@@ -56,17 +68,7 @@ def _resolve_type_string(name):
     """
     name = name.lower()
     
-    # Simple hardcoded mapping to directory names
-    mapping = {
-        'dmm': 'dmm',
-        'lockin': 'lockin',
-        'calibrator': 'dc_callibrator',
-        'dc_callibrator': 'dc_callibrator',
-        'stepper': 'stepper_motor',
-        'stepper_motor': 'stepper_motor',
-        'scope': 'oscilloscope'
-    }
-    dir_name = mapping.get(name, name)
+    dir_name = INSTRUMENT_ALIASES.get(name, name)
     
     drivers_path = Path(__file__).parent
     target_dir = drivers_path / dir_name
@@ -200,10 +202,34 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
         print(f"No instrument of type {target_class.__name__} found.")
         return None
 
+    # 0.5. Virtual Instrument Logic
+    if isinstance(address, str) and address.lower().startswith("virtual_"):
+        device_type = address.lower().replace("virtual_", "")
+        dir_name = INSTRUMENT_ALIASES.get(device_type, device_type)
+        
+        try:
+            try:
+                module_str = f"piec.drivers.{dir_name}.virtual_{dir_name}"
+                module = importlib.import_module(module_str)
+            except ModuleNotFoundError:
+                module_str = f"piec.drivers.{dir_name}.virtual_{device_type}"
+                module = importlib.import_module(module_str)
+            from .virtual_instrument import VirtualInstrument
+            
+            for cls_name, cls_obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(cls_obj, VirtualInstrument) and cls_obj is not VirtualInstrument:
+                    if verbose:
+                        print(f"Autodetect: Loaded virtual instrument {cls_name} for address {address}")
+                    return cls_obj(address=address, verbose=verbose, **kwargs)
+        except Exception as e:
+            if verbose:
+                print(f"Autodetect: Failed to load virtual instrument for {address}: {e}")
+            pass
+        return None
+
     # 1. MCC Logic
     is_mcc = (address is None) or (MCC_AVAILABLE and "::" not in str(address))
-    known_aliases = ['lockin', 'dmm', 'calibrator', 'stepper', 'motor', 'arduino', 'scope', 'oscilloscope']
-    if isinstance(address, str) and address.lower() in known_aliases:
+    if isinstance(address, str) and address.lower() in NON_MCC_KEYWORDS:
         is_mcc = False
 
     if is_mcc and MCC_AVAILABLE:
