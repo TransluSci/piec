@@ -10,3 +10,4 @@ dist/
 piec-*/
 tmp/
 src/piec/testing/
+docs/source/api_generated/
