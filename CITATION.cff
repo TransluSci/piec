@@ -1,12 +1,21 @@
 cff-version: 1.2.0
-message: Please cite this software using these metadata.
+message: "If you use this software, please cite it as below."
 authors:
-  - family-names: Fratian
-    given-names: Geo, George
-    email: geo_fratian@brown.edu
-    affiliation: Brown University
-    orcid: 'https://orcid.org/0009-0008-2687-671X'
-title: piec
+  - family-names: "Fratian"
+    given-names: "George"
+    alias: "Geo"
+    email: "geo_fratian@brown.edu"
+    affiliation: "Brown University"
+    orcid: "https://orcid.org/0009-0008-2687-671X"
+title: "piec"
 type: software
 version: 1.0.0
-url: https://github.com/TransluSci/piec
+date-released: "2026-05-14"
+repository-code: "https://github.com/TransluSci/piec"
+abstract: "A Python package for interfacing with custom hardware to conduct electrical poling and verify ferroelectricity in scanning probe microscopy setups."
+keywords:
+  - python
+  - ferroelectrics
+  - piezoresponse-force-microscopy
+  - materials-science
+license: "MIT"
