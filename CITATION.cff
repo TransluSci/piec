@@ -12,7 +12,7 @@ type: software
 version: 1.0.0
 date-released: "2026-05-14"
 repository-code: "https://github.com/TransluSci/piec"
-abstract: "A Python package for interfacing with custom hardware to conduct electrical poling and verify ferroelectricity in scanning probe microscopy setups."
+abstract: "PIEC (Python Integrated Experimental Control) is an open-source, modular Python library designed for scalable laboratory automation. Built on a hierarchical, 'type-first' architecture, PIEC standardizes hardware-agnostic instrument drivers, enabling researchers to rapidly prototype and deploy complex multi-instrument workflows. By minimizing setup overhead and providing a machine-readable structure, the package natively supports integration with AI/ML pipelines for closed-loop, autonomous experimentation across diverse scientific domains."
 keywords:
   - python
   - ferroelectrics
