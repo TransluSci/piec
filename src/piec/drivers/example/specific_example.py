@@ -14,7 +14,7 @@ from ..scpi import Scpi #in the case that the instrument is SCPI based, includes
 # --- 2. CLASS DEFINITION ---
 # The class name should be descriptive and unique (typically the model of the instrument).
 # It must inherit from the appropriate base classes imported above.
-class SpecificExample(Example, Scpi):
+class SpecificExample(Scpi, Example):
     """
     This is an example of a specific instrument driver that implements 
     the generic Example interface. 

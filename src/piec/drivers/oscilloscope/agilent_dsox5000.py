@@ -4,7 +4,7 @@ import pandas as pd
 from .oscilloscope import Oscilloscope
 from ..scpi import Scpi
 
-class AgilentDSOX5000(Oscilloscope, Scpi):
+class AgilentDSOX5000(Scpi, Oscilloscope):
     """
     Driver for the Agilent/Keysight InfiniVision 5000 X-Series Oscilloscope.
     e.g. DSO-X 5032A, DSO-X 5034A, DSO-X 5054A

@@ -7,7 +7,7 @@ SourceMeter instrument using SCPI commands.
 from .sourcemeter import Sourcemeter
 from ..scpi import Scpi
 
-class Keithley2400(Sourcemeter, Scpi):
+class Keithley2400(Scpi, Sourcemeter):
     """
     Driver for the Keithley 2400 Sourcemeter.
     """

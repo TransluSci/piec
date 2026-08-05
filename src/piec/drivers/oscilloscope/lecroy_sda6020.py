@@ -10,7 +10,7 @@ from .oscilloscope import Oscilloscope
 from ..scpi import Scpi
 import struct
 
-class LeCroySDA6020(Oscilloscope, Scpi):
+class LeCroySDA6020(Scpi, Oscilloscope):
     """
     Driver for the Teledyne LeCroy SDA 6020 Oscilloscope.
     """

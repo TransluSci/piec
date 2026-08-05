@@ -8,7 +8,7 @@ import numpy as np
 from .awg import Awg
 from ..scpi import Scpi
 
-class Keysight81150a(Awg, Scpi):
+class Keysight81150a(Scpi, Awg):
     """
     Driver for the Keysight 81150A Arbitrary Waveform Generator.
     """

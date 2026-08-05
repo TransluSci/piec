@@ -12,7 +12,7 @@ except ImportError:
     AnalogInputMode = None
     ScanOptions = None
 
-class USB231(Daq, Digilent):
+class USB231(Digilent, Daq):
     """
     Driver for the MCC USB-231 DAQ device.
     

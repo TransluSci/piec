@@ -2,7 +2,7 @@ import time
 from .pulser import Pulser
 from ..scpi import Scpi
 
-class BNC765(Pulser, Scpi):
+class BNC765(Scpi, Pulser):
     """
     Driver for the Berkeley Nucleonics 765 Pulse Generator.
     """

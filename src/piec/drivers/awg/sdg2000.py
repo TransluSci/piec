@@ -3,7 +3,7 @@ import struct
 from .awg import Awg
 from ..scpi import Scpi
 
-class SDG2000X(Awg, Scpi):
+class SDG2000X(Scpi, Awg):
     """
     Driver for the Siglent SDG2000X Series Arbitrary Waveform Generator.
     Based on the Programming Guide PG02-E03B.

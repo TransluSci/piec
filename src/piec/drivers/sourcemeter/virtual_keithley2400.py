@@ -10,7 +10,7 @@ from .sourcemeter import Sourcemeter
 from ..scpi import Scpi
 
 
-class VirtualKeithley2400(VirtualInstrument, Sourcemeter, Scpi):
+class VirtualKeithley2400(VirtualInstrument, Scpi, Sourcemeter):
     """
     Virtual Keithley 2400 SourceMeter for testing without hardware.
 

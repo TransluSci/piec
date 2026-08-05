@@ -9,7 +9,7 @@ import re
 from .lockin import Lockin
 from ..scpi import Scpi
 
-class SRS830(Lockin, Scpi):
+class SRS830(Scpi, Lockin):
     """
     Driver for the SRS 830 Lock-In Amplifier.
 

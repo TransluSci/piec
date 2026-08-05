@@ -2,7 +2,7 @@
 from .dmm import DMM
 from ..scpi import Scpi
 
-class Agilent34410A(DMM, Scpi):
+class Agilent34410A(Scpi, DMM):
     """
     Driver for the Agilent 34410A Digital Multimeter.
     """
