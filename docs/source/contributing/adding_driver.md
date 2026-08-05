@@ -144,6 +144,10 @@ Once the driver file is in place:
 1. **No manual registration is required.** Autodetect scans Python files under `src/piec/drivers/` and discovers model classes that define `AUTODETECT_ID`.
 2. **Verify autodetection** — the `AUTODETECT_ID` string must be a unique substring of the instrument's identification response. You can test this by connecting to the instrument and calling `.idn()` on it.
 
+Virtual drivers also require no registration. Put one `virtual_*.py` module containing
+one `VirtualInstrument` subclass in the category folder. Autodetect discovers it from
+the folder structure.
+
 ---
 
 ## Step 5: Validate with the test notebook

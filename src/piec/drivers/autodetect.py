@@ -24,6 +24,11 @@ except:
 
 MCC_REGEX = re.compile(r'Device ADDRESS = (\S+)')
 
+
+class VirtualDriverAmbiguityError(RuntimeError):
+    """Raised when a category defines more than one virtual driver."""
+
+
 # Map shorthand aliases to actual driver directory names
 INSTRUMENT_ALIASES = {
     'calibrator': 'dc_calibrator',
@@ -107,6 +112,40 @@ def _resolve_type_string(name):
         except:
             pass
     return None
+
+
+def _find_virtual_driver_class(device_type):
+    """Discover the single virtual driver defined in a category folder."""
+    category = INSTRUMENT_ALIASES.get(device_type.lower(), device_type.lower())
+    category_path = Path(__file__).parent / category
+    if not category_path.is_dir():
+        return None
+
+    from .virtual_instrument import VirtualInstrument
+
+    candidates = []
+    for file_path in sorted(category_path.glob("virtual_*.py")):
+        module_str = f"piec.drivers.{category}.{file_path.stem}"
+        module = importlib.import_module(module_str)
+
+        for exported_name, cls_obj in inspect.getmembers(module, inspect.isclass):
+            if cls_obj is VirtualInstrument:
+                continue
+            if cls_obj.__module__ != module.__name__:
+                continue
+            if exported_name != cls_obj.__name__:
+                continue
+            if issubclass(cls_obj, VirtualInstrument):
+                candidates.append(cls_obj)
+
+    if len(candidates) > 1:
+        names = ", ".join(cls.__name__ for cls in candidates)
+        raise VirtualDriverAmbiguityError(
+            f"Multiple virtual drivers found for category {category!r}: {names}"
+        )
+
+    return candidates[0] if candidates else None
+
 
 def _dynamic_driver_scan(verbose=False):
     """Scans drivers folder for AUTODETECT_ID."""
@@ -209,7 +248,9 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
     ``address`` may be a physical VISA address, a category folder name or alias,
     a category class, or an explicit ``VIRTUAL_<type>`` address. Category names
     resolve to the single ``Instrument`` subclass defined in the same-named
-    category module; the class name itself may be different.
+    category module; the class name itself may be different. Virtual requests
+    similarly discover the single ``VirtualInstrument`` subclass defined in a
+    ``virtual_*.py`` module inside that category folder.
 
     Physical probe failures return ``None`` rather than silently constructing a
     virtual instrument. Virtual behavior must be requested explicitly.
@@ -262,27 +303,23 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
 
     # 0.5. Virtual Instrument Logic
     if isinstance(address, str) and address.lower().startswith("virtual_"):
-        device_type = address.lower().replace("virtual_", "")
-        dir_name = INSTRUMENT_ALIASES.get(device_type, device_type)
-        
+        device_type = address.lower()[len("virtual_"):]
+
         try:
-            try:
-                module_str = f"piec.drivers.{dir_name}.virtual_{dir_name}"
-                module = importlib.import_module(module_str)
-            except ModuleNotFoundError:
-                module_str = f"piec.drivers.{dir_name}.virtual_{device_type}"
-                module = importlib.import_module(module_str)
-            from .virtual_instrument import VirtualInstrument
-            
-            for cls_name, cls_obj in inspect.getmembers(module, inspect.isclass):
-                if issubclass(cls_obj, VirtualInstrument) and cls_obj is not VirtualInstrument:
-                    if verbose:
-                        print(f"Autodetect: Loaded virtual instrument {cls_name} for address {address}")
-                    return cls_obj(address=address, verbose=verbose, **kwargs)
+            cls = _find_virtual_driver_class(device_type)
+            if cls is None:
+                if verbose:
+                    print(f"Autodetect: No virtual driver found for {device_type}")
+                return None
+
+            if verbose:
+                print(f"Autodetect: Loaded virtual instrument {cls.__name__} for address {address}")
+            return cls(address=address, verbose=verbose, **kwargs)
+        except VirtualDriverAmbiguityError:
+            raise
         except Exception as e:
             if verbose:
                 print(f"Autodetect: Failed to load virtual instrument for {address}: {e}")
-            pass
         return None
 
     # 1. MCC Logic

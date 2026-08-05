@@ -232,3 +232,9 @@ does not need to match the category name. For example,
 `drivers/my_inst/my_inst.py` may define `class MyInstSomethingElse(Instrument)` without adding a
 registry entry. The interface module must define exactly one canonical category class.
 Convenience aliases such as `scope` are optional API additions maintained separately.
+
+Virtual drivers use the same zero-registration approach. Put one `virtual_*.py` file
+in the category folder and define one class there that inherits from
+`VirtualInstrument`. Neither the rest of the filename nor the class name must match
+the category. Autodetect reports an ambiguity if a category defines more than one
+virtual driver.

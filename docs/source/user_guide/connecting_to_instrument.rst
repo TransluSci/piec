@@ -135,3 +135,8 @@ address is accepted (case-insensitive):
    awg = autodetect('virtual_awg')
 
 Virtual instruments respond to all the same method calls as real instruments but generate synthetic data instead of communicating with hardware.
+For a virtual request, autodetect scans the resolved category folder for a
+``virtual_*.py`` module containing a locally defined ``VirtualInstrument`` subclass.
+The filename suffix and class name do not need to match the category. A category must
+provide exactly one such class; otherwise autodetect reports that no unique virtual
+driver could be selected.

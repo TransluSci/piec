@@ -1,20 +1,15 @@
-"""
-Virtual Keithley 2400 SourceMeter Module
-
-A simple virtual implementation of the Keithley 2400 for testing.
-Stores state internally and returns the set values directly as measurements.
-"""
+"""Generic virtual sourcemeter for testing and simulation."""
 
 from ..virtual_instrument import VirtualInstrument
 from .sourcemeter import Sourcemeter
 from ..scpi import Scpi
 
 
-class VirtualKeithley2400(VirtualInstrument, Scpi, Sourcemeter):
+class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     """
-    Virtual Keithley 2400 SourceMeter for testing without hardware.
+    Virtual source-and-measure instrument for testing without hardware.
 
-    Measurements simply return whatever values were configured 
+    Measurements simply return whatever values were configured.
     """
 
     channel = [1]
@@ -42,7 +37,7 @@ class VirtualKeithley2400(VirtualInstrument, Scpi, Sourcemeter):
         }
 
     def idn(self):
-        return "Virtual Keithley 2400"
+        return "PIEC,Virtual_Sourcemeter,s/n_virtual,ver1.0"
 
     def write(self, command):
         cmd = command.upper().strip()
