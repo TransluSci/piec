@@ -3,8 +3,12 @@ This is an outline for what the rf_source.py file should be like.
 
 A rf source is defined as an instrument that has the typical features one expects a rf source to have
 """
+import warnings
+
 from ..instrument import Instrument
-class RF_source(Instrument):
+
+
+class RFSource(Instrument):
     # Initializer / Instance attributes
     """
     All rf sources must be able to generate an RF signal
@@ -178,4 +182,16 @@ class RF_source(Instrument):
         """
         Sets the sweep mode (e.g., linear, logarithmic)
         """
-    
+
+
+def __getattr__(name):
+    """Provide the historical class name with a deprecation warning."""
+    if name == "RF_source":
+        warnings.warn(
+            "RF_source is deprecated; use RFSource instead. The legacy name "
+            "will remain supported through PIEC version 1.5.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return RFSource
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

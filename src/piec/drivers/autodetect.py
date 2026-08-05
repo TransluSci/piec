@@ -5,6 +5,7 @@ import importlib
 import inspect
 from pathlib import Path
 from .utilities import PiecManager
+from .instrument import Instrument
 from .scpi import Scpi
 
 # Check for Digilent Library
@@ -62,9 +63,30 @@ def _import_class_from_path(class_path):
         print(f"Error importing {class_path}: {e}")
         return None
 
+
+def _find_category_class(module):
+    """Return the single Instrument subclass defined by a category module."""
+    candidates = []
+
+    for exported_name, cls_obj in inspect.getmembers(module, inspect.isclass):
+        if cls_obj is Instrument:
+            continue
+        if cls_obj.__module__ != module.__name__:
+            continue
+        if exported_name != cls_obj.__name__:
+            continue
+        if issubclass(cls_obj, Instrument):
+            candidates.append(cls_obj)
+
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _resolve_type_string(name):
     """
-    Resolves a simple string like 'lockin' to the corresponding abstract/base Instrument class.
+    Resolve a category folder name or convenience alias to its interface class.
+
+    The category module must define exactly one canonical ``Instrument`` subclass.
+    Its Python class name does not need to match the folder or module name.
     """
     name = name.lower()
     
@@ -78,13 +100,10 @@ def _resolve_type_string(name):
         try:
             module_str = f"piec.drivers.{dir_name}.{dir_name}"
             module = importlib.import_module(module_str)
-            
-            # Look for a class that matches the directory name (case insensitive)
-            for cls_name, cls_obj in inspect.getmembers(module, inspect.isclass):
-                if cls_name.lower() == dir_name.lower().replace("_", ""):
-                    return cls_obj
-                if cls_name.lower() == name.replace("_", ""):
-                    return cls_obj
+
+            # Category modules define one Instrument subclass. Its class name
+            # does not need to resemble the directory or module name.
+            return _find_category_class(module)
         except:
             pass
     return None
@@ -185,7 +204,25 @@ def _safe_close(instrument):
 
 def autodetect(address=None, verbose=False, required_type=None, **kwargs):
     """
-    Automatically detects and connects to an instrument.
+    Automatically detect and connect to a physical or virtual instrument.
+
+    ``address`` may be a physical VISA address, a category folder name or alias,
+    a category class, or an explicit ``VIRTUAL_<type>`` address. Category names
+    resolve to the single ``Instrument`` subclass defined in the same-named
+    category module; the class name itself may be different.
+
+    Physical probe failures return ``None`` rather than silently constructing a
+    virtual instrument. Virtual behavior must be requested explicitly.
+
+    Args:
+        address: Address, category name, category class, or virtual address.
+        verbose (bool): Print probing and matching details when true.
+        required_type (type, optional): Restrict matches to this category class.
+        **kwargs: Arguments forwarded to the selected driver.
+
+    Returns:
+        Instrument or None: The selected driver, or ``None`` when no match is
+        found.
     """
     # 0. Check if address is actually a Class or a known Type String
     target_class = None

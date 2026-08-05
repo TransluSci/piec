@@ -3,11 +3,11 @@ Virtual RF Source class for testing and simulation.
 This module provides a software simulation of an RF Source device for development
 and testing without physical hardware.
 """
-from .rf_source import RF_source
+from .rf_source import RFSource
 from ..virtual_instrument import VirtualInstrument
 
 
-class VirtualRFSource(VirtualInstrument, RF_source):
+class VirtualRFSource(VirtualInstrument, RFSource):
     """
     Virtual version of an RF Source device for simulation/testing.
     Stores state internally but produces no physical output.
@@ -29,7 +29,7 @@ class VirtualRFSource(VirtualInstrument, RF_source):
             **kwargs: Additional arguments passed to parent classes.
         """
         VirtualInstrument.__init__(self, address=address)
-        RF_source.__init__(self, address=address, **kwargs)
+        RFSource.__init__(self, address=address, **kwargs)
 
         # Internal state tracker
         self.state = {
