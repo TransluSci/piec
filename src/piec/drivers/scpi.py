@@ -2,8 +2,9 @@
 Mixin class for instruments that communicate via the SCPI-99 / IEEE 488.2 protocol.
 """
 
+from .instrument import Instrument
 
-class Scpi():
+class Scpi(Instrument):
     """
     All SCPI instruments must allow for all base SCPI commands to work!
     This is taken from the SCPI-99 standard and includes the IEEE 488.2 Mandated Commands.
