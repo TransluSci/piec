@@ -52,7 +52,7 @@ class Oscilloscope(Instrument):
         After reset the instrument should be free-running and acquiring fresh
         data so that any previously displayed waveforms are cleared.
 
-        For SCPI instruments this sends the ``*RST`` command and re-initialises
+        For SCPI instruments this sends the ``*RST`` command and re-initializes
         the internal state tracker.  Non-SCPI drivers should override this to
         perform an equivalent reset via their native protocol, ensuring the
         trigger is set back to AUTO if the native reset does not do so.
@@ -85,7 +85,7 @@ class Oscilloscope(Instrument):
 
         For SCPI instruments this sends the ``*WAI`` command.
         Non-SCPI drivers should override this with an equivalent
-        synchronisation mechanism.
+        synchronization mechanism.
         """
 
     def self_test(self):
@@ -106,7 +106,7 @@ class Oscilloscope(Instrument):
 
         For SCPI instruments this sends the ``*OPC?`` query.
         Non-SCPI drivers should override this with their native
-        polling/synchronisation command.
+        polling/synchronization command.
 
         Returns:
             str: ``'1'`` when the operation is complete.
@@ -118,7 +118,7 @@ class Oscilloscope(Instrument):
         to a known good starting state.
 
         The default implementation simply calls :meth:`reset` followed by
-        :meth:`clear`.  Override if additional initialisation steps are needed.
+        :meth:`clear`.  Override if additional initialization steps are needed.
         """
         self.reset()
         self.clear()
@@ -147,7 +147,7 @@ class Oscilloscope(Instrument):
 
     def set_vertical_scale(self, channel, vdiv, y_range):
         """
-        Function that sets the vertical scale in either volts per divison or absolute range
+        Function that sets the vertical scale in either volts per division or absolute range
         args:
             channel (int): The channel to set the vertical scale on
             vdiv (float): The volts per division setting
@@ -326,7 +326,7 @@ class Oscilloscope(Instrument):
     def get_data(self):
         """
         Returns the data depending on how it was configured with the configure_acquisition command.
-        Returns the data in a structured format, typically in a Pandas DataFrame that dispalys the time and voltage values in a structured way across all captured channels.
+        Returns the data in a structured format, typically in a Pandas DataFrame that displays the time and voltage values in a structured way across all captured channels.
         args:
             None
         Returns:
