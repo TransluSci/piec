@@ -289,11 +289,15 @@ class Instrument(metaclass=AutoCheckMeta):
         Opens the instrument and enables communication with it.
         
         Args:
-            address (str): The VISA/serial address or "VIRTUAL".
+            address (str): The VISA/serial address, ``VIRTUAL``, or a
+                ``VIRTUAL_<type>`` virtual-driver or adapter address.
             check_params (bool): Toggle for enabling/disabling auto-check.
             verbose (bool): If True, prints detailed debug info.
             **kwargs: Additional arguments for the resource manager 
                       (e.g., baud_rate=9600).
+
+        Raises:
+            ConnectionError: If a physical resource cannot be opened.
         """
         self.check_params = check_params
         self.verbose = verbose
@@ -303,22 +307,24 @@ class Instrument(metaclass=AutoCheckMeta):
         for key in class_attributes.keys():
             setattr(self, f"_current_{key}", None)
         
-        self.virtual = (address.upper() == 'VIRTUAL')
+        address_name = str(address).strip().upper()
+        self.virtual = (
+            address_name == 'VIRTUAL'
+            or address_name.startswith('VIRTUAL_')
+        )
         
         connection_kwargs = kwargs.copy()
-        
-        try:
-            if self.virtual:
-                self.instrument = VirtualRMInstrument(address, verbose=self.verbose, **connection_kwargs)
-            else:
+
+        if self.virtual:
+            self.instrument = VirtualRMInstrument(address, verbose=self.verbose, **connection_kwargs)
+        else:
+            try:
                 pm = PiecManager()
                 self.instrument = pm.open_resource(address, **connection_kwargs)
-        
-        except Exception as e:
-            print(f"Error initializing instrument at {address}: {e}")
-            print("Falling back to VIRTUAL mode.")
-            self.instrument = VirtualRMInstrument(address, verbose=True, **connection_kwargs)
-            self.virtual = True
+            except Exception as e:
+                raise ConnectionError(
+                    f"Could not connect to instrument at {address!r}: {e}"
+                ) from e
 
     def __getattr__(self, name):
         """

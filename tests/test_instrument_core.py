@@ -7,6 +7,8 @@ Run with pytest tests/test_instrument_core.py
 
 import pytest
 
+import piec.drivers.instrument as instrument_module
+
 from piec.drivers.instrument import (
     is_contained,
     is_value_between,
@@ -16,6 +18,8 @@ from piec.drivers.instrument import (
     VirtualRMInstrument,
 )
 from piec.drivers.scpi import Scpi
+from piec.drivers import digilent as digilent_module
+from piec.drivers.digilent import Digilent
 
 # Helper drivers defined once and reused across test classes
 
@@ -203,6 +207,19 @@ class TestInstrumentVirtualMode:
         inst = Instrument(address="VIRTUAL")
         assert inst.virtual is True
 
+    @pytest.mark.parametrize("address", ["VIRTUAL", "virtual_awg", "VIRTUAL_SCOPE"])
+    def test_explicit_virtual_address_names_do_not_open_hardware(self, address, monkeypatch):
+        class UnexpectedManager:
+            def __init__(self):
+                raise AssertionError("PiecManager should not be used for a virtual address")
+
+        monkeypatch.setattr(instrument_module, "PiecManager", UnexpectedManager)
+
+        inst = Instrument(address=address)
+
+        assert inst.virtual is True
+        assert inst.instrument.resource_name == address
+
     def test_instrument_attribute_exists(self):
         inst = Instrument(address="VIRTUAL")
         assert hasattr(inst, "instrument")
@@ -224,6 +241,39 @@ class TestInstrumentVirtualMode:
         driver = _DemoDriver(address="VIRTUAL")
         assert driver._current_waveform is None
         assert driver._current_frequency is None
+
+
+class TestInstrumentConnectionFailure:
+    """A failed physical connection must not silently create a simulation."""
+
+    def test_physical_open_failure_raises_connection_error(self, monkeypatch):
+        class FailingManager:
+            def open_resource(self, address, **kwargs):
+                raise RuntimeError("VISA open failed")
+
+        monkeypatch.setattr(instrument_module, "PiecManager", FailingManager)
+
+        with pytest.raises(ConnectionError, match="GPIB0::1::INSTR") as exc_info:
+            Instrument(address="GPIB0::1::INSTR")
+
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+    def test_missing_mcc_library_does_not_enable_virtual_mode(self, monkeypatch):
+        monkeypatch.setattr(digilent_module, "mcc_ul_imported", False)
+        monkeypatch.setattr(digilent_module, "ul", None)
+
+        with pytest.raises(ImportError, match="mcculw"):
+            Digilent(address=0)
+
+    def test_explicit_virtual_digilent_does_not_require_mcc_library(self, monkeypatch):
+        monkeypatch.setattr(digilent_module, "mcc_ul_imported", False)
+        monkeypatch.setattr(digilent_module, "ul", None)
+
+        inst = Digilent(address="VIRTUAL")
+
+        assert inst.virtual is True
+        assert inst.is_virtual_mode is True
+
 
 class TestCheckParams:
     """When check_params=True, invalid arguments must raise ValueError."""
