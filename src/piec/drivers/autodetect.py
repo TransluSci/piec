@@ -150,15 +150,36 @@ def _setup_mcc_device(target_identifier=None, board_num=0, verbose=False):
             print(f"Digilent Config Error: {e}")
         return None
 
+def _get_real_close(target):
+    """Return a real close method without triggering dynamic ``__getattr__``."""
+    try:
+        inspect.getattr_static(target, 'close')
+    except AttributeError:
+        return None
+
+    close = getattr(target, 'close')
+    return close if callable(close) else None
+
+
 def _safe_close(instrument):
-    """Attempts to close the instrument safely without crashing."""
+    """Close a driver or its wrapped resource without allowing cleanup errors."""
     if instrument is None:
         return
+
     try:
-        if hasattr(instrument, 'close'):
-            instrument.close()
-        elif hasattr(instrument, 'instrument') and hasattr(instrument.instrument, 'close'):
-             instrument.instrument.close()
+        close = _get_real_close(instrument)
+        if close is not None:
+            close()
+            return
+
+        # Bypass Instrument.__getattr__, which fabricates optional no-op
+        resource = object.__getattribute__(instrument, 'instrument')
+        if resource is instrument:
+            return
+
+        close = _get_real_close(resource)
+        if close is not None:
+            close()
     except Exception:
         pass
 
