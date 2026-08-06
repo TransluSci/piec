@@ -49,8 +49,9 @@ What each level provides
      initialization.
    * Opens and manages physical connections via PyVISA. A failed physical connection
      raises ``ConnectionError`` rather than silently switching to simulation.
-   * Creates a virtual backend only for explicit ``VIRTUAL`` or ``VIRTUAL_<type>``
-     addresses.
+   * Dispatches an exact ``VIRTUAL`` address on a concrete model to the category's
+     virtual driver, profiled with the model's capability attributes. Category-style
+     ``VIRTUAL_<type>`` discovery is handled by ``autodetect()``.
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
      state tracking based on class attributes. Setting a class attribute to ``None``
      bypasses this validation, allowing for custom driver-side handling.
@@ -116,10 +117,10 @@ The driver hierarchy maps directly to the folder structure within ``src/piec/dri
 Virtual instruments
 -------------------
 
-Each instrument category provides a ``VirtualInstrument`` class (e.g.,
+Each instrument category provides a ``VirtualInstrument`` subclass (e.g.,
 ``VirtualScope``, ``VirtualAwg``, ``VirtualLockin``) that returns simulated
-responses. Virtual instruments allow you to develop and test measurement code
-without any physical hardware connected — simply pass ``'VIRTUAL'`` as the address:
+responses. Instantiate the generic virtual class directly, or pass the exact
+address ``'VIRTUAL'`` to a concrete model class:
 
 .. code-block:: python
 
@@ -127,6 +128,11 @@ without any physical hardware connected — simply pass ``'VIRTUAL'`` as the add
 
    scope = VirtualScope()
    print(scope.idn())  # Returns a simulated identification string
+
+   from piec.drivers.awg.k_81150a import Keysight81150a
+
+   awg = Keysight81150a('VIRTUAL')
+   print(awg.channel)  # Model capabilities with VirtualAwg behavior
 
 Using a driver
 --------------

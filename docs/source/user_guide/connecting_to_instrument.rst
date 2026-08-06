@@ -120,8 +120,14 @@ silently switch to virtual mode when constructing a driver directly. Use **virtu
 ``autodetect()`` function catches failed probes and returns no match instead; it also
 never substitutes a virtual instrument.
 
-Use a virtual driver directly, or pass ``'VIRTUAL'``/``'VIRTUAL_<type>'`` where an
-address is accepted (case-insensitive):
+There are three explicit ways to request virtual behavior:
+
+* Instantiate a virtual category driver directly for its generic capabilities.
+* Pass the exact address ``'VIRTUAL'`` to a concrete model class to use the
+  category's virtual behavior with that model's capability attributes.
+* Pass ``'VIRTUAL_<type>'`` to :func:`autodetect` for generic category discovery.
+
+For example:
 
 .. code-block:: python
 
@@ -130,9 +136,18 @@ address is accepted (case-insensitive):
    scope = VirtualScope()
    print(scope.idn())   # Returns a simulated IDN string
 
+   from piec.drivers.awg.k_81150a import Keysight81150a
+
+   awg = Keysight81150a('VIRTUAL')
+   print(awg.channel)   # Uses Keysight81150a's channel capability
+
    from piec.drivers.autodetect import autodetect
 
-   awg = autodetect('virtual_awg')
+   generic_awg = autodetect('VIRTUAL_AWG')
+
+Concrete model constructors accept only the exact ``'VIRTUAL'`` form for virtual
+dispatch. For example, ``Keysight81150a('VIRTUAL_AWG')`` is rejected rather than
+silently changing dispatch modes.
 
 Virtual instruments respond to all the same method calls as real instruments but generate synthetic data instead of communicating with hardware.
 For a virtual request, autodetect scans the resolved category folder for a

@@ -14,7 +14,7 @@ from .instrument import Instrument
 
 
 def coerce_simulation_points(value, default):
-    """Validate a bounded synthetic-data point count."""
+    """Validate a synthetic-data point count."""
     if value is None:
         value = default
 
@@ -62,7 +62,7 @@ def warn_for_large_simulation_input(value, label="simulation data"):
 
 class VirtualInstrument(Instrument):
     """
-    Base class for all virtual instruments that share a common sample instance.
+    Base class for shared virtual-instrument simulation state and policy.
     
     This class manages a shared ferroelectric sample and a shared magnetic sample
     across all virtual instruments, ensuring consistent material properties 
@@ -71,6 +71,7 @@ class VirtualInstrument(Instrument):
     Attributes:
         _shared_fe_sample (Ferroelectric): Class-level shared ferroelectric sample instance
         _shared_mag_sample (MagneticSample): Class-level shared magnetic sample instance
+        simulation_points (int): Default or maximum synthetic waveform size
         sample (Ferroelectric): Dynamic property for the shared FE sample
         mag_sample (MagneticSample): Dynamic property for the shared magnetic sample
     """
@@ -81,10 +82,10 @@ class VirtualInstrument(Instrument):
     is_profiled_virtual_driver = False
 
     # These are simulation policy values, not hardware capability limits.
-    DEFAULT_SIMULATION_POINTS = 100000
+    DEFAULT_SIMULATION_POINTS = 10000
     SIMULATION_POINTS_WARNING_THRESHOLD = 1000000
 
-    def __init__(self, address="VIRTUAL", **kwargs):
+    def __init__(self, address="VIRTUAL", simulation_points=None, **kwargs):
         """
         Initialize virtual instrument with default ferroelectric sample if none exists.
         
@@ -93,8 +94,14 @@ class VirtualInstrument(Instrument):
 
         Args:
             address (str): Explicit virtual address.
+            simulation_points (int, optional): Default or maximum number of
+                samples used by virtual drivers that generate synthetic arrays.
             **kwargs: Arbitrary keyword arguments
         """
+        self._simulation_points = coerce_simulation_points(
+            simulation_points,
+            self.DEFAULT_SIMULATION_POINTS,
+        )
         super().__init__(address=address, **kwargs)
 
         if VirtualInstrument._shared_fe_sample is None:
@@ -146,6 +153,11 @@ class VirtualInstrument(Instrument):
         
         if VirtualInstrument._shared_mag_sample is None:
             VirtualInstrument._shared_mag_sample = MagneticSample()
+
+    @property
+    def simulation_points(self):
+        """Default or maximum sample count for synthetic array generation."""
+        return self._simulation_points
 
     @classmethod
     def set_virtual_sample(cls, sample):

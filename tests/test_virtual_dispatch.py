@@ -15,7 +15,12 @@ from piec.drivers.awg.agilent_33220a import Agilent33220A
 from piec.drivers.awg.k_81150a import Keysight81150a
 from piec.drivers.awg.sdg2000 import SDG2000X
 from piec.drivers.awg.virtual_awg import VirtualAwg
+from piec.drivers.daq.usb231 import USB231
+from piec.drivers.daq.virtual_daq import VirtualDaq
+from piec.drivers.dc_calibrator.edc522 import EDC522
+from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
 from piec.drivers.instrument import Instrument
+from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 from piec.drivers.oscilloscope.lecroy_sda6020 import LeCroySDA6020
 from piec.drivers.oscilloscope.tektronix_tds2000 import TektronixTDS2000
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
@@ -31,6 +36,25 @@ def test_model_virtual_address_returns_virtual_awg_instance():
 
     assert isinstance(awg, VirtualAwg)
     assert not isinstance(awg, Keysight81150a)
+
+
+@pytest.mark.parametrize(
+    ("model_class", "virtual_class"),
+    [
+        (Keysight81150a, VirtualAwg),
+        (KeysightDSOX3024a, VirtualScope),
+        (USB231, VirtualDaq),
+        (EDC522, VirtualCalibrator),
+    ],
+)
+def test_model_virtual_dispatch_across_representative_categories(
+    model_class,
+    virtual_class,
+):
+    instrument = model_class("VIRTUAL")
+
+    assert isinstance(instrument, virtual_class)
+    assert instrument.emulated_driver_class is model_class
 
 
 @pytest.mark.parametrize(
@@ -171,8 +195,29 @@ def test_scope_requested_points_do_not_warn_when_simulation_is_bounded():
 
 
 def test_virtual_instruments_use_shared_simulation_default():
+    assert VirtualInstrument.DEFAULT_SIMULATION_POINTS == 10000
     assert VirtualAwg().simulation_points == VirtualInstrument.DEFAULT_SIMULATION_POINTS
     assert VirtualScope().simulation_points == VirtualInstrument.DEFAULT_SIMULATION_POINTS
+
+
+def test_simulation_points_are_initialized_for_all_virtual_instruments():
+    daq = VirtualDaq(simulation_points=128)
+
+    assert daq.simulation_points == 128
+
+
+def test_virtual_daq_warns_for_large_explicit_scans(monkeypatch):
+    monkeypatch.setattr(
+        VirtualInstrument,
+        "SIMULATION_POINTS_WARNING_THRESHOLD",
+        10,
+    )
+    daq = VirtualDaq()
+
+    with pytest.warns(RuntimeWarning, match="virtual DAQ scan"):
+        data = daq.read_AI_scan(channel=0, points=11, rate=1000)
+
+    assert len(data) == 11
 
 
 def test_profiled_virtual_keeps_model_limit_separate_from_simulation_default():

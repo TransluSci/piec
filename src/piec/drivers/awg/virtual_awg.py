@@ -9,7 +9,6 @@ import numpy as np
 
 from ..virtual_instrument import (
     VirtualInstrument,
-    coerce_simulation_points,
     warn_for_large_simulation_input,
     warn_for_large_simulation_points,
 )
@@ -65,12 +64,6 @@ class VirtualAwg(VirtualInstrument, Awg):
                 hardware ``arb_data_range`` capability.
             **kwargs: Additional arguments passed to parent classes.
         """
-        simulation_points = kwargs.pop('simulation_points', None)
-        self._simulation_points = coerce_simulation_points(
-            simulation_points,
-            self.DEFAULT_SIMULATION_POINTS,
-        )
-
         super().__init__(address=address, **kwargs)
 
         self.instrument = self
@@ -96,12 +89,6 @@ class VirtualAwg(VirtualInstrument, Awg):
             'acquisition_channel': 1,  # Default acquisition channel
         }
 
-    @property
-    def simulation_points(self):
-        """Number of samples used for synthetic waveform generation."""
-        return self._simulation_points
-       
-    
     def idn(self):
         """Get the identification string of the virtual AWG.
         

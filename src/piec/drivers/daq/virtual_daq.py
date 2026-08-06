@@ -6,7 +6,10 @@ and testing without physical hardware.
 import numpy as np
 
 from .daq import Daq
-from ..virtual_instrument import VirtualInstrument
+from ..virtual_instrument import (
+    VirtualInstrument,
+    warn_for_large_simulation_points,
+)
 
 
 class VirtualDaq(VirtualInstrument, Daq):
@@ -340,6 +343,7 @@ class VirtualDaq(VirtualInstrument, Daq):
         returns:
             list: Simulated voltage data.
         """
+        warn_for_large_simulation_points(points, label="virtual DAQ scan")
         t = np.linspace(0, points / rate, points)
         return (np.sin(2 * np.pi * 10 * t)).tolist()
 
