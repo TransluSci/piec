@@ -68,6 +68,12 @@ def find_virtual_driver_class(device_type):
             found for the category.
     """
     category = INSTRUMENT_ALIASES.get(device_type.lower(), device_type.lower())
+    return _find_virtual_driver_class_by_category(category)
+
+
+@lru_cache(maxsize=None)
+def _find_virtual_driver_class_by_category(category):
+    """Discover and cache a virtual driver under its canonical category."""
     category_path = Path(__file__).parent / category
     if not category_path.is_dir():
         return None

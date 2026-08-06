@@ -6,6 +6,8 @@ returns the matching category virtual driver, profiled with the model's
 capability attributes.
 """
 
+import warnings
+
 import pytest
 import numpy as np
 
@@ -154,6 +156,18 @@ def test_scope_requested_points_are_bounded_by_simulation_capacity():
 
     scope.configure_acquisition(acquisition_points=1000000)
     assert len(scope.quick_read()) == 128
+
+
+def test_scope_requested_points_do_not_warn_when_simulation_is_bounded():
+    scope = VirtualScope(simulation_points=128)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        scope.set_acquisition_points(
+            VirtualInstrument.SIMULATION_POINTS_WARNING_THRESHOLD + 1
+        )
+
+    assert caught == []
 
 
 def test_virtual_instruments_use_shared_simulation_default():

@@ -7,6 +7,7 @@ from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.drivers.virtual_dispatch import (
     VirtualDriverAmbiguityError,
     VirtualDriverDispatchError,
+    _find_virtual_driver_class_by_category,
     find_virtual_driver_class,
 )
 
@@ -18,6 +19,17 @@ def test_shared_discovery_finds_virtual_driver_by_category():
 
 def test_shared_discovery_applies_category_aliases():
     assert find_virtual_driver_class("scope") is VirtualScope
+
+
+def test_shared_discovery_caches_by_canonical_category():
+    _find_virtual_driver_class_by_category.cache_clear()
+
+    assert find_virtual_driver_class("scope") is VirtualScope
+    assert find_virtual_driver_class("oscilloscope") is VirtualScope
+
+    cache_info = _find_virtual_driver_class_by_category.cache_info()
+    assert cache_info.misses == 1
+    assert cache_info.hits == 1
 
 
 def test_shared_discovery_returns_none_for_unknown_category():

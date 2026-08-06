@@ -357,10 +357,6 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
     def set_acquisition_points(self, acquisition_points):
         """Set the requested acquisition size, bounded by simulation capacity."""
         self._requested_acquisition_points = max(2, int(acquisition_points))
-        warn_for_large_simulation_points(
-            self._requested_acquisition_points,
-            label="virtual oscilloscope acquisition",
-        )
 
     def configure_acquisition(self, channel=None, acquisition_mode=None, acquisition_points=None):
         """
