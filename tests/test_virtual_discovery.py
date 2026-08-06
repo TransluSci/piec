@@ -6,6 +6,7 @@ from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.drivers.virtual_dispatch import (
     VirtualDriverAmbiguityError,
+    VirtualDriverDispatchError,
     find_virtual_driver_class,
 )
 
@@ -27,3 +28,12 @@ def test_autodetect_uses_shared_discovery_function():
     assert autodetect_module._find_virtual_driver_class is find_virtual_driver_class
     assert autodetect_module.VirtualDriverAmbiguityError is VirtualDriverAmbiguityError
 
+
+def test_ambiguity_error_exposes_category_and_candidates():
+    error = VirtualDriverAmbiguityError("instrument", [VirtualAwg, VirtualScope])
+
+    assert isinstance(error, VirtualDriverDispatchError)
+    assert error.category == "instrument"
+    assert error.candidates == (VirtualAwg, VirtualScope)
+    assert "VirtualAwg" in str(error)
+    assert "VirtualScope" in str(error)

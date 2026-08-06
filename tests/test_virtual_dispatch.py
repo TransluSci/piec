@@ -13,9 +13,14 @@ from piec.drivers.awg.agilent_33220a import Agilent33220A
 from piec.drivers.awg.k_81150a import Keysight81150a
 from piec.drivers.awg.sdg2000 import SDG2000X
 from piec.drivers.awg.virtual_awg import VirtualAwg
+from piec.drivers.instrument import Instrument
 from piec.drivers.oscilloscope.lecroy_sda6020 import LeCroySDA6020
 from piec.drivers.oscilloscope.tektronix_tds2000 import TektronixTDS2000
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.drivers.virtual_dispatch import (
+    VirtualDriverNotFoundError,
+    VirtualDriverProvenance,
+)
 from piec.drivers.virtual_instrument import VirtualInstrument
 
 
@@ -83,6 +88,38 @@ def test_model_virtual_dispatch_records_source_driver():
 
     assert awg.emulated_driver_class is Keysight81150a
     assert awg.virtual_driver_class is VirtualAwg
+
+
+def test_model_virtual_dispatch_exposes_structured_provenance():
+    awg = Keysight81150a("VIRTUAL")
+
+    assert awg.is_profiled_virtual_driver is True
+    assert awg.virtual_driver_provenance == VirtualDriverProvenance(
+        category="awg",
+        emulated_driver_class=Keysight81150a,
+        virtual_driver_class=VirtualAwg,
+    )
+
+
+def test_direct_virtual_driver_is_not_marked_as_model_profiled():
+    awg = VirtualAwg()
+
+    assert awg.is_profiled_virtual_driver is False
+    assert awg.virtual_driver_provenance is None
+
+
+def test_missing_category_virtual_driver_raises_contextual_error():
+    class UnsupportedModel(Instrument):
+        __module__ = "piec.drivers.unsupported.example"
+
+    with pytest.raises(VirtualDriverNotFoundError) as exc_info:
+        UnsupportedModel("VIRTUAL")
+
+    error = exc_info.value
+    assert error.model_class is UnsupportedModel
+    assert error.category == "unsupported"
+    assert "UnsupportedModel" in str(error)
+    assert "unsupported" in str(error)
 
 
 def test_awg_simulation_size_is_independent_of_model_arb_limit():

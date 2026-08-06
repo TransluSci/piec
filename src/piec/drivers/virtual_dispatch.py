@@ -8,16 +8,47 @@ allows constructor-time virtual dispatch to use exactly the same rules.
 import importlib
 import inspect
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 
-class VirtualDriverAmbiguityError(RuntimeError):
+class VirtualDriverDispatchError(RuntimeError):
+    """Base exception for constructor-time virtual-driver dispatch errors."""
+
+
+class VirtualDriverAmbiguityError(VirtualDriverDispatchError):
     """Raised when a category defines more than one virtual driver."""
 
+    def __init__(self, category, candidates):
+        self.category = category
+        self.candidates = tuple(candidates)
+        names = ", ".join(cls.__name__ for cls in self.candidates)
+        super().__init__(
+            f"Multiple virtual drivers found for category {category!r}: {names}"
+        )
 
-class VirtualDriverNotFoundError(RuntimeError):
+
+class VirtualDriverNotFoundError(VirtualDriverDispatchError):
     """Raised when a model category has no virtual driver implementation."""
+
+    def __init__(self, model_class, category):
+        self.model_class = model_class
+        self.category = category
+        model_name = f"{model_class.__module__}.{model_class.__qualname__}"
+        super().__init__(
+            f"Cannot create a virtual {model_name}: no virtual driver is "
+            f"defined for category {category!r}"
+        )
+
+
+@dataclass(frozen=True)
+class VirtualDriverProvenance:
+    """Describe the physical model and virtual implementation of a profile."""
+
+    category: str
+    emulated_driver_class: type
+    virtual_driver_class: type
 
 
 # Map shorthand aliases to actual driver directory names.  This is shared by
@@ -71,10 +102,7 @@ def find_virtual_driver_class(device_type):
                 candidates.append(cls_obj)
 
     if len(candidates) > 1:
-        names = ", ".join(cls.__name__ for cls in candidates)
-        raise VirtualDriverAmbiguityError(
-            f"Multiple virtual drivers found for category {category!r}: {names}"
-        )
+        raise VirtualDriverAmbiguityError(category, candidates)
 
     return candidates[0] if candidates else None
 
@@ -134,9 +162,13 @@ def _profiled_virtual_class(model_class):
 
     virtual_class = find_virtual_driver_class(category)
     if virtual_class is None:
-        raise VirtualDriverNotFoundError(
-            f"No virtual driver is defined for model category {category!r}"
-        )
+        raise VirtualDriverNotFoundError(model_class, category)
+
+    provenance = VirtualDriverProvenance(
+        category=category,
+        emulated_driver_class=model_class,
+        virtual_driver_class=virtual_class,
+    )
 
     generated_name = (
         "Virtualized_"
@@ -146,6 +178,10 @@ def _profiled_virtual_class(model_class):
         "__module__": __name__,
         "__qualname__": generated_name,
         **_model_capability_attributes(model_class),
+        "is_profiled_virtual_driver": True,
+        "virtual_driver_provenance": provenance,
+        "emulated_driver_class": model_class,
+        "virtual_driver_class": virtual_class,
     }
 
     # Virtual drivers use AutoCheckMeta, so create the generated subclass with
@@ -155,11 +191,6 @@ def _profiled_virtual_class(model_class):
         (virtual_class,),
         namespace,
     )
-
-    # Keep provenance available without exposing these class objects to the
-    # capability collector above.
-    generated_class.emulated_driver_class = model_class
-    generated_class.virtual_driver_class = virtual_class
 
     # Register the generated class under a stable module-level name so normal
     # introspection and pickle lookups can resolve it within this process.
