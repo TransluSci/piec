@@ -7,6 +7,11 @@ from pathlib import Path
 from .utilities import PiecManager
 from .instrument import Instrument
 from .scpi import Scpi
+from .virtual_dispatch import (
+    INSTRUMENT_ALIASES,
+    VirtualDriverAmbiguityError,
+    find_virtual_driver_class,
+)
 
 # Check for Digilent Library
 
@@ -25,16 +30,9 @@ except:
 MCC_REGEX = re.compile(r'Device ADDRESS = (\S+)')
 
 
-class VirtualDriverAmbiguityError(RuntimeError):
-    """Raised when a category defines more than one virtual driver."""
-
-
-# Map shorthand aliases to actual driver directory names
-INSTRUMENT_ALIASES = {
-    'calibrator': 'dc_calibrator',
-    'stepper': 'stepper_motor',
-    'scope': 'oscilloscope'
-}
+# Backward-compatible private name.  Constructor dispatch and autodetect now
+# share the implementation in ``virtual_dispatch``.
+_find_virtual_driver_class = find_virtual_driver_class
 
 # Keywords that should bypass MCC detection (used when address is a generic string)
 NON_MCC_KEYWORDS = set(INSTRUMENT_ALIASES.keys()).union(INSTRUMENT_ALIASES.values()).union(
@@ -112,39 +110,6 @@ def _resolve_type_string(name):
         except:
             pass
     return None
-
-
-def _find_virtual_driver_class(device_type):
-    """Discover the single virtual driver defined in a category folder."""
-    category = INSTRUMENT_ALIASES.get(device_type.lower(), device_type.lower())
-    category_path = Path(__file__).parent / category
-    if not category_path.is_dir():
-        return None
-
-    from .virtual_instrument import VirtualInstrument
-
-    candidates = []
-    for file_path in sorted(category_path.glob("virtual_*.py")):
-        module_str = f"piec.drivers.{category}.{file_path.stem}"
-        module = importlib.import_module(module_str)
-
-        for exported_name, cls_obj in inspect.getmembers(module, inspect.isclass):
-            if cls_obj is VirtualInstrument:
-                continue
-            if cls_obj.__module__ != module.__name__:
-                continue
-            if exported_name != cls_obj.__name__:
-                continue
-            if issubclass(cls_obj, VirtualInstrument):
-                candidates.append(cls_obj)
-
-    if len(candidates) > 1:
-        names = ", ".join(cls.__name__ for cls in candidates)
-        raise VirtualDriverAmbiguityError(
-            f"Multiple virtual drivers found for category {category!r}: {names}"
-        )
-
-    return candidates[0] if candidates else None
 
 
 def _dynamic_driver_scan(verbose=False):
