@@ -8,7 +8,6 @@ allows constructor-time virtual dispatch to use exactly the same rules.
 import importlib
 import inspect
 from copy import deepcopy
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -40,15 +39,6 @@ class VirtualDriverNotFoundError(VirtualDriverDispatchError):
             f"Cannot create a virtual {model_name}: no virtual driver is "
             f"defined for category {category!r}"
         )
-
-
-@dataclass(frozen=True)
-class VirtualDriverProvenance:
-    """Describe the physical model and virtual implementation of a profile."""
-
-    category: str
-    emulated_driver_class: type
-    virtual_driver_class: type
 
 
 # Map shorthand aliases to actual driver directory names.  This is shared by
@@ -164,12 +154,6 @@ def _profiled_virtual_class(model_class):
     if virtual_class is None:
         raise VirtualDriverNotFoundError(model_class, category)
 
-    provenance = VirtualDriverProvenance(
-        category=category,
-        emulated_driver_class=model_class,
-        virtual_driver_class=virtual_class,
-    )
-
     generated_name = (
         "Virtualized_"
         f"{model_class.__module__.replace('.', '_')}_{model_class.__name__}"
@@ -179,9 +163,6 @@ def _profiled_virtual_class(model_class):
         "__qualname__": generated_name,
         **_model_capability_attributes(model_class),
         "is_profiled_virtual_driver": True,
-        "virtual_driver_provenance": provenance,
-        "emulated_driver_class": model_class,
-        "virtual_driver_class": virtual_class,
     }
 
     # Virtual drivers use AutoCheckMeta, so create the generated subclass with
@@ -191,6 +172,11 @@ def _profiled_virtual_class(model_class):
         (virtual_class,),
         namespace,
     )
+
+    # Class objects are callable, so assigning these after AutoCheckMeta has
+    # created the class prevents it from treating metadata as driver methods.
+    generated_class.emulated_driver_class = model_class
+    generated_class.virtual_driver_class = virtual_class
 
     # Register the generated class under a stable module-level name so normal
     # introspection and pickle lookups can resolve it within this process.

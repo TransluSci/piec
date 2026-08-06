@@ -79,7 +79,6 @@ class VirtualInstrument(Instrument):
     _shared_mag_sample = None
     _is_virtual_driver = True
     is_profiled_virtual_driver = False
-    virtual_driver_provenance = None
 
     # These are simulation policy values, not hardware capability limits.
     DEFAULT_SIMULATION_POINTS = 100000

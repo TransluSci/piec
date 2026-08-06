@@ -17,10 +17,7 @@ from piec.drivers.instrument import Instrument
 from piec.drivers.oscilloscope.lecroy_sda6020 import LeCroySDA6020
 from piec.drivers.oscilloscope.tektronix_tds2000 import TektronixTDS2000
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
-from piec.drivers.virtual_dispatch import (
-    VirtualDriverNotFoundError,
-    VirtualDriverProvenance,
-)
+from piec.drivers.virtual_dispatch import VirtualDriverNotFoundError
 from piec.drivers.virtual_instrument import VirtualInstrument
 
 
@@ -86,26 +83,15 @@ def test_model_virtual_instance_uses_virtual_stateful_methods():
 def test_model_virtual_dispatch_records_source_driver():
     awg = Keysight81150a("VIRTUAL")
 
+    assert awg.is_profiled_virtual_driver is True
     assert awg.emulated_driver_class is Keysight81150a
     assert awg.virtual_driver_class is VirtualAwg
-
-
-def test_model_virtual_dispatch_exposes_structured_provenance():
-    awg = Keysight81150a("VIRTUAL")
-
-    assert awg.is_profiled_virtual_driver is True
-    assert awg.virtual_driver_provenance == VirtualDriverProvenance(
-        category="awg",
-        emulated_driver_class=Keysight81150a,
-        virtual_driver_class=VirtualAwg,
-    )
 
 
 def test_direct_virtual_driver_is_not_marked_as_model_profiled():
     awg = VirtualAwg()
 
     assert awg.is_profiled_virtual_driver is False
-    assert awg.virtual_driver_provenance is None
 
 
 def test_missing_category_virtual_driver_raises_contextual_error():
