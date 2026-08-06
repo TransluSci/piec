@@ -49,15 +49,15 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
     acquisition_mode = ["NORM", "AVER", "HRES", "PEAK"]
     acquisition_points = (100, 1000)
 
-    def __init__(self, address='abc', **kwargs):
+    def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize virtual oscilloscope with default settings.
 
         Args:
-            address (str): Virtual address for the instrument (default: 'abc')
+            address (str): Virtual address for the instrument (default: 'VIRTUAL')
             **kwargs: Additional arguments
         """
-        VirtualInstrument.__init__(self, address=address)
+        super().__init__(address=address, **kwargs)
 
         # In virtual mode, treat the instrument as self so SCPI helpers can call write/query safely
         self.instrument = self

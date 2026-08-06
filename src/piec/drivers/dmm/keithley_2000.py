@@ -2,7 +2,7 @@
 from .dmm import DMM
 from ..scpi import Scpi
 
-class Keithley2000(DMM, Scpi):
+class Keithley2000(Scpi, DMM):
     """
     Driver for the Keithley 2000 Digital Multimeter.
     """

@@ -13,6 +13,7 @@ import pytest
 
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.drivers.virtual_instrument import VirtualInstrument
 from piec.measurement.discrete_waveform import HysteresisLoop
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 
@@ -54,6 +55,35 @@ class TestVirtualDriverInit:
     def test_virtual_scope_arm_sets_flag(self):
         self.scope.arm()
         assert self.scope.state['armed'] is True
+
+    def test_virtual_drivers_receive_common_instrument_state(self):
+        for instrument in (self.awg, self.scope):
+            assert instrument.virtual is True
+            assert instrument.check_params is False
+            assert instrument.instrument is instrument
+
+    def test_existing_virtual_drivers_see_replaced_shared_sample(self):
+        original_sample = VirtualInstrument._shared_fe_sample
+
+        try:
+            replacement = object()
+            VirtualInstrument.set_virtual_sample(replacement)
+
+            assert self.awg.sample is replacement
+            assert self.scope.sample is replacement
+            assert self.awg.virtual_sample is replacement
+            assert self.scope.virtual_sample is replacement
+
+            replacement_from_property = object()
+            self.awg.virtual_sample = replacement_from_property
+
+            assert self.awg.sample is replacement_from_property
+            assert self.scope.sample is replacement_from_property
+        finally:
+            VirtualInstrument.set_virtual_sample(original_sample)
+
+    def test_virtual_drivers_share_magnetic_sample(self):
+        assert self.awg.mag_sample is self.scope.mag_sample
 
 
 class TestHysteresisLoopInit:

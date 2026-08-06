@@ -32,6 +32,7 @@ These files define the **Template/Interface** for an entire category of instrume
 This is the **Actual Implementation** of the driver.
 * Inherits from the Level 2 Category (e.g., `Awg`) and optionally from the `Scpi` convenience class.
 * Implements the Level 2 interface using specific hardware commands.
+* When using a protocol convenience class, put it **before** the category class so its real implementations take priority over the category's skeleton methods.
 
 **Path A — SCPI-compliant instrument** (most common):
 ```python
@@ -39,7 +40,7 @@ from .awg import Awg
 from ..scpi import Scpi
 
 # Inherits real SCPI implementations (idn, reset, clear, etc.) from Scpi
-class Agilent33220a(Awg, Scpi):
+class Agilent33220a(Scpi, Awg):
     AUTODETECT_ID = "33220A"
     # Only implement the instrument-specific methods...
 ```
@@ -71,6 +72,26 @@ class MyProprietaryScope(Oscilloscope):
         super().__init__(*args, **kwargs)
         # Custom queries here...
 ```
+
+* Virtual operation must be explicit: use `VIRTUAL` or a `VIRTUAL_<type>` address (case-insensitive). A failed physical connection raises `ConnectionError`; it does not silently create a virtual instrument.
+
+### Virtual Driver Constructors
+
+If a virtual driver is requested, inherit from `VirtualInstrument` first and the
+Level 2 category second. Its constructor must call `super().__init__()` exactly once:
+
+```python
+from ..virtual_instrument import VirtualInstrument
+from .example import Example
+
+class VirtualExample(VirtualInstrument, Example):
+    def __init__(self, address="VIRTUAL", **kwargs):
+        super().__init__(address=address, **kwargs)
+```
+
+Never call `VirtualInstrument.__init__()` and the category initializer separately.
+Passing `"VIRTUAL"` to a physical model driver only gives that model a virtual
+communication backend; it does not select or create the category's virtual driver.
 
 ## 3. Autodetection (`AUTODETECT_ID`)
 Every driver MUST (if possible) define a class-level string attribute named `AUTODETECT_ID`. This is a unique substring expected to be returned by the instrument when queried with an .idn() command.
@@ -184,7 +205,7 @@ Any public method that a specific driver defines **beyond** what the parent clas
 
 ```python
 # In a Keysight-specific driver:
-class KeysightDSOX3024a(Oscilloscope, Scpi):
+class KeysightDSOX3024a(Scpi, Oscilloscope):
     def read_statistics(self):  # Not in parent Oscilloscope — auto-optional
         return self.instrument.query(":MEAS:STAT?")
 ```
@@ -222,3 +243,16 @@ piec/
       dsox3024a.py          (Level 3 Driver - Keysight)
       tds6604.py            (Level 3 Driver - Tektronix)
 ```
+
+Category autodetection uses the folder and interface-file names, then discovers the
+single `Instrument` subclass defined in that interface module. The Python class name
+does not need to match the category name. For example,
+`drivers/my_inst/my_inst.py` may define `class MyInstSomethingElse(Instrument)` without adding a
+registry entry. The interface module must define exactly one canonical category class.
+Convenience aliases such as `scope` are optional API additions maintained separately.
+
+Virtual drivers use the same zero-registration approach. Put one `virtual_*.py` file
+in the category folder and define one class there that inherits from
+`VirtualInstrument`. Neither the rest of the filename nor the class name must match
+the category. Autodetect reports an ambiguity if a category defines more than one
+virtual driver.

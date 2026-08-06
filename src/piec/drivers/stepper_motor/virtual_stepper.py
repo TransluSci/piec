@@ -7,8 +7,7 @@ class VirtualStepper(VirtualInstrument, Stepper):
     Virtual version of a Stepper that updates a shared magnetic sample.
     """
     def __init__(self, address="VIRTUAL", **kwargs):
-        VirtualInstrument.__init__(self, address=address)
-        Stepper.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
         self.current_pos = 0
         self.steps_per_revolution = 200 # default
 

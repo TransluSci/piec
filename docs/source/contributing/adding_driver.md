@@ -34,14 +34,14 @@ Before opening an AI session, collect the following:
    from .awg import Awg
    from ..scpi import Scpi
 
-   class RigolDg1000(Awg, Scpi):
+   class RigolDg1000(Scpi, Awg):
        ...
 
    # With Digilent convenience class
    from .daq import Daq
    from ..digilent import Digilent
 
-   class Usb231(Daq, Digilent):
+   class Usb231(Digilent, Daq):
        ...
 
    # No convenience class — implement everything directly
@@ -50,6 +50,10 @@ Before opening an AI session, collect the following:
    class MyCustomAwg(Awg):
        ...
    ```
+
+   The order matters: protocol convenience classes such as `Scpi` and `Digilent`
+   come first so their working lifecycle methods take priority over the category's
+   documented skeleton methods.
 
    If you are unsure which applies, describe the instrument's communication interface in the AI prompt and let it determine the right inheritance.
 
@@ -133,12 +137,16 @@ For each discrepancy, show: the original code, the corrected code, and the secti
 
 ---
 
-## Step 4: Register the driver
+## Step 4: Verify driver discovery
 
 Once the driver file is in place:
 
-1. **Add the import** to the `__init__.py` in the category folder so piec can discover it.
+1. **No manual registration is required.** Autodetect scans Python files under `src/piec/drivers/` and discovers model classes that define `AUTODETECT_ID`.
 2. **Verify autodetection** — the `AUTODETECT_ID` string must be a unique substring of the instrument's identification response. You can test this by connecting to the instrument and calling `.idn()` on it.
+
+Virtual drivers also require no registration. Put one `virtual_*.py` module containing
+one `VirtualInstrument` subclass in the category folder. Autodetect discovers it from
+the folder structure. Its constructor should call `super().__init__(...)`.
 
 ---
 

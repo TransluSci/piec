@@ -47,7 +47,10 @@ What each level provides
 
    * Accepts an address string (VISA resource string, COM port, or ``'VIRTUAL'``) at
      initialization.
-   * Opens and manages the connection via PyVISA (or falls back to a virtual backend).
+   * Opens and manages physical connections via PyVISA. A failed physical connection
+     raises ``ConnectionError`` rather than silently switching to simulation.
+   * Creates a virtual backend only for explicit ``VIRTUAL`` or ``VIRTUAL_<type>``
+     addresses.
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
      state tracking based on class attributes. Setting a class attribute to ``None``
      bypasses this validation, allowing for custom driver-side handling.
@@ -89,9 +92,12 @@ What each level provides
       from .awg import Awg
       from ..scpi import Scpi
 
-      class Keysight81150a(Awg, Scpi):
+      class Keysight81150a(Scpi, Awg):
           AUTODETECT_ID = "81150A"
           # Implementation ...
+
+   The base-class order is significant: the convenience class comes first so
+   its defined methods take priority.
 
    .. note::
       To see a complete implementation template, refer to the ``src/piec/drivers/example/`` directory. It contains the ``Example`` Level 2 interface and the ``SpecificExample`` Level 3 driver. Please read the :doc:`adding a driver <../contributing/adding_driver>` guide before writing custom drivers.

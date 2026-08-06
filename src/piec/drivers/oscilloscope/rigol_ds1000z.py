@@ -4,7 +4,7 @@ import pandas as pd
 from .oscilloscope import Oscilloscope
 from ..scpi import Scpi
 
-class RigolDS1000Z(Oscilloscope, Scpi):
+class RigolDS1000Z(Scpi, Oscilloscope):
     """
     Driver for the Rigol DS1000Z Series Oscilloscope.
     e.g. DS1054Z, DS1074Z, DS1104Z

@@ -52,16 +52,16 @@ class Digilent(Instrument):
             verbose (bool): If True, prints status messages.
             **kwargs: Additional arguments for the base Instrument class.
         """
-        # --- Check if the required library was imported ---
-        if not mcc_ul_imported or ul is None:
-            print("Warning: 'mcculw' library not found. Falling back to VIRTUAL mode for Digilent driver.")
-            # Force virtual mode to prevent crashes
-            self.is_virtual_mode = True
-        else:
-            # --- FIX: Store the user's intended mode ---
-            # We check the 'address' passed by the user, not the 'self.virtual'
-            # flag from the parent, which is always True.
-            self.is_virtual_mode = (str(address).upper() == 'VIRTUAL')
+        # Store the user's intended mode before checking optional hardware
+        # dependencies. A physical request must never become a simulation just
+        # because the Universal Library is unavailable.
+        self.is_virtual_mode = (str(address).strip().upper() == 'VIRTUAL')
+        if not self.is_virtual_mode and (not mcc_ul_imported or ul is None):
+            raise ImportError(
+                "Cannot connect to an MCC/Digilent device because the "
+                "'mcculw' library is not installed. Use address='VIRTUAL' "
+                "only when simulation is intended."
+            )
         self.verbose = verbose
 
         try:

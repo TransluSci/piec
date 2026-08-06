@@ -3,7 +3,7 @@ import pandas as pd
 from .oscilloscope import Oscilloscope
 from ..scpi import Scpi
 
-class TDS6604(Oscilloscope, Scpi):
+class TDS6604(Scpi, Oscilloscope):
     """
     Driver for the Tektronix TDS 6604 Oscilloscope.
     """

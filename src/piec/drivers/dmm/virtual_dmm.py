@@ -6,8 +6,7 @@ class VirtualDMM(VirtualInstrument, DMM):
     Virtual version of a DMM.
     """
     def __init__(self, address="VIRTUAL", **kwargs):
-        VirtualInstrument.__init__(self, address=address)
-        DMM.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
 
     def idn(self):
         return "Virtual DMM"

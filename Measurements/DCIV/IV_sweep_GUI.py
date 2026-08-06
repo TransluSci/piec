@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 import numpy as np
 from piec.drivers.sourcemeter.keithley2400 import Keithley2400
-from piec.drivers.sourcemeter.virtual_keithley2400 import VirtualKeithley2400
+from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
 from piec.measurement.iv_sweep import IVSweep
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.gui_utils import MeasurementApp
@@ -130,7 +130,7 @@ class IVSweepApp(MeasurementApp):
         DEFAULTS["sense_mode"] = sense_mode
 
         if sm_address == "VIRTUAL":
-            sourcemeter = VirtualKeithley2400()
+            sourcemeter = VirtualSourcemeter()
         else:
             sourcemeter = Keithley2400(sm_address)
 

@@ -8,7 +8,7 @@ import pandas as pd
 from .oscilloscope import Oscilloscope
 from ..scpi import Scpi
 
-class KeysightDSOX3024a(Oscilloscope, Scpi):
+class KeysightDSOX3024a(Scpi, Oscilloscope):
     """
     Driver for the Keysight DSOX3024A Oscilloscope.
     """

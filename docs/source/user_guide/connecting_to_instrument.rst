@@ -24,7 +24,13 @@ You can invoke the ``autodetect()`` function in a few different ways depending o
       my_scope = autodetect('scope')
       my_dmm = autodetect('dmm')
 
-   Valid category strings include any instrument category folder name located in the ``src/piec/drivers/`` directory (e.g., ``'oscilloscope'``, ``'awg'``, ``'lockin'``, ``'dmm'``). PIEC also provides a few convenience aliases like ``'scope'`` or ``'stepper'`` (see the :py:mod:`piec.drivers.autodetect` API reference for the underlying mapping logic in ``_resolve_type_string``).
+   Valid category strings include any instrument category folder name located in the
+   ``src/piec/drivers/`` directory (e.g., ``'oscilloscope'``, ``'awg'``,
+   ``'lockin'``, ``'dmm'``). The folder must contain a same-named interface module,
+   such as ``oscilloscope/oscilloscope.py``, defining exactly one ``Instrument``
+   subclass. The Python class name is discovered automatically and does not need to
+   match the category string. PIEC also provides convenience aliases such as
+   ``'scope'`` and ``'stepper'``.
 
 2. **By Hardware Address**: 
    If you know the exact VISA resource address of the instrument (e.g., a GPIB or USB string), you can pass it directly. PIEC will probe that specific address and load the correct specific model driver for it.
@@ -48,14 +54,21 @@ How Autodetect Works
 
 1. **Scanning/Probing**: When invoked, PIEC targets the appropriate VISA resources and sends a standard identification query (typically ``*IDN?``).
 2. **Matching**: It compares the instrument's response against the ``AUTODETECT_ID`` strings defined in every Level 3 driver class within the library.
-3. **Caching**: Once a match is confirmed, the system saves the hardware mapping (resource address to driver class) in a local JSON registry file (typically ``registry_cache.json``). If this file does not exist, PIEC will automatically create it.
+3. **Caching**: The system stores identification substrings and their corresponding
+   driver class paths in a local JSON registry file (typically
+   ``registry_cache.json``). If this file does not exist, PIEC creates it
+   automatically.
 
-This caching mechanism ensures that subsequent connections are virtually instantaneous, bypassing the need to ping every device on the bus.
+This cache avoids rescanning and importing every driver module on subsequent matches.
+Hardware is still probed for its identification response before selecting a driver.
 
 Supporting Autodetect in New Drivers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To ensure your custom driver works with this system, you **SHOULD** define an ``AUTODETECT_ID`` class attribute in your Level 3 driver. See :doc:`../contributing/adding_driver` for details.
+To ensure your custom model driver works with this system, define an
+``AUTODETECT_ID`` class attribute in the Level 3 driver. Autodetect scans driver files
+recursively, so no import or manual registry entry is required. See
+:doc:`../contributing/adding_driver` for details.
 
 Finding Your Instrument's Address Manually
 ------------------------------------------
@@ -100,9 +113,15 @@ Once you have the address, import the specific driver class and instantiate it:
 Virtual mode
 ------------
 
-PIEC drivers support a **virtual mode** that simulates instrument responses without any physical hardware. This is useful for developing and testing measurement workflows offline.
+PIEC drivers support an explicit **virtual mode** that simulates instrument responses
+without any physical hardware. This is useful for developing and testing measurement
+workflows offline. Failed physical connections raise ``ConnectionError`` and never
+silently switch to virtual mode when constructing a driver directly. Use **virtual mode** to simulate the instrument. The
+``autodetect()`` function catches failed probes and returns no match instead; it also
+never substitutes a virtual instrument.
 
-To use virtual mode, pass ``'virtual'`` as the address when instantiating a driver:
+Use a virtual driver directly, or pass ``'VIRTUAL'``/``'VIRTUAL_<type>'`` where an
+address is accepted (case-insensitive):
 
 .. code-block:: python
 
@@ -111,4 +130,13 @@ To use virtual mode, pass ``'virtual'`` as the address when instantiating a driv
    scope = VirtualScope()
    print(scope.idn())   # Returns a simulated IDN string
 
+   from piec.drivers.autodetect import autodetect
+
+   awg = autodetect('virtual_awg')
+
 Virtual instruments respond to all the same method calls as real instruments but generate synthetic data instead of communicating with hardware.
+For a virtual request, autodetect scans the resolved category folder for a
+``virtual_*.py`` module containing a locally defined ``VirtualInstrument`` subclass.
+The filename suffix and class name do not need to match the category. A category must
+provide exactly one such class; otherwise autodetect reports that no unique virtual
+driver could be selected.

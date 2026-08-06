@@ -6,8 +6,7 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
     Virtual version of a Calibrator that updates shared magnetic sample field.
     """
     def __init__(self, address="VIRTUAL", **kwargs):
-        VirtualInstrument.__init__(self, address=address)
-        DCCalibrator.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
         self.voltage_callibration = kwargs.get('voltage_callibration', 10000.0)
 
     def idn(self):
