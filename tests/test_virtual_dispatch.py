@@ -17,7 +17,10 @@ from piec.drivers.instrument import Instrument
 from piec.drivers.oscilloscope.lecroy_sda6020 import LeCroySDA6020
 from piec.drivers.oscilloscope.tektronix_tds2000 import TektronixTDS2000
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
-from piec.drivers.virtual_dispatch import VirtualDriverNotFoundError
+from piec.drivers.virtual_dispatch import (
+    VirtualDriverDispatchError,
+    VirtualDriverNotFoundError,
+)
 from piec.drivers.virtual_instrument import VirtualInstrument
 
 
@@ -26,6 +29,15 @@ def test_model_virtual_address_returns_virtual_awg_instance():
 
     assert isinstance(awg, VirtualAwg)
     assert not isinstance(awg, Keysight81150a)
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["VIRTUAL_AWG", "VIRTUAL_SCOPE", "VIRTUAL_NOT_A_REAL_CATEGORY"],
+)
+def test_model_constructor_rejects_category_virtual_addresses(address):
+    with pytest.raises(VirtualDriverDispatchError, match="only address='VIRTUAL'"):
+        Keysight81150a(address)
 
 
 @pytest.mark.parametrize(

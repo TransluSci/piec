@@ -134,19 +134,33 @@ class AutoCheckMeta(type):
             address = args[0]
 
         address_name = str(address).strip().upper() if address is not None else ""
-        is_virtual_address = (
-            address_name == "VIRTUAL" or address_name.startswith("VIRTUAL_")
-        )
+        is_model_virtual_address = address_name == "VIRTUAL"
+        is_category_virtual_address = address_name.startswith("VIRTUAL_")
 
         # Virtual driver classes inherit this marker from VirtualInstrument.
         # Without the guard, creating the generated virtual class would
         # recursively dispatch back into its own factory.
-        if is_virtual_address and not getattr(cls, "_is_virtual_driver", False):
-            from .virtual_dispatch import create_profiled_virtual_driver
+        if (
+            (is_model_virtual_address or is_category_virtual_address)
+            and not getattr(cls, "_is_virtual_driver", False)
+        ):
+            from .virtual_dispatch import (
+                VirtualDriverDispatchError,
+                _category_for_model,
+                create_profiled_virtual_driver,
+            )
 
-            virtual_instance = create_profiled_virtual_driver(cls, *args, **kwargs)
-            if virtual_instance is not None:
-                return virtual_instance
+            if is_model_virtual_address:
+                virtual_instance = create_profiled_virtual_driver(cls, *args, **kwargs)
+                if virtual_instance is not None:
+                    return virtual_instance
+            elif is_category_virtual_address and _category_for_model(cls) is not None:
+                model_name = f"{cls.__module__}.{cls.__qualname__}"
+                raise VirtualDriverDispatchError(
+                    f"{model_name} accepts only address='VIRTUAL' for model-style "
+                    f"virtual dispatch; use autodetect({address!r}) for category "
+                    "virtual addresses"
+                )
 
         return super().__call__(*args, **kwargs)
 

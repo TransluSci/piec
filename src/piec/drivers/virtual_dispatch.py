@@ -108,7 +108,10 @@ def _category_for_model(model_class):
     parts = model_class.__module__.split(".")
     if len(parts) < 4 or parts[-3] != "drivers":
         return None
-    return parts[-2]
+    category = parts[-2]
+    if category == "emulators":
+        return None
+    return category
 
 
 def _model_capability_attributes(model_class):
