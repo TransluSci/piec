@@ -290,7 +290,8 @@ class AMRApp(MeasurementApp):
             frequency=frequency,
             measure_time=measure_time,
             sensitivity=sensitivity,
-            save_dir=save_dir
+            save_dir=save_dir,
+            live_plot=False,
         )
 
         self.is_measuring = True
