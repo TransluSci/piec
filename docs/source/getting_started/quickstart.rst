@@ -14,12 +14,12 @@ Running a virtual hysteresis measurement
 
 .. code-block:: python
 
-   from piec.drivers.awg.virtual_awg import VirtualAwg
-   from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+   from piec.drivers.awg.k_81150a import Keysight81150a
+   from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
    from piec.measurement.discrete_waveform import HysteresisLoop
 
-   awg = VirtualAwg()
-   osc = VirtualScope()
+   awg = Keysight81150a("VIRTUAL")
+   osc = KeysightDSOX3024a("VIRTUAL")
    experiment = HysteresisLoop(awg, osc, save_dir='.')
    experiment.run_experiment()  # configures, captures, saves, and analyzes
 
@@ -27,8 +27,13 @@ Running a virtual hysteresis measurement
 generates a triangle waveform, triggers acquisition, saves the raw data to CSV,
 and runs the hysteresis analysis automatically.
 
-Swap ``VirtualAwg`` / ``VirtualScope`` for real drivers (or use ``autodetect``)
-and the same code runs on hardware:
+The exact ``"VIRTUAL"`` address selects each category's virtual implementation
+while preserving the concrete model's capability attributes. Instantiate
+``VirtualAwg`` or ``VirtualScope`` directly when generic category capabilities
+are preferable.
+
+Pass physical addresses instead (or use ``autodetect``) and the same code runs
+on hardware:
 
 .. code-block:: python
 
