@@ -5,8 +5,8 @@ This page walks you through a minimal example using PIEC's **virtual instrument 
 real hardware required. You can run this example immediately after installing PIEC.
 
 .. note::
-   Virtual mode is built into every PIEC driver. It simulates instrument responses so you can
-   test and develop measurement workflows without physical hardware. See
+   Virtual mode is provided by dedicated virtual driver classes. The base driver does not
+   simulate generic SCPI responses. See
    :doc:`../user_guide/connecting_to_instrument` for details on virtual mode.
 
 Running a virtual hysteresis measurement

@@ -15,7 +15,6 @@ from piec.drivers.instrument import (
     convert_to_lowercase,
     Instrument,
     AutoCheckMeta,
-    VirtualRMInstrument,
 )
 from piec.drivers.scpi import Scpi
 from piec.drivers import digilent as digilent_module
@@ -149,52 +148,6 @@ class TestConvertToLowercase:
         assert result["frequency"] == 5000
 
 
-# VirtualRMInstrument
-
-class TestVirtualRMInstrument:
-
-    def setup_method(self):
-        self.rm = VirtualRMInstrument(address="VIRTUAL")
-
-    def test_idn_query_returns_expected_string(self):
-        response = self.rm.query("*IDN?")
-        assert "VirtualInstrument" in response
-
-    def test_known_query_returns_json_value(self):
-        response = self.rm.query("MEAS:VOLT:DC?")
-        assert response == "3.14159"
-
-    def test_opc_query_returns_one(self):
-        assert self.rm.query("*OPC?") == "1"
-
-    def test_esr_query_returns_zero(self):
-        assert self.rm.query("*ESR?") == "0"
-
-    def test_unknown_query_returns_fallback_string(self):
-        response = self.rm.query("COMPLETELY:UNKNOWN:QUERY?")
-        assert response is not None
-        assert isinstance(response, str)
-
-    def test_write_does_not_raise(self):
-        self.rm.write("*RST")  
-
-    def test_query_binary_returns_list(self):
-        # query_binary_values is used by oscilloscope waveform transfers.
-        result = self.rm.query_binary_values("WAVeform:DATA?")
-        assert isinstance(result, list)
-        assert len(result) > 0
-
-    def test_query_ascii_returns_list(self):
-        # query_ascii_values is used by instruments that return CSV data.
-        result = self.rm.query_ascii_values("FETCH?")
-        assert isinstance(result, list)
-        assert len(result) > 0
-
-    def test_resource_name_is_stored(self):
-        # The address is stored as resource_name for downstream inspection.
-        assert self.rm.resource_name == "VIRTUAL"
-
-
 # Instrument class
 class TestInstrumentVirtualMode:
     """Instrument initialises correctly in virtual mode (no hardware needed)."""
@@ -218,7 +171,7 @@ class TestInstrumentVirtualMode:
         inst = Instrument(address=address)
 
         assert inst.virtual is True
-        assert inst.instrument.resource_name == address
+        assert inst.instrument is inst
 
     def test_instrument_attribute_exists(self):
         inst = Instrument(address="VIRTUAL")

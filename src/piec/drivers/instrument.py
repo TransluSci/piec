@@ -7,10 +7,7 @@ automatic parameter validation and state tracking.
 """
 import functools
 import inspect
-import time
 import re
-import json
-import os
 import numpy as np
 import pandas as pd
 
@@ -134,66 +131,6 @@ class AutoCheckMeta(type):
             new_class_dict[attr_name] = attr_value
         return super().__new__(metacls, name, bases, new_class_dict)
 
-# --- Virtual Instrument (for testing) ---
-
-class VirtualRMInstrument:
-    """
-    This class replaces the resource manager object in the virtual case,
-    just needs to replace the .write() and .query() methods
-    """
-    def __init__(self, address, verbose:bool = False, **kwargs): # Added **kwargs and address
-        self.verbose = verbose
-        self.resource_name = address
-        if self.verbose:
-            print('INITIALIZING VIRTUAL RESOURCE MANAGER, VISA NOT CONNECTED')
-        current_dir = os.path.dirname(__file__)
-
-        json_path = os.path.join(current_dir, "virtual_scpi_queries.json")
-        self.query_dict = {}
-        try:
-            with open(json_path, "r") as file:
-                self.query_dict = json.load(file)
-        except Exception as e:
-            if self.verbose:
-                print(f"Warning: Failed to load 'virtual_scpi_queries.json' at {json_path}: {e}")
-            self.query_dict = {}
-        
-        # Ensure at least a default IDN exists if the file is empty or missing
-        if "*IDN?" not in self.query_dict:
-            self.query_dict["*IDN?"] = "Piec_Virtual_Instrument,Model_X,s/n_000,ver1.0"
-
-
-    def query(self, input:str):
-        time.sleep(0.01)
-        if self.verbose: print('Query recieved: ',input)
-        response = self.query_dict.get(input)
-        if response is not None: return response
-        else:
-            print('QUERY: ', input, ' NOT IN virtual_scpi_queries.json')
-            return "VIRTUAL QUERY:"+ input
-
-    def write(self, input:str):
-        time.sleep(0.01)
-        if self.verbose: print('Write recieved: ',input)
-    
-    def write_binary_values(self, data, scaled_data, datatype='h'):
-        time.sleep(0.01)
-        if self.verbose: print('Binary write recieved: ', data, scaled_data, datatype)
-            
-    def query_binary_values(self, query, datatype='h', is_big_endian=True):
-        time.sleep(0.01)
-        if self.verbose: print('Binary query recieved: ', query)
-        return [0] * 100 # Return a list of bytes
-
-    def query_ascii_values(self, query):
-        time.sleep(0.01)
-        if self.verbose: print('ASCII query recieved: ', query)
-        return [0.0] * 100 # Return a list of floats
-        
-    def read(self):
-        if self.verbose: print('Read recieved')
-        return ""
-
 # --- Helper Functions for _check_params ---
 
 def convert_to_lowercase(params):
@@ -316,7 +253,9 @@ class Instrument(metaclass=AutoCheckMeta):
         connection_kwargs = kwargs.copy()
 
         if self.virtual:
-            self.instrument = VirtualRMInstrument(address, verbose=self.verbose, **connection_kwargs)
+            # Dedicated virtual drivers implement their own transport behavior.
+            # Do not provide generic canned SCPI responses here.
+            self.instrument = self
         else:
             try:
                 pm = PiecManager()

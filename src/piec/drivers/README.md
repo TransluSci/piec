@@ -4,7 +4,7 @@ This directory contains the instrument drivers for the PIEC project. It provides
 
 ## Directory Structure
 
-- **`instrument.py`**: Contains the `Instrument` base class. It handles connection management (real or virtual) and implements the `AutoCheckMeta` framework for automatic parameter validation.
+- **`instrument.py`**: Contains the `Instrument` base class. It handles connection setup and implements the `AutoCheckMeta` framework for automatic parameter validation.
 - **`scpi.py`**: Defines the `Scpi` class, which inherits from `Instrument` and implements standard IEEE 488.2 SCPI commands (e.g., `*IDN?`, `*RST`, `*CLS`).
 - **`utilities.py`**: Helper functions for parameter conversion and the `PiecManager` for resource management.
 - **Subdirectories**: Contain specific driver implementations grouped by instrument type:
@@ -37,7 +37,7 @@ scope = VirtualScope()
 
 ### Key Features
 
--   **Virtual Instrument**: Virtual instruments use a mock SCPI commands and state. This allows code development and testing without physical access to the hardware.
+-   **Virtual Instruments**: Dedicated virtual driver classes implement their own state and simulation behavior. The base `Instrument` class does not supply canned SCPI responses.
 -   **Parameter Validation**: If `check_params=True` is set during initialization, the `AutoCheckMeta` framework validates method arguments against predefined ranges and lists (e.g., checking if a voltage `vdiv` is within the allowed `vdiv` range defined in the class).
 -   **Standard Commands**:
     -   `idn()`: Returns the instrument identification string.

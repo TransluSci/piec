@@ -39,4 +39,4 @@ version = { attr = "piec._version.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["*_notebook.ipynb", "*.json", "*.csv"]
+"*" = ["*_notebook.ipynb", "*.csv"]
