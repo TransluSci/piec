@@ -28,8 +28,7 @@ class VirtualRFSource(VirtualInstrument, RFSource):
             address (str): Virtual address (default: 'VIRTUAL').
             **kwargs: Additional arguments passed to parent classes.
         """
-        VirtualInstrument.__init__(self, address=address)
-        RFSource.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
 
         # Internal state tracker
         self.state = {

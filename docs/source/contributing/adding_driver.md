@@ -146,7 +146,7 @@ Once the driver file is in place:
 
 Virtual drivers also require no registration. Put one `virtual_*.py` module containing
 one `VirtualInstrument` subclass in the category folder. Autodetect discovers it from
-the folder structure.
+the folder structure. Its constructor should call `super().__init__(...)`.
 
 ---
 

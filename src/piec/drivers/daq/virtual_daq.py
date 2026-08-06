@@ -39,8 +39,7 @@ class VirtualDaq(VirtualInstrument, Daq):
             address (str): Virtual address (default: 'VIRTUAL').
             **kwargs: Additional arguments passed to parent classes.
         """
-        VirtualInstrument.__init__(self, address=address)
-        Daq.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
 
         self.state = {
             'ai_mode': 'SE',

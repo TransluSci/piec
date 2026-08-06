@@ -22,7 +22,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     current_compliance = (-1.05, 1.05)
 
     def __init__(self, address='VIRTUAL', **kwargs):
-        VirtualInstrument.__init__(self, address=address)
+        super().__init__(address=address, **kwargs)
         self.instrument = self
 
         self.state = {

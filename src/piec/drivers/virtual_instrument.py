@@ -7,9 +7,10 @@ It handles shared sample management and default material properties for ferroele
 
 from piec.simulation.fe_material import Ferroelectric
 from piec.simulation.magnetic_material import MagneticSample
+from .instrument import Instrument
 
 
-class VirtualInstrument():
+class VirtualInstrument(Instrument):
     """
     Base class for all virtual instruments that share a common sample instance.
     
@@ -20,14 +21,14 @@ class VirtualInstrument():
     Attributes:
         _shared_fe_sample (Ferroelectric): Class-level shared ferroelectric sample instance
         _shared_mag_sample (MagneticSample): Class-level shared magnetic sample instance
-        sample (Ferroelectric): Instance-level reference to shared FE sample
-        mag_sample (MagneticSample): Instance-level reference to shared magnetic sample
+        sample (Ferroelectric): Dynamic property for the shared FE sample
+        mag_sample (MagneticSample): Dynamic property for the shared magnetic sample
     """
 
     _shared_fe_sample = None
     _shared_mag_sample = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, address="VIRTUAL", **kwargs):
         """
         Initialize virtual instrument with default ferroelectric sample if none exists.
         
@@ -35,9 +36,11 @@ class VirtualInstrument():
         Subsequent instances will share the same sample object.
 
         Args:
-            *args: Variable length argument list
+            address (str): Explicit virtual address.
             **kwargs: Arbitrary keyword arguments
         """
+        super().__init__(address=address, **kwargs)
+
         if VirtualInstrument._shared_fe_sample is None:
             default_fe_material = {
                 # SRO / PZT(52/48) / Pt stack — calibrated to give
@@ -87,9 +90,6 @@ class VirtualInstrument():
         
         if VirtualInstrument._shared_mag_sample is None:
             VirtualInstrument._shared_mag_sample = MagneticSample()
-            
-        self.sample = VirtualInstrument._shared_fe_sample
-        self.mag_sample = VirtualInstrument._shared_mag_sample
 
     @classmethod
     def set_virtual_sample(cls, sample):
@@ -99,7 +99,25 @@ class VirtualInstrument():
         Args:
             sample (Ferroelectric): New ferroelectric sample instance to share
         """
-        cls._shared_sample = sample
+        VirtualInstrument._shared_fe_sample = sample
+
+    @property
+    def sample(self):
+        """Return the ferroelectric sample shared by all virtual instruments."""
+        return VirtualInstrument._shared_fe_sample
+
+    @sample.setter
+    def sample(self, sample):
+        VirtualInstrument._shared_fe_sample = sample
+
+    @property
+    def mag_sample(self):
+        """Return the magnetic sample shared by all virtual instruments."""
+        return VirtualInstrument._shared_mag_sample
+
+    @mag_sample.setter
+    def mag_sample(self, sample):
+        VirtualInstrument._shared_mag_sample = sample
 
     @property
     def virtual_sample(self):
@@ -109,14 +127,14 @@ class VirtualInstrument():
         Returns:
             Ferroelectric: Current shared sample instance
         """
-        return self._shared_sample
+        return VirtualInstrument._shared_fe_sample
 
     @virtual_sample.setter
     def virtual_sample(self, sample):
         """
-        Set a new shared sample for all instances of this class.
+        Set a new shared sample for every virtual instrument.
 
         Args:
             sample (Ferroelectric): New ferroelectric sample instance to share
         """
-        self.__class__._shared_sample = sample
+        VirtualInstrument._shared_fe_sample = sample

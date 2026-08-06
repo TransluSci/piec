@@ -37,8 +37,7 @@ class VirtualPulser(VirtualInstrument, Pulser):
             address (str): Virtual address (default: 'VIRTUAL').
             **kwargs: Additional arguments passed to parent classes.
         """
-        VirtualInstrument.__init__(self, address=address)
-        Pulser.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
 
         # State tracked per channel
         self.state = {

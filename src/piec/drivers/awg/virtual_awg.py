@@ -57,8 +57,7 @@ class VirtualAwg(VirtualInstrument, Awg):
             address (str, optional): Virtual address for the instrument. Defaults to 'VIRTUAL'.
             **kwargs: Additional arguments passed to parent classes.
         """
-        VirtualInstrument.__init__(self, address=address)
-        Awg.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
 
         self.instrument = self
         

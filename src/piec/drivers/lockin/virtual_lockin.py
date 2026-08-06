@@ -6,8 +6,7 @@ class VirtualLockin(VirtualInstrument, Lockin):
     Virtual version of a Lock-in that returns data based on a shared magnetic sample.
     """
     def __init__(self, address="VIRTUAL", **kwargs):
-        VirtualInstrument.__init__(self, address=address)
-        Lockin.__init__(self, address=address, **kwargs)
+        super().__init__(address=address, **kwargs)
 
     def idn(self):
         return "Virtual Lock-in"
