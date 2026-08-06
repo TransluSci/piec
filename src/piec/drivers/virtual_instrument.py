@@ -27,6 +27,7 @@ class VirtualInstrument(Instrument):
 
     _shared_fe_sample = None
     _shared_mag_sample = None
+    _is_virtual_driver = True
 
     def __init__(self, address="VIRTUAL", **kwargs):
         """

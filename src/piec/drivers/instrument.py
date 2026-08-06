@@ -121,6 +121,35 @@ class AutoCheckMeta(type):
     public methods of a class (those not starting with '_').
     Methods marked with @optional are left as-is (not wrapped with auto_check_params).
     """
+    def __call__(cls, *args, **kwargs):
+        """Dispatch explicit virtual model construction before ``__init__``.
+
+        Physical model constructors may issue hardware queries or configure
+        vendor-specific state immediately.  Intercepting at the metaclass
+        boundary ensures those constructors never run for a virtual address;
+        the matching category virtual driver is initialized instead.
+        """
+        address = kwargs.get("address")
+        if address is None and args:
+            address = args[0]
+
+        address_name = str(address).strip().upper() if address is not None else ""
+        is_virtual_address = (
+            address_name == "VIRTUAL" or address_name.startswith("VIRTUAL_")
+        )
+
+        # Virtual driver classes inherit this marker from VirtualInstrument.
+        # Without the guard, creating the generated virtual class would
+        # recursively dispatch back into its own factory.
+        if is_virtual_address and not getattr(cls, "_is_virtual_driver", False):
+            from .virtual_dispatch import create_profiled_virtual_driver
+
+            virtual_instance = create_profiled_virtual_driver(cls, *args, **kwargs)
+            if virtual_instance is not None:
+                return virtual_instance
+
+        return super().__call__(*args, **kwargs)
+
     def __new__(metacls, name, bases, class_dict):
         new_class_dict = {}
         for attr_name, attr_value in class_dict.items():
