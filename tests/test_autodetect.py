@@ -13,7 +13,7 @@ autodetect_module = importlib.import_module("piec.drivers.autodetect")
 
 
 @pytest.mark.parametrize(
-    ("request", "expected_class"),
+    ("category_request", "expected_class"),
     [
         ("virtual_scope", VirtualScope),
         ("VIRTUAL_SCOPE", VirtualScope),
@@ -21,8 +21,8 @@ autodetect_module = importlib.import_module("piec.drivers.autodetect")
         ("virtual_awg", VirtualAwg),
     ],
 )
-def test_virtual_category_selects_virtual_driver(request, expected_class):
-    instrument = autodetect(request)
+def test_virtual_category_selects_virtual_driver(category_request, expected_class):
+    instrument = autodetect(category_request)
 
     assert isinstance(instrument, expected_class)
     assert instrument.virtual is True
