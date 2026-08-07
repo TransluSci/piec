@@ -422,5 +422,10 @@ class Instrument(metaclass=AutoCheckMeta):
                 except KeyError:
                     valid_options = list(attribute_value_lower[dependency_key].keys())
                     exit_with_error(f"Error: Invalid dependency value '\033[1m{dep_value}\033[0m' for '{dependency_key}'. Valid options are: {valid_options}")
+                except ValueError:
+                    # Validation failures are intentional and must reach the
+                    # caller. The generic handler below is only for unexpected
+                    # errors while resolving a dependent capability.
+                    raise
                 except Exception as e:
                     print(f"An error occurred during dependent parameter check for '{key}': {e}")

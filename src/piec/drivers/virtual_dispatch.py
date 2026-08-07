@@ -203,4 +203,10 @@ def create_profiled_virtual_driver(model_class, *args, **kwargs):
     generated_class = _profiled_virtual_class(model_class)
     if generated_class is None:
         return None
+    # A model-profiled virtual instrument exists specifically to emulate the
+    # selected hardware's limits, so enforce those limits unless the caller
+    # explicitly opts out. Physical and directly-created category virtual
+    # drivers retain their existing defaults.
+    kwargs = dict(kwargs)
+    kwargs.setdefault("check_params", True)
     return generated_class(*args, **kwargs)

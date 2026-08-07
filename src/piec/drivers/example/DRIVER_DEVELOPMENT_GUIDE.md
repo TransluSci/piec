@@ -108,6 +108,16 @@ assert isinstance(awg, VirtualAwg)
 assert awg.channel == Keysight81150a.channel
 ```
 
+Model-profiled virtual drivers enable parameter validation by default so their
+simulated methods enforce the selected hardware's limits. Pass
+`check_params=False` explicitly to disable this behavior. Physical drivers and
+directly instantiated category virtual drivers retain the normal project-wide
+default.
+
+Class-level capabilities must describe the model's initial operating state.
+Virtual dispatch deliberately skips the physical constructor, so limits assigned
+only during `__init__` are not available to the profiled virtual class.
+
 `VIRTUAL_<type>` addresses are reserved for category discovery through
 `autodetect`, such as `autodetect("VIRTUAL_AWG")`; concrete model constructors
 reject that form. Virtual classes may also be instantiated directly when generic
@@ -157,7 +167,18 @@ The class attributes must follow a specific syntax based on what kind of paramet
        }
    }
    ```
-   *(If a parameter has no known class attribute boundaries, set it to `None`.)*
+   *(If a parameter truly has no known class attribute boundaries, set it to
+   `None`.)*
+
+> [!WARNING]
+> **`None` is copied literally into model-profiled virtual drivers.** Virtual
+> dispatch skips the physical model's `__init__`, so a capability declared as
+> `None` at class level will remain `None` in `ModelDriver("VIRTUAL")` even if
+> the physical constructor normally replaces it with a concrete value. Since
+> `None` disables automatic validation, declare the model's initial operating
+> range or option list at class level. For example, a model that initializes in
+> high-bandwidth mode should declare that mode's initial `amplitude` and
+> `frequency` limits directly on the class.
 
 ## 5. Method Conventions: `set_`, `configure_`, and `run_`
 Function naming strictly determines scope:
@@ -209,6 +230,9 @@ The `auto_check_params` decorator **automatically converts all string arguments 
 
 > [!CAUTION]  
 > **Initial State is `None`:** Upon first connection, all tracked attributes are initialized to `None`. This means the first few `set_` calls (where one parameter depends on another) might skip validation or cause errors if your logic expects a value. Always perform a hardware query in `__init__` (see Rule 2) to synchronize these states immediately.
+> This synchronization applies only to physical instances. A model-profiled
+> virtual instance does not run the physical constructor, so its usable limits
+> must already be present in the model's class attributes.
 
 ## 9. Optional Methods
 

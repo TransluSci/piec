@@ -177,6 +177,10 @@ class attributes before executing:
   internally. This is the standard way for a driver to opt out of automatic checking for
   a specific parameter.
 
+Model-profiled virtual drivers are the exception to the default-off policy. Constructing
+``ModelDriver("VIRTUAL")`` enables validation automatically so the simulation enforces that
+model's class-level capabilities. Pass ``check_params=False`` explicitly to opt out.
+
 If a value fails validation, a ``ValueError`` is raised before any command is sent to the
 instrument.
 

@@ -86,6 +86,45 @@ def test_model_virtual_class_preserves_model_capability_attributes(attribute):
     assert getattr(type(awg), attribute) == getattr(Keysight81150a, attribute)
 
 
+def test_model_virtual_driver_validates_capabilities_by_default():
+    awg = Keysight81150a("VIRTUAL")
+
+    assert awg.check_params is True
+    assert awg.amplitude == (0, 5)
+    with pytest.raises(ValueError, match="amplitude.*out of acceptable Range"):
+        awg.set_amplitude(1, 15)
+
+    assert awg.state["amplitude"][1] == 1.0
+    assert awg._current_amplitude is None
+
+
+def test_model_virtual_driver_validates_initial_hib_frequency_limits():
+    awg = Keysight81150a("VIRTUAL")
+
+    awg.set_waveform(1, "SIN")
+    awg.set_frequency(1, 240e6)
+
+    with pytest.raises(ValueError, match="frequency.*out of range"):
+        awg.set_frequency(1, 240e6 + 1)
+
+    assert awg.state["frequency"][1] == 240e6
+
+
+def test_model_virtual_driver_can_explicitly_disable_validation():
+    awg = Keysight81150a("VIRTUAL", check_params=False)
+
+    awg.set_amplitude(1, 15)
+
+    assert awg.check_params is False
+    assert awg.state["amplitude"][1] == 15
+
+
+def test_model_specific_optional_commands_are_not_added_to_virtual_class():
+    awg = Keysight81150a("VIRTUAL")
+
+    assert not hasattr(type(awg), "configure_output_amplifier")
+
+
 def test_model_capabilities_are_applied_before_virtual_state_initialization():
     # Agilent33220A is single-channel while generic VirtualAwg is dual-channel.
     awg = Agilent33220A("VIRTUAL")
@@ -101,7 +140,7 @@ def test_model_virtual_dispatch_skips_physical_model_constructor(monkeypatch):
 
     monkeypatch.setattr(
         Keysight81150a,
-        "configure_output_amplifier",
+        "__init__",
         physical_constructor_side_effect,
     )
 

@@ -274,6 +274,24 @@ class TestCheckParams:
         self.driver.set_waveform(waveform=None)
 
 
+class TestDependentCheckParams:
+    """Dependent range failures must propagate to the caller."""
+
+    def setup_method(self):
+        self.driver = _DependentDriver(
+            address="TEST::INSTR",
+            check_params=True,
+        )
+        self.driver.set_input(input_configuration="A-B")
+
+    def test_valid_dependent_value_is_accepted(self):
+        self.driver.set_sensitivity(sensitivity=1e-8)
+
+    def test_invalid_dependent_value_is_rejected(self):
+        with pytest.raises(ValueError, match="sensitivity.*out of range"):
+            self.driver.set_sensitivity(sensitivity=1e-7)
+
+
 class TestStateTracking:
 
     def setup_method(self):

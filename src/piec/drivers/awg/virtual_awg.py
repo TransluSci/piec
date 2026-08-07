@@ -421,20 +421,6 @@ class VirtualAwg(VirtualInstrument, Awg):
         if trigger_mode is not None:
             self.set_trigger_mode(channel, trigger_mode)
 
-    def configure_output_amplifier(self, channel='1', type='HIV'):
-        """
-        Configure the output amplifier settings.
-
-        Args:
-            channel (str, optional): Channel number as string ('1' or '2')
-            type (str, optional): Amplifier type ('HIV' or 'HIB')
-        """
-        # Simulate amplifier config by changing amplitude range
-        if type == 'HIV':
-            self.amplitude = (0, 10)
-        elif type == 'HIB':
-            self.amplitude = (0, 5)
-
     def get_waveform(self, channel):
         """
         Generate a synthetic waveform based on current settings.
