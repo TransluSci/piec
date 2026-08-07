@@ -65,9 +65,6 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         super().__init__(address=address, **kwargs)
 
-        # In virtual mode, treat the instrument as self so SCPI helpers can call write/query safely
-        self.instrument = self
-
         self.state = {
             'channels_on': {ch: True for ch in self.channel},
             'vdiv': {ch: 1.0 for ch in self.channel},

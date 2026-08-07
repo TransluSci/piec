@@ -11,15 +11,17 @@ class DaqAsOscilloscope(Oscilloscope):
     Adapter class that wraps a Daq instance and exposes it as an Oscilloscope.
     """
     
-    def __init__(self, daq_instance: Daq, address="VIRTUAL_SCOPE", **kwargs):
+    def __init__(self, daq_instance: Daq, **kwargs):
         """
         Initialize the emulator.
         
         args:
             daq_instance (Daq): The underlying DAQ instrument driver instance.
-            address (str): Dummy address.
         """
-        super().__init__(address, **kwargs)
+        self._initialize_common_state(
+            check_params=kwargs.pop("check_params", False),
+            verbose=kwargs.pop("verbose", False),
+        )
         self.daq = daq_instance
         
         # Internal state to map Scope params to DAQ params

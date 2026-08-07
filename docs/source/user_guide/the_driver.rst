@@ -45,13 +45,13 @@ What each level provides
 **Level 1 — Instrument** (``piec.drivers.instrument.Instrument``)
    The foundation for all drivers. It:
 
-   * Accepts an address string (VISA resource string, COM port, or ``'VIRTUAL'``) at
-     initialization.
+   * Accepts a physical VISA resource string or serial address at initialization.
    * Opens and manages physical connections via PyVISA. A failed physical connection
      raises ``ConnectionError`` rather than silently switching to simulation.
-   * Dispatches an exact ``VIRTUAL`` address on a concrete model to the category's
-     virtual driver, profiled with the model's capability attributes. Category-style
-     ``VIRTUAL_<type>`` discovery is handled by ``autodetect()``.
+   * Uses ``AutoCheckMeta`` to intercept an exact ``VIRTUAL`` address on a concrete
+     categorized model before physical initialization. The base ``Instrument``
+     constructor itself remains physical-only. Category-style ``VIRTUAL_<type>``
+     discovery is handled by ``autodetect()``.
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
      state tracking based on class attributes. Setting a class attribute to ``None``
      bypasses this validation, allowing for custom driver-side handling.

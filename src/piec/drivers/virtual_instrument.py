@@ -85,7 +85,14 @@ class VirtualInstrument(Instrument):
     DEFAULT_SIMULATION_POINTS = 10000
     SIMULATION_POINTS_WARNING_THRESHOLD = 1000000
 
-    def __init__(self, address="VIRTUAL", simulation_points=None, **kwargs):
+    def __init__(
+        self,
+        address="VIRTUAL",
+        simulation_points=None,
+        check_params=False,
+        verbose=False,
+        **kwargs,
+    ):
         """
         Initialize virtual instrument with default ferroelectric sample if none exists.
         
@@ -96,13 +103,21 @@ class VirtualInstrument(Instrument):
             address (str): Explicit virtual address.
             simulation_points (int, optional): Default or maximum number of
                 samples used by virtual drivers that generate synthetic arrays.
-            **kwargs: Arbitrary keyword arguments
+            check_params (bool): Enable automatic parameter validation.
+            verbose (bool): Enable verbose virtual-driver output.
+            **kwargs: Virtual-driver-specific options.
         """
         self._simulation_points = coerce_simulation_points(
             simulation_points,
             self.DEFAULT_SIMULATION_POINTS,
         )
-        super().__init__(address=address, **kwargs)
+        self._initialize_common_state(
+            check_params=check_params,
+            verbose=verbose,
+        )
+        # SCPI mixins send commands through ``self.instrument``. Dedicated
+        # virtual drivers provide their corresponding write/query behavior.
+        self.instrument = self
 
         if VirtualInstrument._shared_fe_sample is None:
             default_fe_material = {

@@ -20,6 +20,28 @@ from piec.drivers.scpi import Scpi
 from piec.drivers import digilent as digilent_module
 from piec.drivers.digilent import Digilent
 
+
+class _FakeResource:
+    def __init__(self, resource_name):
+        self.resource_name = resource_name
+
+
+class _FakeManager:
+    def __init__(self):
+        self.open_calls = []
+
+    def open_resource(self, address, **kwargs):
+        self.open_calls.append((address, kwargs))
+        return _FakeResource(address)
+
+
+@pytest.fixture(autouse=True)
+def fake_resource_manager(monkeypatch):
+    manager = _FakeManager()
+    monkeypatch.setattr(instrument_module, "PiecManager", lambda: manager)
+    return manager
+
+
 # Helper drivers defined once and reused across test classes
 
 class _DemoDriver(Instrument, metaclass=AutoCheckMeta):
@@ -149,49 +171,36 @@ class TestConvertToLowercase:
 
 
 # Instrument class
-class TestInstrumentVirtualMode:
-    """Instrument initialises correctly in virtual mode (no hardware needed)."""
-
-    def test_virtual_instrument_creates(self):
-        inst = Instrument(address="VIRTUAL")
-        assert inst is not None
-
-    def test_virtual_flag_is_set(self):
-        inst = Instrument(address="VIRTUAL")
-        assert inst.virtual is True
+class TestInstrumentConnection:
+    """Instrument always treats its address as a physical resource."""
 
     @pytest.mark.parametrize("address", ["VIRTUAL", "virtual_awg", "VIRTUAL_SCOPE"])
-    def test_explicit_virtual_address_names_do_not_open_hardware(self, address, monkeypatch):
-        class UnexpectedManager:
-            def __init__(self):
-                raise AssertionError("PiecManager should not be used for a virtual address")
-
-        monkeypatch.setattr(instrument_module, "PiecManager", UnexpectedManager)
-
+    def test_virtual_looking_addresses_are_opened_normally(
+        self,
+        address,
+        fake_resource_manager,
+    ):
         inst = Instrument(address=address)
 
-        assert inst.virtual is True
-        assert inst.instrument is inst
-
-    def test_instrument_attribute_exists(self):
-        inst = Instrument(address="VIRTUAL")
-        assert hasattr(inst, "instrument")
+        assert fake_resource_manager.open_calls == [(address, {})]
+        assert inst.instrument.resource_name == address
+        assert "virtual" not in inst.__dict__
 
     def test_idn_returns_string(self):
-        inst = Instrument(address="VIRTUAL")
+        inst = Instrument(address="TEST::INSTR")
         result = inst.idn()
         assert isinstance(result, str)
 
     def test_check_params_flag_stored(self):
-        inst = Instrument(address="VIRTUAL", check_params=True)
+        inst = Instrument(address="TEST::INSTR", check_params=True)
         assert inst.check_params is True
 
     def test_verbose_flag_stored(self):
-        inst = Instrument(address="VIRTUAL", verbose=True)
+        inst = Instrument(address="TEST::INSTR", verbose=True)
         assert inst.verbose is True
 
     def test_all_current_attrs_start_as_none(self):
-        driver = _DemoDriver(address="VIRTUAL")
+        driver = _DemoDriver(address="TEST::INSTR")
         assert driver._current_waveform is None
         assert driver._current_frequency is None
 
@@ -211,28 +220,27 @@ class TestInstrumentConnectionFailure:
 
         assert isinstance(exc_info.value.__cause__, RuntimeError)
 
-    def test_missing_mcc_library_does_not_enable_virtual_mode(self, monkeypatch):
+    @pytest.mark.parametrize("address", [0, "VIRTUAL"])
+    def test_missing_mcc_library_rejects_every_address(self, address, monkeypatch):
         monkeypatch.setattr(digilent_module, "mcc_ul_imported", False)
         monkeypatch.setattr(digilent_module, "ul", None)
 
         with pytest.raises(ImportError, match="mcculw"):
-            Digilent(address=0)
+            Digilent(address=address)
 
-    def test_explicit_virtual_digilent_does_not_require_mcc_library(self, monkeypatch):
-        monkeypatch.setattr(digilent_module, "mcc_ul_imported", False)
-        monkeypatch.setattr(digilent_module, "ul", None)
+    def test_digilent_does_not_accept_virtual_address(self, monkeypatch):
+        monkeypatch.setattr(digilent_module, "mcc_ul_imported", True)
+        monkeypatch.setattr(digilent_module, "ul", object())
 
-        inst = Digilent(address="VIRTUAL")
-
-        assert inst.virtual is True
-        assert inst.is_virtual_mode is True
+        with pytest.raises(ValueError, match="MCC Board Number"):
+            Digilent(address="VIRTUAL")
 
 
 class TestCheckParams:
     """When check_params=True, invalid arguments must raise ValueError."""
 
     def setup_method(self):
-        self.driver = _DemoDriver(address="VIRTUAL", check_params=True)
+        self.driver = _DemoDriver(address="TEST::INSTR", check_params=True)
 
     def test_valid_waveform_accepted(self):
         # 'SIN' is in the allowed list, must not raise.
@@ -253,13 +261,13 @@ class TestCheckParams:
     def test_check_params_false_allows_bad_value(self):
         # With check_params=False (default) bad values must NOT raise
         # the driver is responsible for its own handling.
-        permissive = _DemoDriver(address="VIRTUAL", check_params=False)
+        permissive = _DemoDriver(address="TEST::INSTR", check_params=False)
         permissive.set_waveform(waveform="TRI") 
 
     def test_none_class_attr_skips_validation(self):
         # A class attribute set to None
         # Even with check_params=True, any value must be accepted.
-        driver = _NoneAttrDriver(address="VIRTUAL", check_params=True)
+        driver = _NoneAttrDriver(address="TEST::INSTR", check_params=True)
         driver.set_waveform(waveform="ANYTHING_AT_ALL")   # must not raise
 
     def test_none_argument_always_passes(self):
@@ -269,7 +277,7 @@ class TestCheckParams:
 class TestStateTracking:
 
     def setup_method(self):
-        self.driver = _DemoDriver(address="VIRTUAL", check_params=False)
+        self.driver = _DemoDriver(address="TEST::INSTR", check_params=False)
 
     def test_current_waveform_updated_after_set(self):
         assert self.driver._current_waveform is None
@@ -289,7 +297,7 @@ class TestStateTracking:
     def test_state_not_updated_when_validation_raises(self):
         # If check_params raises before the method body runs, the
         # _current_* attribute must stay at its previous value.
-        strict = _DemoDriver(address="VIRTUAL", check_params=True)
+        strict = _DemoDriver(address="TEST::INSTR", check_params=True)
 
         strict.set_frequency(frequency=500)
         assert strict._current_frequency == 500

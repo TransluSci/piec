@@ -23,14 +23,13 @@ class DaqAsAwg(Awg):
         args:
             daq_instance (Daq): The underlying DAQ instrument driver instance.
         """
-        # Initialize as a VIRTUAL instrument to handle base class setup without opening a real resource
-        # We pass address="VIRTUAL" to the Instrument class
-        super().__init__("VIRTUAL", **kwargs)
-        
+        self._initialize_common_state(
+            check_params=kwargs.pop("check_params", False),
+            verbose=kwargs.pop("verbose", False),
+        )
+
         self.daq = daq_instance
-        # Inherit virtual status from the DAQ instance
-        self.virtual = daq_instance.virtual
-        
+
         # State tracking for waveform parameters
         self._wav_params = {} # Key: channel, Value: dict of params
         

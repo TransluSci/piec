@@ -42,48 +42,35 @@ class Digilent(Instrument):
     The 'address' for this class is the MCC Board Number (e.g., "0").
     """
     
-    def __init__(self, address, verbose=False, **kwargs):
+    def __init__(self, address, check_params=False, verbose=False, **kwargs):
         """
         Connects to the MCC DAQ device using its Board Number.
         
         Args:
-            address (str or int): The MCC Board Number (e.g., "0" or 0)
-                                or "VIRTUAL".
+            address (str or int): The MCC Board Number (e.g., "0" or 0).
+            check_params (bool): Enable automatic parameter validation.
             verbose (bool): If True, prints status messages.
-            **kwargs: Additional arguments for the base Instrument class.
+            **kwargs: Reserved for device-specific connection options.
         """
-        # Store the user's intended mode before checking optional hardware
-        # dependencies. A physical request must never become a simulation just
-        # because the Universal Library is unavailable.
-        self.is_virtual_mode = (str(address).strip().upper() == 'VIRTUAL')
-        if not self.is_virtual_mode and (not mcc_ul_imported or ul is None):
+        if not mcc_ul_imported or ul is None:
             raise ImportError(
                 "Cannot connect to an MCC/Digilent device because the "
-                "'mcculw' library is not installed. Use address='VIRTUAL' "
-                "only when simulation is intended."
+                "'mcculw' library is not installed."
             )
-        self.verbose = verbose
+
+        self._initialize_common_state(
+            check_params=check_params,
+            verbose=verbose,
+        )
 
         try:
             # The 'address' is the board number, not a VISA string
             self.board_num = int(address)
         except (ValueError, TypeError):
-            if self.is_virtual_mode:
-                # This is a VIRTUAL connection
-                self.board_num = 0 
-            else:
-                # This is an invalid address
-                raise ValueError(f"Invalid address '{address}'. "
-                                 "Must be a MCC Board Number (e.g., '0') or 'VIRTUAL'.")
-        
-        # We call super().__init__ with "VIRTUAL" to bypass PiecManager
-        # but still get the auto-check framework. This is internal.
-        super().__init__(address="VIRTUAL", verbose=verbose, **kwargs)
-        
-        # Restore the correct virtual status based on user input, 
-        # since we forced "VIRTUAL" to Instrument to bypass VISA logic.
-        self.virtual = self.is_virtual_mode
-        
+            raise ValueError(
+                f"Invalid address '{address}'. Must be an MCC Board Number "
+                "(e.g., '0')."
+            )
         
         # Store the (real) UL object and enums
         self.board = ul
@@ -95,31 +82,27 @@ class Digilent(Instrument):
         self.ao_info = None
         self.max_rate = 5000 # Default safe rate for USB-231 (5kS/s)
         
-        # --- FIX: Check our stored 'is_virtual_mode' flag ---
-        if self.is_virtual_mode:
-            print(f"Digilent: VIRTUAL mode for board {self.board_num} (Digilent does not support VISA).")
-            self.dev_name = "VIRTUAL_DEVICE"
-        else:
-            # This is a real connection attempt
-            if self.verbose:
-                print(f"Digilent: Connecting to board {self.board_num}...")
-            try:
-                # Check if board exists and get its name (this acts as a connection check)
-                self.dev_name = self.board.get_board_name(self.board_num)
-                print(f"Digilent: Connected to {self.dev_name} on board {self.board_num}.")
-                
-                # Fetch Device Info
-                if DaqDeviceInfo:
-                    try:
-                        dev_info = DaqDeviceInfo(self.board_num)
-                        if dev_info.supports_analog_output:
-                            self.ao_info = dev_info.get_ao_info()
-                    except Exception as e:
-                        if self.verbose:
-                            print(f"Digilent: Could not fetch AO info: {e}")
+        if self.verbose:
+            print(f"Digilent: Connecting to board {self.board_num}...")
+        try:
+            # Check if board exists and get its name (this acts as a connection check)
+            self.dev_name = self.board.get_board_name(self.board_num)
+            print(f"Digilent: Connected to {self.dev_name} on board {self.board_num}.")
 
-            except ULError as e:
-                raise ConnectionError(f"Failed to connect to MCC board {self.board_num}. Error: {e}")
+            # Fetch Device Info
+            if DaqDeviceInfo:
+                try:
+                    dev_info = DaqDeviceInfo(self.board_num)
+                    if dev_info.supports_analog_output:
+                        self.ao_info = dev_info.get_ao_info()
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Digilent: Could not fetch AO info: {e}")
+
+        except ULError as e:
+            raise ConnectionError(
+                f"Failed to connect to MCC board {self.board_num}. Error: {e}"
+            ) from e
 
     def idn(self):
         """
@@ -130,9 +113,6 @@ class Digilent(Instrument):
         Returns:
             str: Identification string in ``Manufacturer,Model,Serial,Version`` format.
         """
-        if self.is_virtual_mode:
-            return f"Measurement_Computing,VIRTUAL_DEVICE,s/n_virtual,ver_UL"
-        
         try:
             # Re-fetch the name in case it changed (unlikely, but good practice)
             dev_name = self.board.get_board_name(self.board_num)
@@ -156,12 +136,6 @@ class Digilent(Instrument):
         Stops any active background scans and re-initialises the
         internal state tracker.
         """
-        if self.is_virtual_mode:
-            if self.verbose:
-                print(f"Digilent: (Virtual) Resetting board {self.board_num}...")
-            self._initialize_state()
-            return
-
         # Stop any running background operations
         try:
             from mcculw.enums import FunctionType
@@ -198,9 +172,6 @@ class Digilent(Instrument):
         Returns:
             str: The error message.
         """
-        if self.is_virtual_mode:
-            return "No errors."
-            
         try:
             # --- FIX: Corrected function name from get_error_message to get_err_msg ---
             message = self.board.get_err_msg(self.error_codes.NOERRORS)
@@ -218,9 +189,6 @@ class Digilent(Instrument):
         This is the UL-equivalent of the SCPI ``*WAI`` command.
         Polls the AI and AO background scan status until both are idle.
         """
-        if self.is_virtual_mode:
-            return
-
         import time
         try:
             from mcculw.enums import FunctionType, Status
@@ -251,9 +219,6 @@ class Digilent(Instrument):
         Returns:
             str: ``'0'`` for pass, ``'1'`` for fail.
         """
-        if self.is_virtual_mode:
-            return "0"
-
         try:
             self.board.get_board_name(self.board_num)
             return "0"  # Pass
@@ -270,9 +235,6 @@ class Digilent(Instrument):
         Returns:
             str: ``'1'`` when all operations are complete, ``'0'`` otherwise.
         """
-        if self.is_virtual_mode:
-            return "1"
-
         try:
             from mcculw.enums import FunctionType, Status
             ai_status, _, _ = self.board.get_status(self.board_num, FunctionType.AIFUNCTION)
@@ -290,11 +252,6 @@ class Digilent(Instrument):
         This has no direct SCPI equivalent — it is specific to DAQ hardware
         that must be explicitly released.
         """
-        if self.is_virtual_mode:
-            if self.verbose:
-                print(f"Digilent: (Virtual) Releasing board {self.board_num}...")
-            return
-
         try:
             if self.verbose:
                 print(f"Digilent: Releasing board {self.board_num}...")
@@ -319,11 +276,6 @@ class Digilent(Instrument):
         Flashes the LED on the device to physically identify it.
         (Note: Not supported by all boards, e.g., USB-231)
         """
-        if self.is_virtual_mode:
-            if self.verbose:
-                print(f"Digilent: (Virtual) Flashing LED on board {self.board_num}...")
-            return
-            
         try:
             if self.verbose:
                 print(f"Digilent: Flashing LED on board {self.board_num}...")
@@ -344,10 +296,6 @@ class Digilent(Instrument):
             data (list/array): Waveform points.
             sample_rate (int): Output rate in Hz.
         """
-        if self.is_virtual_mode:
-            print(f"Digilent [Virt]: Started background scan on Ch {channel} at {sample_rate} Hz")
-            return
-
         try:
             from ctypes import cast, POINTER, c_double
             from mcculw.enums import ScanOptions, FunctionType, ULRange
@@ -404,9 +352,6 @@ class Digilent(Instrument):
         """
         Stops any active background scan and frees memory.
         """
-        if self.is_virtual_mode:
-            return
-
         try:
             from mcculw.enums import FunctionType
             self.board.stop_background(self.board_num, FunctionType.AOFUNCTION)

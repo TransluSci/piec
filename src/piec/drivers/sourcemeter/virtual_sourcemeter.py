@@ -23,8 +23,6 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
 
     def __init__(self, address='VIRTUAL', **kwargs):
         super().__init__(address=address, **kwargs)
-        self.instrument = self
-
         self.state = {
             'output_on': False,
             'source_func': 'VOLT',

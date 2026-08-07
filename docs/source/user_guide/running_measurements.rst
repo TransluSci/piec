@@ -22,8 +22,8 @@ General workflow
       awg = Keysight81150a('GPIB0::8::INSTR')
       osc = KeysightDSOX3024a('GPIB0::7::INSTR')
 
-   Use ``'virtual'`` as the address to run without hardware (see
-   :doc:`connecting_to_instrument`).
+   To run without hardware, instantiate the category's dedicated virtual driver
+   instead (see :doc:`connecting_to_instrument`).
 
 2. **Create the measurement object**
 

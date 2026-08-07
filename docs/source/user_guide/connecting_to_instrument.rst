@@ -116,9 +116,8 @@ Virtual mode
 PIEC drivers support an explicit **virtual mode** that simulates instrument responses
 without any physical hardware. This is useful for developing and testing measurement
 workflows offline. Failed physical connections raise ``ConnectionError`` and never
-silently switch to virtual mode when constructing a driver directly. Use **virtual mode** to simulate the instrument. The
-``autodetect()`` function catches failed probes and returns no match instead; it also
-never substitutes a virtual instrument.
+silently switch to virtual mode. The ``autodetect()`` function catches failed probes
+and returns no match instead; virtual behavior must always be requested explicitly.
 
 There are three explicit ways to request virtual behavior:
 

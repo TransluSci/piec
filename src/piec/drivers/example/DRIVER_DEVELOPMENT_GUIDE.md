@@ -119,6 +119,10 @@ policy, not a hardware capability. Virtual drivers that generate arrays should u
 `self.simulation_points` when they need a default or capacity and should use the
 shared warning helper for large explicitly sized operations.
 
+Do not add `"VIRTUAL"` branches to a physical model driver. Simulation behavior
+belongs in the category's dedicated virtual class; model-level dispatch is handled
+centrally before the physical constructor runs.
+
 ## 3. Autodetection (`AUTODETECT_ID`)
 Every driver MUST (if possible) define a class-level string attribute named `AUTODETECT_ID`. This is a unique substring expected to be returned by the instrument when queried with an .idn() command.
 
