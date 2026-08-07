@@ -58,11 +58,12 @@ Run a single file or test class::
 
 **Testing without physical hardware**
 
-Every driver class has a ``Virtual`` counterpart (e.g. ``VirtualAwg``,
-``VirtualScope``) that emulates the hardware API entirely in memory. Tests import
-these virtual drivers and never require an instrument to be connected. The CI
-workflow runs the same ``pytest`` command, so all tests must pass using virtual
-drivers only.
+Every driver category has a ``Virtual`` implementation (e.g. ``VirtualAwg``,
+``VirtualScope``) that emulates the category API entirely in memory. Constructing
+a concrete model with the exact address ``"VIRTUAL"`` uses that category
+implementation with the model's capability attributes. Tests never require an
+instrument to be connected. The CI workflow runs the same ``pytest`` command, so
+all tests must pass using virtual drivers only.
 
 See :doc:`adding_measurement` for the recommended three-class test structure and a
 minimal working example for measurement tests.

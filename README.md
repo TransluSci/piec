@@ -57,17 +57,21 @@ On top of this driver layer, **Measurement classes** coordinate multiple instrum
 **Virtual hysteresis loop** — no hardware required:
 
 ```python
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.drivers.awg.k_81150a import Keysight81150a
+from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 from piec.measurement.discrete_waveform import HysteresisLoop
 
-awg = VirtualAwg()
-osc = VirtualScope()
+awg = Keysight81150a("VIRTUAL")
+osc = KeysightDSOX3024a("VIRTUAL")
 experiment = HysteresisLoop(awg, osc, save_dir='.')
 experiment.run_experiment()  # configures, captures, saves, and analyzes
 ```
 
-Swap `VirtualAwg` / `VirtualScope` for real drivers (or use `autodetect`) and the same code runs on hardware:
+The exact `"VIRTUAL"` address selects the category's virtual implementation while
+preserving each model's capability attributes. You can also instantiate
+`VirtualAwg` and `VirtualScope` directly for generic category capabilities.
+
+Pass physical addresses instead (or use `autodetect`) and the same code runs on hardware:
 
 ```python
 from piec.drivers.autodetect import autodetect

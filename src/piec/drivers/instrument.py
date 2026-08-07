@@ -121,6 +121,49 @@ class AutoCheckMeta(type):
     public methods of a class (those not starting with '_').
     Methods marked with @optional are left as-is (not wrapped with auto_check_params).
     """
+    def __call__(cls, *args, **kwargs):
+        """Dispatch explicit virtual model construction before ``__init__``.
+
+        Physical model constructors may issue hardware queries or configure
+        vendor-specific state immediately.  Intercepting at the metaclass
+        boundary ensures those constructors never run for a virtual address;
+        the matching category virtual driver is initialized instead.
+        """
+        address = kwargs.get("address")
+        if address is None and args:
+            address = args[0]
+
+        address_name = str(address).strip().upper() if address is not None else ""
+        is_model_virtual_address = address_name == "VIRTUAL"
+        is_category_virtual_address = address_name.startswith("VIRTUAL_")
+
+        # Virtual driver classes inherit this marker from VirtualInstrument.
+        # Without the guard, creating the generated virtual class would
+        # recursively dispatch back into its own factory.
+        if (
+            (is_model_virtual_address or is_category_virtual_address)
+            and not getattr(cls, "_is_virtual_driver", False)
+        ):
+            from .virtual_dispatch import (
+                VirtualDriverDispatchError,
+                _category_for_model,
+                create_profiled_virtual_driver,
+            )
+
+            if is_model_virtual_address:
+                virtual_instance = create_profiled_virtual_driver(cls, *args, **kwargs)
+                if virtual_instance is not None:
+                    return virtual_instance
+            elif is_category_virtual_address and _category_for_model(cls) is not None:
+                model_name = f"{cls.__module__}.{cls.__qualname__}"
+                raise VirtualDriverDispatchError(
+                    f"{model_name} accepts only address='VIRTUAL' for model-style "
+                    f"virtual dispatch; use autodetect({address!r}) for category "
+                    "virtual addresses"
+                )
+
+        return super().__call__(*args, **kwargs)
+
     def __new__(metacls, name, bases, class_dict):
         new_class_dict = {}
         for attr_name, attr_value in class_dict.items():
@@ -379,5 +422,10 @@ class Instrument(metaclass=AutoCheckMeta):
                 except KeyError:
                     valid_options = list(attribute_value_lower[dependency_key].keys())
                     exit_with_error(f"Error: Invalid dependency value '\033[1m{dep_value}\033[0m' for '{dependency_key}'. Valid options are: {valid_options}")
+                except ValueError:
+                    # Validation failures are intentional and must reach the
+                    # caller. The generic handler below is only for unexpected
+                    # errors while resolving a dependent capability.
+                    raise
                 except Exception as e:
                     print(f"An error occurred during dependent parameter check for '{key}': {e}")

@@ -19,8 +19,20 @@ class Keysight81150a(Scpi, Awg):
     
     channel = [1, 2]
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    frequency = None  #set in configure_output_amplifier
-    amplitude = None  #set in configure_output_amplifier
+    # The instrument initializes in HIB (high-bandwidth) mode. These class
+    # attributes describe that initial operating state and are replaced with
+    # the selected mode's limits by configure_output_amplifier.
+    frequency = {
+        'waveform': {
+            'sin': (1e-6, 240e6),
+            'squ': (1e-6, 120e6),
+            'ramp': (1e-6, 5e6),
+            'puls': (1e-6, 120e6),
+            'pattern': (1e-6, 120e6),
+            'user': (1e-6, 120e6),
+        }
+    }
+    amplitude = (0, 5)
     offset = amplitude #assume same as amplitude, when amplitude switches so too does offset
     load_impedance = (0.3, 1e6)
     source_impedance = [5, 50]

@@ -7,7 +7,11 @@ It mimics the behavior of a physical AWG by maintaining internal state and gener
 
 import numpy as np
 
-from ..virtual_instrument import VirtualInstrument
+from ..virtual_instrument import (
+    VirtualInstrument,
+    warn_for_large_simulation_input,
+    warn_for_large_simulation_points,
+)
 from .awg import Awg
 
 
@@ -55,6 +59,9 @@ class VirtualAwg(VirtualInstrument, Awg):
 
         Args:
             address (str, optional): Virtual address for the instrument. Defaults to 'VIRTUAL'.
+            simulation_points (int, optional): Number of samples used for
+                synthetic waveform generation. This is independent of the
+                hardware ``arb_data_range`` capability.
             **kwargs: Additional arguments passed to parent classes.
         """
         super().__init__(address=address, **kwargs)
@@ -79,8 +86,7 @@ class VirtualAwg(VirtualInstrument, Awg):
             'arb_waveform': {ch: None for ch in self.channel},
             'acquisition_channel': 1,  # Default acquisition channel
         }
-       
-    
+
     def idn(self):
         """Get the identification string of the virtual AWG.
         
@@ -235,6 +241,10 @@ class VirtualAwg(VirtualInstrument, Awg):
         if polarity is not None:
             self.set_polarity(channel, polarity)
         if waveform == 'USER' and user_func is not None:
+            warn_for_large_simulation_input(
+                user_func,
+                label="virtual AWG user waveform",
+            )
             self.state['arb_waveform'][channel] = np.array(user_func)
 
     def set_square_duty_cycle(self, channel, duty_cycle):
@@ -329,6 +339,7 @@ class VirtualAwg(VirtualInstrument, Awg):
             data (list or np.array): Waveform data points
         """
         # Store the arbitrary waveform in state
+        warn_for_large_simulation_input(data, label="virtual AWG arbitrary waveform")
         data_arr = np.array(data)
         max_abs = np.max(np.abs(data_arr))
         if max_abs > 0:
@@ -410,20 +421,6 @@ class VirtualAwg(VirtualInstrument, Awg):
         if trigger_mode is not None:
             self.set_trigger_mode(channel, trigger_mode)
 
-    def configure_output_amplifier(self, channel='1', type='HIV'):
-        """
-        Configure the output amplifier settings.
-
-        Args:
-            channel (str, optional): Channel number as string ('1' or '2')
-            type (str, optional): Amplifier type ('HIV' or 'HIB')
-        """
-        # Simulate amplifier config by changing amplitude range
-        if type == 'HIV':
-            self.amplitude = (0, 10)
-        elif type == 'HIB':
-            self.amplitude = (0, 5)
-
     def get_waveform(self, channel):
         """
         Generate a synthetic waveform based on current settings.
@@ -439,7 +436,9 @@ class VirtualAwg(VirtualInstrument, Awg):
         amp = self.state['amplitude'][channel]
         freq = self.state['frequency'][channel]
         offset = self.state['offset'][channel]
-        t = np.linspace(0, 1, self.arb_data_range[1])
+        points = self._simulation_points
+        warn_for_large_simulation_points(points, label="virtual AWG waveform")
+        t = np.linspace(0, 1, points)
         
         
         if wf.upper() == 'SIN':
@@ -452,16 +451,16 @@ class VirtualAwg(VirtualInstrument, Awg):
             duty = self.state['duty_cycle'][channel] / 100.0
             v = amp * (np.mod(t, 1) < duty) + offset
         elif wf.upper() == 'NOIS':
-            v = amp * np.random.randn(self.arb_data_range[1]) + offset
+            v = amp * np.random.randn(points) + offset
         elif wf.upper() == 'DC':
-            v = np.ones(self.arb_data_range[1]) * offset
+            v = np.ones(points) * offset
         elif wf.upper() == 'USER' and self.state['arb_waveform'][channel] is not None:
             
             data = self.state['arb_waveform'][channel]
-            v = np.interp(np.linspace(0, len(data)-1, self.arb_data_range[1]), np.arange(len(data)), data)
+            v = np.interp(np.linspace(0, len(data)-1, points), np.arange(len(data)), data)
             v = v * amp
         else:
-            v = np.zeros(self.arb_data_range[1])
+            v = np.zeros(points)
         
         return v
 

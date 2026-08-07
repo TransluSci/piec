@@ -5,14 +5,64 @@ This module provides the base class for virtual instruments used in simulation a
 It handles shared sample management and default material properties for ferroelectric simulations.
 """
 
+import operator
+import warnings
+
 from piec.simulation.fe_material import Ferroelectric
 from piec.simulation.magnetic_material import MagneticSample
 from .instrument import Instrument
 
 
+def coerce_simulation_points(value, default):
+    """Validate a synthetic-data point count."""
+    if value is None:
+        value = default
+
+    try:
+        points = operator.index(value)
+    except TypeError as exc:
+        raise TypeError("simulation_points must be an integer") from exc
+
+    if points < 2:
+        raise ValueError("simulation_points must be at least 2")
+    return points
+
+
+def warn_for_large_simulation_points(points, label="simulation data"):
+    """Warn when a simulation will process an unusually large data set.
+
+    This is intentionally advisory: callers may still use any point count.
+    Hardware capability limits and simulation-size guidance are separate
+    concerns, so this helper never truncates or rejects the requested data.
+    """
+    try:
+        points = operator.index(points)
+    except TypeError:
+        return
+
+    threshold = VirtualInstrument.SIMULATION_POINTS_WARNING_THRESHOLD
+    if points > threshold:
+        warnings.warn(
+            f"{label} contains {points:,} points, exceeding the recommended "
+            f"simulation size of {threshold:,}; processing may be slow or "
+            "memory-intensive.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
+def warn_for_large_simulation_input(value, label="simulation data"):
+    """Warn when a sequence-like simulation input exceeds the soft threshold."""
+    try:
+        points = len(value)
+    except (TypeError, AttributeError):
+        return
+    warn_for_large_simulation_points(points, label=label)
+
+
 class VirtualInstrument(Instrument):
     """
-    Base class for all virtual instruments that share a common sample instance.
+    Base class for shared virtual-instrument simulation state and policy.
     
     This class manages a shared ferroelectric sample and a shared magnetic sample
     across all virtual instruments, ensuring consistent material properties 
@@ -21,16 +71,24 @@ class VirtualInstrument(Instrument):
     Attributes:
         _shared_fe_sample (Ferroelectric): Class-level shared ferroelectric sample instance
         _shared_mag_sample (MagneticSample): Class-level shared magnetic sample instance
+        simulation_points (int): Default or maximum synthetic waveform size
         sample (Ferroelectric): Dynamic property for the shared FE sample
         mag_sample (MagneticSample): Dynamic property for the shared magnetic sample
     """
 
     _shared_fe_sample = None
     _shared_mag_sample = None
+    _is_virtual_driver = True
+    is_profiled_virtual_driver = False
+
+    # These are simulation policy values, not hardware capability limits.
+    DEFAULT_SIMULATION_POINTS = 10000
+    SIMULATION_POINTS_WARNING_THRESHOLD = 1000000
 
     def __init__(
         self,
         address="VIRTUAL",
+        simulation_points=None,
         check_params=False,
         verbose=False,
         **kwargs,
@@ -43,10 +101,16 @@ class VirtualInstrument(Instrument):
 
         Args:
             address (str): Explicit virtual address.
+            simulation_points (int, optional): Default or maximum number of
+                samples used by virtual drivers that generate synthetic arrays.
             check_params (bool): Enable automatic parameter validation.
             verbose (bool): Enable verbose virtual-driver output.
             **kwargs: Virtual-driver-specific options.
         """
+        self._simulation_points = coerce_simulation_points(
+            simulation_points,
+            self.DEFAULT_SIMULATION_POINTS,
+        )
         self._initialize_common_state(
             check_params=check_params,
             verbose=verbose,
@@ -104,6 +168,11 @@ class VirtualInstrument(Instrument):
         
         if VirtualInstrument._shared_mag_sample is None:
             VirtualInstrument._shared_mag_sample = MagneticSample()
+
+    @property
+    def simulation_points(self):
+        """Default or maximum sample count for synthetic array generation."""
+        return self._simulation_points
 
     @classmethod
     def set_virtual_sample(cls, sample):

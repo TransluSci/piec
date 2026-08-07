@@ -73,10 +73,11 @@ class MyProprietaryScope(Oscilloscope):
         # Custom queries here...
 ```
 
-* Virtual operation uses a dedicated `VirtualInstrument` subclass directly or
-  category discovery through `autodetect("VIRTUAL_<type>")`. Concrete physical
-  model constructors do not interpret `"VIRTUAL"` specially. A failed physical
-  connection raises `ConnectionError`; it does not create a virtual instrument.
+* Virtual operation must be explicit. Pass the exact address `VIRTUAL` to a
+  concrete model class for model-profiled virtual dispatch, or use
+  `autodetect("VIRTUAL_<type>")` for category discovery. A failed physical
+  connection raises `ConnectionError`; it does not silently create a virtual
+  instrument.
 
 ### Virtual Driver Constructors
 
@@ -93,9 +94,44 @@ class VirtualExample(VirtualInstrument, Example):
 ```
 
 Never call `VirtualInstrument.__init__()` and the category initializer separately.
+Passing the exact address `"VIRTUAL"` to a concrete model driver selects the
+category's virtual driver before the physical constructor runs. The returned virtual
+instance uses the concrete model's capability class attributes while retaining the
+virtual driver's behavior:
+
+```python
+from piec.drivers.awg.k_81150a import Keysight81150a
+from piec.drivers.awg.virtual_awg import VirtualAwg
+
+awg = Keysight81150a("VIRTUAL")
+assert isinstance(awg, VirtualAwg)
+assert awg.channel == Keysight81150a.channel
+```
+
+Model-profiled virtual drivers enable parameter validation by default so their
+simulated methods enforce the selected hardware's limits. Pass
+`check_params=False` explicitly to disable this behavior. Physical drivers and
+directly instantiated category virtual drivers retain the normal project-wide
+default.
+
+Class-level capabilities must describe the model's initial operating state.
+Virtual dispatch deliberately skips the physical constructor, so limits assigned
+only during `__init__` are not available to the profiled virtual class.
+
+`VIRTUAL_<type>` addresses are reserved for category discovery through
+`autodetect`, such as `autodetect("VIRTUAL_AWG")`; concrete model constructors
+reject that form. Virtual classes may also be instantiated directly when generic
+category capabilities are desired.
+
+`VirtualInstrument` centrally provides `simulation_points`, with a default of
+10,000 samples and an advisory warning above 1,000,000 samples. This is simulation
+policy, not a hardware capability. Virtual drivers that generate arrays should use
+`self.simulation_points` when they need a default or capacity and should use the
+shared warning helper for large explicitly sized operations.
+
 Do not add `"VIRTUAL"` branches to a physical model driver. Simulation behavior
-belongs in the category's dedicated virtual class. Model-level virtual dispatch is
-not part of this implementation.
+belongs in the category's dedicated virtual class; model-level dispatch is handled
+centrally before the physical constructor runs.
 
 ## 3. Autodetection (`AUTODETECT_ID`)
 Every driver MUST (if possible) define a class-level string attribute named `AUTODETECT_ID`. This is a unique substring expected to be returned by the instrument when queried with an .idn() command.
@@ -131,7 +167,18 @@ The class attributes must follow a specific syntax based on what kind of paramet
        }
    }
    ```
-   *(If a parameter has no known class attribute boundaries, set it to `None`.)*
+   *(If a parameter truly has no known class attribute boundaries, set it to
+   `None`.)*
+
+> [!WARNING]
+> **`None` is copied literally into model-profiled virtual drivers.** Virtual
+> dispatch skips the physical model's `__init__`, so a capability declared as
+> `None` at class level will remain `None` in `ModelDriver("VIRTUAL")` even if
+> the physical constructor normally replaces it with a concrete value. Since
+> `None` disables automatic validation, declare the model's initial operating
+> range or option list at class level. For example, a model that initializes in
+> high-bandwidth mode should declare that mode's initial `amplitude` and
+> `frequency` limits directly on the class.
 
 ## 5. Method Conventions: `set_`, `configure_`, and `run_`
 Function naming strictly determines scope:
@@ -183,6 +230,9 @@ The `auto_check_params` decorator **automatically converts all string arguments 
 
 > [!CAUTION]  
 > **Initial State is `None`:** Upon first connection, all tracked attributes are initialized to `None`. This means the first few `set_` calls (where one parameter depends on another) might skip validation or cause errors if your logic expects a value. Always perform a hardware query in `__init__` (see Rule 2) to synchronize these states immediately.
+> This synchronization applies only to physical instances. A model-profiled
+> virtual instance does not run the physical constructor, so its usable limits
+> must already be present in the model's class attributes.
 
 ## 9. Optional Methods
 

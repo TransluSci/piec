@@ -48,7 +48,10 @@ What each level provides
    * Accepts a physical VISA resource string or serial address at initialization.
    * Opens and manages physical connections via PyVISA. A failed physical connection
      raises ``ConnectionError`` rather than silently switching to simulation.
-   * Does not interpret virtual-looking addresses or provide a simulation backend.
+   * Uses ``AutoCheckMeta`` to intercept an exact ``VIRTUAL`` address on a concrete
+     categorized model before physical initialization. The base ``Instrument``
+     constructor itself remains physical-only. Category-style ``VIRTUAL_<type>``
+     discovery is handled by ``autodetect()``.
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
      state tracking based on class attributes. Setting a class attribute to ``None``
      bypasses this validation, allowing for custom driver-side handling.
@@ -114,11 +117,10 @@ The driver hierarchy maps directly to the folder structure within ``src/piec/dri
 Virtual instruments
 -------------------
 
-Each instrument category provides a ``VirtualInstrument`` class (e.g.,
+Each instrument category provides a ``VirtualInstrument`` subclass (e.g.,
 ``VirtualScope``, ``VirtualAwg``, ``VirtualLockin``) that returns simulated
-responses. Virtual instruments allow you to develop and test measurement code
-without any physical hardware connected. Instantiate the dedicated virtual class
-directly:
+responses. Instantiate the generic virtual class directly, or pass the exact
+address ``'VIRTUAL'`` to a concrete model class:
 
 .. code-block:: python
 
@@ -126,6 +128,11 @@ directly:
 
    scope = VirtualScope()
    print(scope.idn())  # Returns a simulated identification string
+
+   from piec.drivers.awg.k_81150a import Keysight81150a
+
+   awg = Keysight81150a('VIRTUAL')
+   print(awg.channel)  # Model capabilities with VirtualAwg behavior
 
 Using a driver
 --------------
@@ -169,6 +176,10 @@ class attributes before executing:
 * **None** — validation for that parameter is skipped entirely. The driver handles it
   internally. This is the standard way for a driver to opt out of automatic checking for
   a specific parameter.
+
+Model-profiled virtual drivers are the exception to the default-off policy. Constructing
+``ModelDriver("VIRTUAL")`` enables validation automatically so the simulation enforces that
+model's class-level capabilities. Pass ``check_params=False`` explicitly to opt out.
 
 If a value fails validation, a ``ValueError`` is raised before any command is sent to the
 instrument.

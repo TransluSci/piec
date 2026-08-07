@@ -16,11 +16,11 @@ General workflow
 
    .. code-block:: python
 
-      from piec.drivers.keysight81150a import Keysight81150a
-      from piec.drivers.keysightdsox3024a import KeysightDSOX3024A
+      from piec.drivers.awg.k_81150a import Keysight81150a
+      from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 
       awg = Keysight81150a('GPIB0::8::INSTR')
-      osc = KeysightDSOX3024A('GPIB0::7::INSTR')
+      osc = KeysightDSOX3024a('GPIB0::7::INSTR')
 
    To run without hardware, instantiate the category's dedicated virtual driver
    instead (see :doc:`connecting_to_instrument`).
