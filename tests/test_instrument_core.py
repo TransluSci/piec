@@ -275,7 +275,7 @@ class TestCheckParams:
 
 
 class TestDependentCheckParams:
-    """Dependent range failures must propagate to the caller."""
+    """Dependent validation failures must propagate to the caller."""
 
     def setup_method(self):
         self.driver = _DependentDriver(
@@ -288,7 +288,7 @@ class TestDependentCheckParams:
         self.driver.set_sensitivity(sensitivity=1e-8)
 
     def test_invalid_dependent_value_is_rejected(self):
-        with pytest.raises(ValueError, match="sensitivity.*out of range"):
+        with pytest.raises(ValueError, match="sensitivity.*not in list"):
             self.driver.set_sensitivity(sensitivity=1e-7)
 
 
