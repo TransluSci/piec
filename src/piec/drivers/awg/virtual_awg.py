@@ -59,8 +59,6 @@ class VirtualAwg(VirtualInstrument, Awg):
         """
         super().__init__(address=address, **kwargs)
 
-        self.instrument = self
-        
         self.state = {
             'output': {ch: False for ch in self.channel},
             'waveform': {ch: 'SIN' for ch in self.channel},
