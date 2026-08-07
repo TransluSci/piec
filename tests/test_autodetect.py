@@ -25,7 +25,7 @@ def test_virtual_category_selects_virtual_driver(category_request, expected_clas
     instrument = autodetect(category_request)
 
     assert isinstance(instrument, expected_class)
-    assert instrument.virtual is True
+    assert instrument.instrument is instrument
 
 
 def test_virtual_autodetect_forwards_constructor_options():

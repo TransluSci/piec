@@ -189,23 +189,19 @@ def test_virtual_instrument_precedes_category_in_mro(
     VIRTUAL_DRIVER_CASES,
     ids=[_case_id(case) for case in VIRTUAL_DRIVER_CASES],
 )
-def test_virtual_driver_reaches_instrument_initializer_once(
+def test_virtual_driver_bypasses_physical_instrument_initializer(
     driver_class,
     category_class,
     is_virtual_module,
     monkeypatch,
 ):
-    original_init = Instrument.__init__
-    calls = []
+    def unexpected_physical_init(self, *args, **kwargs):
+        raise AssertionError("Virtual driver attempted physical initialization")
 
-    def counting_init(self, *args, **kwargs):
-        calls.append(self)
-        original_init(self, *args, **kwargs)
-
-    monkeypatch.setattr(Instrument, "__init__", counting_init)
+    monkeypatch.setattr(Instrument, "__init__", unexpected_physical_init)
 
     instrument = driver_class(check_params=True)
 
-    assert calls == [instrument]
-    assert instrument.virtual is True
+    assert isinstance(instrument, VirtualInstrument)
+    assert instrument.instrument is instrument
     assert instrument.check_params is True

@@ -45,12 +45,10 @@ What each level provides
 **Level 1 — Instrument** (``piec.drivers.instrument.Instrument``)
    The foundation for all drivers. It:
 
-   * Accepts an address string (VISA resource string, COM port, or ``'VIRTUAL'``) at
-     initialization.
+   * Accepts a physical VISA resource string or serial address at initialization.
    * Opens and manages physical connections via PyVISA. A failed physical connection
      raises ``ConnectionError`` rather than silently switching to simulation.
-   * Creates a virtual backend only for explicit ``VIRTUAL`` or ``VIRTUAL_<type>``
-     addresses.
+   * Does not interpret virtual-looking addresses or provide a simulation backend.
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
      state tracking based on class attributes. Setting a class attribute to ``None``
      bypasses this validation, allowing for custom driver-side handling.
@@ -119,7 +117,8 @@ Virtual instruments
 Each instrument category provides a ``VirtualInstrument`` class (e.g.,
 ``VirtualScope``, ``VirtualAwg``, ``VirtualLockin``) that returns simulated
 responses. Virtual instruments allow you to develop and test measurement code
-without any physical hardware connected — simply pass ``'VIRTUAL'`` as the address:
+without any physical hardware connected. Instantiate the dedicated virtual class
+directly:
 
 .. code-block:: python
 

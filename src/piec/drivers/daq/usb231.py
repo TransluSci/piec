@@ -5,7 +5,7 @@ try:
     from mcculw.enums import ULRange, DigitalIODirection, DigitalPortType, AnalogInputMode, ScanOptions
     from mcculw import ul
 except ImportError:
-    # These will be handled in virtual mode logic
+    # Digilent raises a contextual ImportError when hardware is initialized.
     ULRange = None
     DigitalIODirection = None
     DigitalPortType = None
@@ -57,8 +57,7 @@ class USB231(Digilent, Daq):
         super().__init__(address, **kwargs)
 
         # Force hardware to match the class default (Differential) on startup
-        if not self.virtual:
-            self.set_input_mode('DIFF')
+        self.set_input_mode('DIFF')
 
     def read_AI(self, channel):
         """
@@ -70,10 +69,6 @@ class USB231(Digilent, Daq):
         returns:
             float: The measured value in Volts.
         """
-        if self.virtual:
-            print(f"USB231 [Virt]: Reading Analog Input Ch {channel} (Simulated 0.0V)")
-            return 0.0
-
         # Validation: Ensure the requested channel is valid for the CURRENT mode
         if channel not in self.ai_channel:
             raise ValueError(f"Channel {channel} is not valid in current Input Mode. Available: {self.ai_channel}")
@@ -99,13 +94,6 @@ class USB231(Digilent, Daq):
         returns:
             list: The acquired voltage data.
         """
-        if self.virtual:
-            import numpy as np
-            print(f"USB231 [Virt]: Scanning {points} points from Ch {channel} at {rate}Hz")
-            # Generate simulated sine wave
-            t = np.linspace(0, points/rate, points)
-            return (np.sin(2 * np.pi * 10 * t)).tolist()
-
         if channel not in self.ai_channel:
             raise ValueError(f"Channel {channel} is not valid in current Input Mode. Available: {self.ai_channel}")
 
@@ -227,10 +215,6 @@ class USB231(Digilent, Daq):
             channel (int): The channel to write to (0-1).
             data (float or list/ndarray): The voltage(s) to output (+/- 10V).
         """
-        if self.virtual:
-            print(f"USB231 [Virt]: Writing data to Analog Output Ch {channel}")
-            return
-
         try:
             # Handle single value vs array
             if isinstance(data, (int, float)):
@@ -255,15 +239,6 @@ class USB231(Digilent, Daq):
         """
         mode_str = str(ai_mode).upper()
 
-        if self.virtual:
-            print(f"USB231 [Virt]: Input mode set to {mode_str}")
-            # Simulate the logic update for virtual mode
-            if 'DIFF' in mode_str:
-                self.ai_channel = [0, 1, 2, 3]
-            elif 'SE' in mode_str or 'SINGLE' in mode_str:
-                self.ai_channel = [0, 1, 2, 3, 4, 5, 6, 7]
-            return
-        
         try:
             if 'DIFF' in mode_str:
                 # Differential Mode: Limits to 4 channels (0-3)
@@ -295,10 +270,6 @@ class USB231(Digilent, Daq):
             ai_channel (int): The channel to configure.
             ai_range (tuple): The (min, max) range desired.
         """
-        if self.virtual:
-            print(f"USB231 [Virt]: Setting AI range to {ai_range} (Hardware is Fixed +/-10V)")
-            return
-
         # Check if the requested range is the supported range (-10, 10)
         valid_range = (-10.0, 10.0)
         if ai_range != valid_range:
@@ -315,10 +286,6 @@ class USB231(Digilent, Daq):
             ao_channel (int): The channel to configure.
             ao_range (tuple): The (min, max) range desired.
         """
-        if self.virtual:
-            print(f"USB231 [Virt]: Setting AO range to {ao_range} (Hardware is Fixed +/-10V)")
-            return
-
         valid_range = (-10.0, 10.0)
         if ao_range != valid_range:
             print(f"Warning: USB-231 has a fixed AO range of +/- 10V. Requested {ao_range} ignored.")
@@ -333,10 +300,6 @@ class USB231(Digilent, Daq):
         returns:
             int: 1 (High) or 0 (Low).
         """
-        if self.virtual:
-            print(f"USB231 [Virt]: Reading Digital Ch {channel} (Simulated 0)")
-            return 0
-
         try:
             # [cite_start]USB-231 uses FIRSTPORTA for the 8 DIO bits (Pins 17-24) [cite: 741]
             bit_value = self.ul.d_bit_in(self.board_num, DigitalPortType.FIRSTPORTA, channel)
@@ -353,10 +316,6 @@ class USB231(Digilent, Daq):
             channel (int): The channel to write to.
             data (int/bool or list): 1/True for High, 0/False for Low.
         """
-        if self.virtual:
-            print(f"USB231 [Virt]: Writing data to Digital Ch {channel}")
-            return
-
         try:
             if isinstance(data, (int, bool)):
                 data = [data]
@@ -382,14 +341,8 @@ class USB231(Digilent, Daq):
         # Map string to UL Enum
         if 'I' in direction_str and 'OUT' not in direction_str:
             ul_dir = DigitalIODirection.IN
-            dir_name = "IN"
         else:
             ul_dir = DigitalIODirection.OUT
-            dir_name = "OUT"
-
-        if self.virtual:
-            print(f"USB231 [Virt]: Configured DIO{dio_channel} as {dir_name}")
-            return
 
         try:
             # d_config_bit configures individual bits

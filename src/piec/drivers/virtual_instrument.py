@@ -28,7 +28,13 @@ class VirtualInstrument(Instrument):
     _shared_fe_sample = None
     _shared_mag_sample = None
 
-    def __init__(self, address="VIRTUAL", **kwargs):
+    def __init__(
+        self,
+        address="VIRTUAL",
+        check_params=False,
+        verbose=False,
+        **kwargs,
+    ):
         """
         Initialize virtual instrument with default ferroelectric sample if none exists.
         
@@ -37,9 +43,17 @@ class VirtualInstrument(Instrument):
 
         Args:
             address (str): Explicit virtual address.
-            **kwargs: Arbitrary keyword arguments
+            check_params (bool): Enable automatic parameter validation.
+            verbose (bool): Enable verbose virtual-driver output.
+            **kwargs: Virtual-driver-specific options.
         """
-        super().__init__(address=address, **kwargs)
+        self._initialize_common_state(
+            check_params=check_params,
+            verbose=verbose,
+        )
+        # SCPI mixins send commands through ``self.instrument``. Dedicated
+        # virtual drivers provide their corresponding write/query behavior.
+        self.instrument = self
 
         if VirtualInstrument._shared_fe_sample is None:
             default_fe_material = {

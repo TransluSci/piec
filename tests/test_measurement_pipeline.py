@@ -58,7 +58,7 @@ class TestVirtualDriverInit:
 
     def test_virtual_drivers_receive_common_instrument_state(self):
         for instrument in (self.awg, self.scope):
-            assert instrument.virtual is True
+            assert isinstance(instrument, VirtualInstrument)
             assert instrument.check_params is False
             assert instrument.instrument is instrument
 

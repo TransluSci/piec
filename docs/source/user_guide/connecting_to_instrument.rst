@@ -120,8 +120,9 @@ silently switch to virtual mode when constructing a driver directly. Use **virtu
 ``autodetect()`` function catches failed probes and returns no match instead; it also
 never substitutes a virtual instrument.
 
-Use a virtual driver directly, or pass ``'VIRTUAL'``/``'VIRTUAL_<type>'`` where an
-address is accepted (case-insensitive):
+Use a virtual driver directly, or pass ``'VIRTUAL_<type>'`` to ``autodetect()``
+(case-insensitive). Concrete physical model constructors do not treat
+``'VIRTUAL'`` as a special address:
 
 .. code-block:: python
 
@@ -133,6 +134,9 @@ address is accepted (case-insensitive):
    from piec.drivers.autodetect import autodetect
 
    awg = autodetect('virtual_awg')
+
+Passing ``'VIRTUAL'`` to a physical model attempts a normal physical connection;
+it does not substitute the category's virtual driver.
 
 Virtual instruments respond to all the same method calls as real instruments but generate synthetic data instead of communicating with hardware.
 For a virtual request, autodetect scans the resolved category folder for a

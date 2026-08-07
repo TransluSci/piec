@@ -221,13 +221,18 @@ class Instrument(metaclass=AutoCheckMeta):
         for key in class_attributes.keys():
             setattr(self, f"_current_{key}", None)
 
+    def _initialize_common_state(self, check_params=False, verbose=False):
+        """Initialize framework state without choosing a transport."""
+        self.check_params = check_params
+        self.verbose = verbose
+        self._initialize_state()
+
     def __init__(self, address, check_params=False, verbose=False, **kwargs):
         """
         Opens the instrument and enables communication with it.
         
         Args:
-            address (str): The VISA/serial address, ``VIRTUAL``, or a
-                ``VIRTUAL_<type>`` virtual-driver or adapter address.
+            address (str): Physical VISA or serial resource address.
             check_params (bool): Toggle for enabling/disabling auto-check.
             verbose (bool): If True, prints detailed debug info.
             **kwargs: Additional arguments for the resource manager 
@@ -236,34 +241,18 @@ class Instrument(metaclass=AutoCheckMeta):
         Raises:
             ConnectionError: If a physical resource cannot be opened.
         """
-        self.check_params = check_params
-        self.verbose = verbose
-        
-        # Initialize all _current_ attributes to None
-        class_attributes = get_class_attributes_from_instance(self)
-        for key in class_attributes.keys():
-            setattr(self, f"_current_{key}", None)
-        
-        address_name = str(address).strip().upper()
-        self.virtual = (
-            address_name == 'VIRTUAL'
-            or address_name.startswith('VIRTUAL_')
+        self._initialize_common_state(
+            check_params=check_params,
+            verbose=verbose,
         )
-        
-        connection_kwargs = kwargs.copy()
 
-        if self.virtual:
-            # Dedicated virtual drivers implement their own transport behavior.
-            # Do not provide generic canned SCPI responses here.
-            self.instrument = self
-        else:
-            try:
-                pm = PiecManager()
-                self.instrument = pm.open_resource(address, **connection_kwargs)
-            except Exception as e:
-                raise ConnectionError(
-                    f"Could not connect to instrument at {address!r}: {e}"
-                ) from e
+        try:
+            pm = PiecManager()
+            self.instrument = pm.open_resource(address, **kwargs)
+        except Exception as e:
+            raise ConnectionError(
+                f"Could not connect to instrument at {address!r}: {e}"
+            ) from e
 
     def __getattr__(self, name):
         """

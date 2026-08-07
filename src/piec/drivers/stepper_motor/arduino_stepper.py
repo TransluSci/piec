@@ -3,7 +3,6 @@ This is an outline for how the arduino_stepper.py file should be like
 """
 import time
 import re
-from ..utilities import PiecManager
 from .stepper_motor import Stepper
 
 class Geos_Stepper(Stepper):
@@ -22,9 +21,7 @@ class Geos_Stepper(Stepper):
         kwargs.setdefault('baud_rate', 115200)
         super().__init__(address, **kwargs)
         
-        # Configure the real instrument if not in virtual mode
-        if not self.virtual:
-            self.instrument.timeout = 20000 # 20s
+        self.instrument.timeout = 20000 # 20s
             
         self.steps_per_revolution = 200 # default value, only change IFF change in hardware is also managed
 

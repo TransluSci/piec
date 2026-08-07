@@ -73,7 +73,10 @@ class MyProprietaryScope(Oscilloscope):
         # Custom queries here...
 ```
 
-* Virtual operation must be explicit: use `VIRTUAL` or a `VIRTUAL_<type>` address (case-insensitive). A failed physical connection raises `ConnectionError`; it does not silently create a virtual instrument.
+* Virtual operation uses a dedicated `VirtualInstrument` subclass directly or
+  category discovery through `autodetect("VIRTUAL_<type>")`. Concrete physical
+  model constructors do not interpret `"VIRTUAL"` specially. A failed physical
+  connection raises `ConnectionError`; it does not create a virtual instrument.
 
 ### Virtual Driver Constructors
 
@@ -90,8 +93,9 @@ class VirtualExample(VirtualInstrument, Example):
 ```
 
 Never call `VirtualInstrument.__init__()` and the category initializer separately.
-Passing `"VIRTUAL"` to a physical model driver only gives that model a virtual
-communication backend; it does not select or create the category's virtual driver.
+Do not add `"VIRTUAL"` branches to a physical model driver. Simulation behavior
+belongs in the category's dedicated virtual class. Model-level virtual dispatch is
+not part of this implementation.
 
 ## 3. Autodetection (`AUTODETECT_ID`)
 Every driver MUST (if possible) define a class-level string attribute named `AUTODETECT_ID`. This is a unique substring expected to be returned by the instrument when queried with an .idn() command.
