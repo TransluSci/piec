@@ -1,9 +1,12 @@
 """
 Emulator class to allow a DAQ to function as an AWG.
 """
+import inspect
+
 import numpy as np
 from ..awg.awg import Awg
 from ..daq.daq import Daq
+from ._daq_capabilities import rate_bounds
 import threading
 import time
 
@@ -30,16 +33,20 @@ class DaqAsAwg(Awg):
 
         self.daq = daq_instance
 
+        daq_channels = list(getattr(daq_instance, "ao_channel", None) or [0])
+        self._daq_channel_map = {
+            awg_channel: daq_channel
+            for awg_channel, daq_channel in enumerate(daq_channels, start=1)
+        }
+        self.channel = list(self._daq_channel_map)
+
         # State tracking for waveform parameters
         self._wav_params = {} # Key: channel, Value: dict of params
         
-        # Default sample rate - this is CRITICAL for synthesizing waveforms
-        # Ideally this comes from the DAQ or is configured. 
-        # For now, we'll default to something reasonable or ask the DAQ (if implemented)
-        if hasattr(daq_instance, 'max_rate'):
-            self.sample_rate = daq_instance.max_rate
-        else:
-            self.sample_rate = 5000 # Safe default for MCC USB-231 
+        self._minimum_sample_rate, self._maximum_sample_rate = rate_bounds(
+            daq_instance, "ao_sample_rate", fallback_max=5_000
+        )
+        self.sample_rate = self._maximum_sample_rate
         
         # Background generation state
         self._output_thread = None
@@ -72,6 +79,11 @@ class DaqAsAwg(Awg):
     
     def set_sample_rate(self, sample_rate):
         """Sets the synthesis sample rate in Hz"""
+        if not self._minimum_sample_rate <= sample_rate <= self._maximum_sample_rate:
+            raise ValueError(
+                f"sample_rate must be between {self._minimum_sample_rate:g} and "
+                f"{self._maximum_sample_rate:g} S/s"
+            )
         self.sample_rate = sample_rate
         # Changing sample rate affects all channels? 
         # For now, simplistic update:
@@ -94,6 +106,7 @@ class DaqAsAwg(Awg):
 
         if on:
             self._active_channels.add(channel)
+            daq_channel = self._daq_channel_map[channel]
             
             # Synthesize data
             data = self._synthesize_waveform(channel)
@@ -102,9 +115,15 @@ class DaqAsAwg(Awg):
             # --- Attempt 1: Harware Background Scan (mccdig style) ---
             # Try to use the high-performance scan if the driver supports it.
             # This is "Smart" mode: Check capability or Try/Except
-            if hasattr(self.daq, 'write_waveform_scan'):
+            try:
+                inspect.getattr_static(self.daq, "write_waveform_scan")
+                hardware_scan = self.daq.write_waveform_scan
+            except AttributeError:
+                hardware_scan = None
+
+            if callable(hardware_scan):
                 try:
-                    self.daq.write_waveform_scan(channel, data, int(self.sample_rate))
+                    hardware_scan(daq_channel, data, int(self.sample_rate))
                     self._using_hardware_scan = True
                     return # Success!
                 except Exception as e:
@@ -113,7 +132,10 @@ class DaqAsAwg(Awg):
             
             # --- Attempt 2: Software Background Thread ---
             self._stop_event = threading.Event()
-            self._output_thread = threading.Thread(target=self._generation_loop, args=(channel, data, self._stop_event))
+            self._output_thread = threading.Thread(
+                target=self._generation_loop,
+                args=(daq_channel, data, self._stop_event),
+            )
             self._output_thread.daemon = True
             self._output_thread.start()
             
@@ -123,8 +145,14 @@ class DaqAsAwg(Awg):
             self._active_channels.discard(channel)
             
             # 1. Stop Hardware Scan
-            if getattr(self, '_using_hardware_scan', False) and hasattr(self.daq, 'stop_output'):
-                self.daq.stop_output()
+            if getattr(self, '_using_hardware_scan', False):
+                try:
+                    inspect.getattr_static(self.daq, "stop_output")
+                    stop_output = self.daq.stop_output
+                except AttributeError:
+                    stop_output = None
+                if callable(stop_output):
+                    stop_output()
                 self._using_hardware_scan = False
                 
             # 2. Stop Software Thread (already handled at top of function via Stop Event logic if running in parallel)

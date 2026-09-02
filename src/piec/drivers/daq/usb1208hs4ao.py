@@ -131,6 +131,8 @@ class USB1208HS4AO(Digilent, Daq):
         self._ai_mode = mode
         valid_channels = set(range(8) if mode == "se" else range(4))
         valid_ranges = self._AI_RANGES_BY_MODE[mode]
+        self.ai_channel = sorted(valid_channels)
+        self.ai_range = list(valid_ranges)
         self._ai_ranges = {
             channel: voltage_range
             for channel, voltage_range in getattr(self, "_ai_ranges", {}).items()
