@@ -2,15 +2,24 @@ from ..digilent import Digilent
 from .daq import Daq
 
 try:
-    from mcculw.enums import ULRange, DigitalIODirection, DigitalPortType, AnalogInputMode, ScanOptions
-    from mcculw import ul
+    from mcculw.enums import (
+        AnalogInputMode,
+        DigitalIODirection,
+        DigitalPortType,
+        FunctionType,
+        ScanOptions,
+        Status,
+        ULRange,
+    )
 except ImportError:
     # Digilent raises a contextual ImportError when hardware is initialized.
     ULRange = None
     DigitalIODirection = None
     DigitalPortType = None
     AnalogInputMode = None
+    FunctionType = None
     ScanOptions = None
+    Status = None
 
 class USB231(Digilent, Daq):
     """
@@ -36,11 +45,17 @@ class USB231(Digilent, Daq):
     # [cite_start]Digital I/O Channels: 8 channels (indices 0-7) [cite: 683]
     dio_channel = [0, 1, 2, 3, 4, 5, 6, 7]
 
-    # [cite_start]Analog Input Range: Fixed at +/- 10V [cite: 668]
+    # Analog Input Range: fixed at +/-10 V.
     ai_range = [(-10.0, 10.0)]
 
-    # [cite_start]Analog Output Range: Fixed at +/- 10V [cite: 677]
+    # Maximum aggregate hardware-paced analog input rate.
+    ai_sample_rate = (1, 50_000)
+
+    # Analog Output Range: fixed at +/-10 V.
     ao_range = [(-10.0, 10.0)]
+
+    # Maximum simultaneous hardware-paced update rate per AO channel.
+    ao_sample_rate = (1, 5_000)
 
     # [cite_start]Analog Input Modes: SE (Single-Ended) or DIFF (Differential) [cite: 668]
     ai_mode = ['SE', 'DIFF']
@@ -97,114 +112,55 @@ class USB231(Digilent, Daq):
         if channel not in self.ai_channel:
             raise ValueError(f"Channel {channel} is not valid in current Input Mode. Available: {self.ai_channel}")
 
-        memhandle = None
+        if not isinstance(points, int) or isinstance(points, bool) or points <= 0:
+            raise ValueError("points must be a positive integer")
+        if not 1 <= rate <= 50_000:
+            raise ValueError("rate must be between 1 S/s and 50,000 S/s")
+
+        # USB-231 supports SCALEDATA. Let Universal Library apply the board's
+        # calibration coefficients and return engineering-unit voltages rather
+        # than approximating volts from ideal 16-bit raw counts.
+        memhandle = self.ul.scaled_win_buf_alloc(points)
+        if not memhandle:
+            raise MemoryError("Universal Library could not allocate the AI scan buffer")
+
         try:
-            # Allocate memory buffer
-            memhandle = self.ul.win_buf_alloc(points)
-            if not memhandle:
-                raise Exception("Failed to allocate memory for scan.")
+            scan_options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
+            self._last_ai_scan_rate = self.ul.a_in_scan(
+                self.board_num,
+                channel,
+                channel,
+                points,
+                int(rate),
+                ULRange.BIP10VOLTS,
+                memhandle,
+                scan_options,
+            )
 
-            # Prepare Scan Options
-            # Use BACKGROUND mode with explicit polling
-            scan_options = ScanOptions.BACKGROUND
-            
-            # Configure rate 
-            rate_in = int(rate)
-            
-            # Start Scan
-            try:
-                self.ul.a_in_scan(
-                    self.board_num, 
-                    channel, 
-                    channel, 
-                    points, 
-                    rate_in, 
-                    ULRange.BIP10VOLTS, 
-                    memhandle, 
-                    scan_options
-                )
-            except Exception as e:
-                print(f"DEBUG: a_in_scan FAILED with: {e}")
-                raise
-
-            # Poll for completion
-            from mcculw.enums import FunctionType, Status
             import time
-            
-            # Wait loop
-            expected_duration = points / rate
-            timeout = time.time() + expected_duration + 5.0
-            
+
+            timeout = time.monotonic() + points / float(rate) + 5.0
             while True:
-                status, curr_count, curr_index = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                status, _, _ = self.ul.get_status(
+                    self.board_num, FunctionType.AIFUNCTION
+                )
                 if status == Status.IDLE:
                     break
-                if time.time() > timeout:
-                    self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
-                    raise TimeoutError("Hardware scan timed out.")
+                if time.monotonic() >= timeout:
+                    raise TimeoutError("USB-231 analog-input scan timed out")
                 time.sleep(0.01)
 
-            # Retrieve Data manually to avoid Error 35 in scaled_win_buf_to_array
-            # [cite_start]Manual Page 10: 16-bit resolution[cite: 124]
-            # Data is 16-bit unsigned integers (raw counts)
-            from ctypes import c_ushort, POINTER, cast
-            
-            # Create array for raw data
-            raw_array = (c_ushort * points)()
-            
-            # Use raw win_buf_to_array which might be more stable?
-            # Or better: cast the memhandle directly if possible.
-            # But win_buf_alloc returns an opaque handle.
-            # Let's try ul.win_buf_to_array first.
-            
-            try:
-                self.ul.win_buf_to_array(memhandle, raw_array, 0, points)
-            except Exception as e:
-                print(f"DEBUG: win_buf_to_array failed: {e}")
-                raise
+            from ctypes import c_double
 
-            # Convert raw counts to Voltage
-            # Range: +/- 10V (BIP10VOLTS)
-            # Resolution: 16-bit (0 to 65535) or (-32768 to 32767)?
-            # USB-231 is 12-bit SE, 16-bit Differential? No, manual says 12-bit??
-            # Wait, docstring says 16-bit. Let's assume 16-bit for now.
-            # If BIP10V: 
-            #   0 = -10V, 65535 = +10V? 
-            #   or is it signed?
-            #   Usually MCC uses unsigned 0-65535 mapping.
-            
-            # Let's use the helper to_eng_units for a single point to verify scale/offset if needed,
-            # but that's slow.
-            # Standard MCC conversion:
-            # Volts = (Raw - Offset) * Scale
-            # Full Scale Range = 20V.
-            # 65536 codes.
-            # Volts = (Raw / 65536) * 20 - 10
-            
-            data_volts = []
-            for val in raw_array:
-                # 12-bit device usually returns 12-bit values shifted (e.g. 0-4095).
-                # USB-231 is 12-bit according to some docs, but this driver said 16.
-                # Let's try standard 16-bit scaling first.
-                v = (val / 65536.0) * 20.0 - 10.0
-                data_volts.append(v)
-            
-            return data_volts
-            
-        except Exception as e:
-            print(f"USB231 Scan Error: {e}")
-            raise
-            
-        except Exception as e:
-            print(f"USB231 Scan Error: {e}")
-            raise
-            
-        except Exception as e:
-            print(f"USB231 Scan Error: {e}")
-            raise
+            data_volts = (c_double * points)()
+            self.ul.scaled_win_buf_to_array(memhandle, data_volts, 0, points)
+            return list(data_volts)
         finally:
-            if memhandle:
-                self.ul.win_buf_free(memhandle)
+            try:
+                self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
+            except Exception:
+                pass
+            self.ul.win_buf_free(memhandle)
 
     def write_AO(self, channel, data):
         """
@@ -301,8 +257,8 @@ class USB231(Digilent, Daq):
             int: 1 (High) or 0 (Low).
         """
         try:
-            # [cite_start]USB-231 uses FIRSTPORTA for the 8 DIO bits (Pins 17-24) [cite: 741]
-            bit_value = self.ul.d_bit_in(self.board_num, DigitalPortType.FIRSTPORTA, channel)
+            # Universal Library exposes the USB-231's eight-bit DIO block as AUXPORT.
+            bit_value = self.ul.d_bit_in(self.board_num, DigitalPortType.AUXPORT, channel)
             return bit_value
         except Exception as e:
             print(f"USB231 Error reading DIO{channel}: {e}")
@@ -322,7 +278,7 @@ class USB231(Digilent, Daq):
 
             for state in data:
                 bit_val = 1 if state else 0
-                self.ul.d_bit_out(self.board_num, DigitalPortType.FIRSTPORTA, channel, bit_val)
+                self.ul.d_bit_out(self.board_num, DigitalPortType.AUXPORT, channel, bit_val)
         except Exception as e:
             print(f"USB231 Error writing DIO{channel}: {e}")
             raise
@@ -346,7 +302,7 @@ class USB231(Digilent, Daq):
 
         try:
             # d_config_bit configures individual bits
-            self.ul.d_config_bit(self.board_num, DigitalPortType.FIRSTPORTA, dio_channel, ul_dir)
+            self.ul.d_config_bit(self.board_num, DigitalPortType.AUXPORT, dio_channel, ul_dir)
         except Exception as e:
             print(f"USB231 Error configuring DIO{dio_channel}: {e}")
             raise
