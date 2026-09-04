@@ -144,6 +144,17 @@ Every driver MUST (if possible) define a class-level string attribute named `AUT
 Class attributes define the valid parameters an instrument can accept. The parent base classes (e.g., `Oscilloscope`, `Awg`) define a strict vocabulary of these attribute names.
 * Drivers MUST explicitly assign their supported capabilities using these exact class attribute names (e.g., `frequency`, `voltage`, `waveform`).
 * **NEVER** introduce new vocabulary terms (like `waveform = ['WEIRD_WAVE']`) in the child class that do not exist in the parent class's definitions.
+* Channel lists describe physical availability. Use an empty list only when that
+  channel type is absent. A fixed or non-configurable property does not make the
+  channel absent: advertise its actual limits and retain the standard setter or
+  configure method as a documented no-op when no hardware command is needed.
+* Interface names are manufacturer-independent. Model drivers map vendor names,
+  channel identifiers, modes, and ranges into this common vocabulary so
+  measurement code does not need model-specific branches.
+* Read and acquisition methods cannot be no-ops when their channel type is
+  advertised. They must return the interface's documented data. For example, a
+  DAQ without hardware-paced scanning must implement `read_AI_scan` with a
+  documented software-paced fallback.
 
 **Attribute Formatting Rules:**
 The class attributes must follow a specific syntax based on what kind of parameter they restrict:
@@ -156,6 +167,14 @@ The class attributes must follow a specific syntax based on what kind of paramet
    ```python
    amplitude = (0.01, 10.0) # Vpp
    offset = (-5.0, 5.0) 
+   ```
+   If the instrument offers a discrete selection of continuous ranges, use a
+   list of tuples. Use a one-element list when there is only one supported
+   range, and an empty list when there are no available options. Examples:
+   ```python
+   voltage_range = [(-10.0, 10.0), (-5.0, 5.0)]
+   fixed_voltage_range = [(-10.0, 10.0)]
+   unsupported_option = []
    ```
 3. **Dictionaries (Dependent Arguments):** If the valid range or options of an argument depend on the state of *another* argument (e.g., the maximum frequency is restricted depending on the waveform selected), write this as a dictionary. The primary key is the name of the argument it depends on:
    ```python

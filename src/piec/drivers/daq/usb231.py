@@ -71,6 +71,12 @@ class USB231(Digilent, Daq):
         # Initialize the parent Digilent class (handles connection)
         super().__init__(address, **kwargs)
 
+        self._ai_sample_rates = {}
+        self._ao_sample_rates = {}
+        self._selected_ai_channel = 0
+        self._selected_ao_channel = 0
+        self._selected_dio_channel = 0
+
         # Force hardware to match the class default (Differential) on startup
         self.set_input_mode('DIFF')
 
@@ -171,6 +177,8 @@ class USB231(Digilent, Daq):
             channel (int): The channel to write to (0-1).
             data (float or list/ndarray): The voltage(s) to output (+/- 10V).
         """
+        if channel not in self.ao_channel:
+            raise ValueError(f"AO channel {channel} is invalid; valid channels are {self.ao_channel}")
         try:
             # Handle single value vs array
             if isinstance(data, (int, float)):
@@ -179,7 +187,10 @@ class USB231(Digilent, Daq):
             # Software paced loop
             for v in data:
                 # [cite_start]Range is fixed at +/- 10V [cite: 677]
-                self.ul.v_out(self.board_num, channel, ULRange.BIP10VOLTS, float(v))
+                voltage = float(v)
+                if not -10.0 <= voltage <= 10.0:
+                    raise ValueError("analog-output values must be within +/-10 V")
+                self.ul.v_out(self.board_num, channel, ULRange.BIP10VOLTS, voltage)
                 
         except Exception as e:
             print(f"USB231 Error writing AO{channel}: {e}")
@@ -226,10 +237,11 @@ class USB231(Digilent, Daq):
             ai_channel (int): The channel to configure.
             ai_range (tuple): The (min, max) range desired.
         """
-        # Check if the requested range is the supported range (-10, 10)
+        if ai_channel not in self.ai_channel:
+            raise ValueError(f"AI channel {ai_channel} is invalid; valid channels are {self.ai_channel}")
         valid_range = (-10.0, 10.0)
-        if ai_range != valid_range:
-            print(f"Warning: USB-231 has a fixed AI range of +/- 10V. Requested {ai_range} ignored.")
+        if self._normalize_range(ai_range) != valid_range:
+            raise ValueError("USB-231 analog inputs have a fixed +/-10 V range")
         
         # No UL command needed; hardware is fixed.
 
@@ -242,9 +254,22 @@ class USB231(Digilent, Daq):
             ao_channel (int): The channel to configure.
             ao_range (tuple): The (min, max) range desired.
         """
+        if ao_channel not in self.ao_channel:
+            raise ValueError(f"AO channel {ao_channel} is invalid; valid channels are {self.ao_channel}")
         valid_range = (-10.0, 10.0)
-        if ao_range != valid_range:
-            print(f"Warning: USB-231 has a fixed AO range of +/- 10V. Requested {ao_range} ignored.")
+        if self._normalize_range(ao_range) != valid_range:
+            raise ValueError("USB-231 analog outputs have a fixed +/-10 V range")
+
+    @staticmethod
+    def _normalize_range(voltage_range):
+        """Return the common DAQ ``(minimum, maximum)`` range representation."""
+        try:
+            low, high = voltage_range
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "range must be a two-value (minimum, maximum) pair"
+            ) from error
+        return float(low), float(high)
 
     def read_DI(self, channel):
         """
@@ -256,6 +281,8 @@ class USB231(Digilent, Daq):
         returns:
             int: 1 (High) or 0 (Low).
         """
+        if channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {channel} is invalid; valid channels are {self.dio_channel}")
         try:
             # Universal Library exposes the USB-231's eight-bit DIO block as AUXPORT.
             bit_value = self.ul.d_bit_in(self.board_num, DigitalPortType.AUXPORT, channel)
@@ -272,11 +299,15 @@ class USB231(Digilent, Daq):
             channel (int): The channel to write to.
             data (int/bool or list): 1/True for High, 0/False for Low.
         """
+        if channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {channel} is invalid; valid channels are {self.dio_channel}")
         try:
             if isinstance(data, (int, bool)):
                 data = [data]
 
             for state in data:
+                if state not in (0, 1, False, True):
+                    raise ValueError("digital-output values must be 0/1 or False/True")
                 bit_val = 1 if state else 0
                 self.ul.d_bit_out(self.board_num, DigitalPortType.AUXPORT, channel, bit_val)
         except Exception as e:
@@ -292,13 +323,17 @@ class USB231(Digilent, Daq):
             dio_channel (int): The channel to configure.
             dio_direction (str): 'IN' or 'OUT'.
         """
+        if dio_channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {dio_channel} is invalid; valid channels are {self.dio_channel}")
         direction_str = str(dio_direction).upper()
         
         # Map string to UL Enum
-        if 'I' in direction_str and 'OUT' not in direction_str:
+        if direction_str in {"I", "IN", "INPUT"}:
             ul_dir = DigitalIODirection.IN
-        else:
+        elif direction_str in {"O", "OUT", "OUTPUT"}:
             ul_dir = DigitalIODirection.OUT
+        else:
+            raise ValueError("dio_direction must be 'I' or 'O'")
 
         try:
             # d_config_bit configures individual bits
@@ -306,3 +341,85 @@ class USB231(Digilent, Daq):
         except Exception as e:
             print(f"USB231 Error configuring DIO{dio_channel}: {e}")
             raise
+
+    # Daq interface adapters. Universal Library receives channel/range/rate
+    # values when an operation starts, so selection methods retain the settings.
+    def set_AI_channel(self, channel):
+        if channel not in self.ai_channel:
+            raise ValueError(f"AI channel {channel} is invalid; valid channels are {self.ai_channel}")
+        self._selected_ai_channel = channel
+
+    def set_AI_range(self, channel, range):
+        self.set_ai_range(channel, range)
+
+    def set_AI_sample_rate(self, channel, sample_rate):
+        self.set_AI_channel(channel)
+        if not 1 <= sample_rate <= 50_000:
+            raise ValueError("sample_rate must be between 1 and 50,000 S/s")
+        self._ai_sample_rates[channel] = sample_rate
+
+    def configure_AI_channel(self, channel, range=None, sample_rate=None):
+        self.set_AI_channel(channel)
+        if range is not None:
+            self.set_AI_range(channel, range)
+        if sample_rate is not None:
+            self.set_AI_sample_rate(channel, sample_rate)
+
+    def set_AO_channel(self, channel):
+        if channel not in self.ao_channel:
+            raise ValueError(f"AO channel {channel} is invalid; valid channels are {self.ao_channel}")
+        self._selected_ao_channel = channel
+
+    def set_AO_range(self, channel, range):
+        self.set_ao_range(channel, range)
+
+    def set_AO_sample_rate(self, channel, sample_rate):
+        self.set_AO_channel(channel)
+        if not 1 <= sample_rate <= 5_000:
+            raise ValueError("sample_rate must be between 1 and 5,000 S/s")
+        self._ao_sample_rates[channel] = sample_rate
+
+    def configure_AO_channel(self, channel, range=None, sample_rate=None):
+        self.set_AO_channel(channel)
+        if range is not None:
+            self.set_AO_range(channel, range)
+        if sample_rate is not None:
+            self.set_AO_sample_rate(channel, sample_rate)
+
+    def set_DIO_channel(self, channel):
+        if channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {channel} is invalid; valid channels are {self.dio_channel}")
+        self._selected_dio_channel = channel
+
+    def set_DIO_mode(self, channel, mode):
+        self.set_dio_direction(channel, mode)
+
+    def configure_DIO_channel(self, channel, mode, sample_rate=None):
+        self.set_DIO_channel(channel)
+        self.set_DIO_mode(channel, mode)
+        if sample_rate is not None:
+            self.set_DIO_sample_rate(channel, sample_rate)
+
+    def set_DI_channel(self, channel):
+        self.set_DIO_channel(channel)
+
+    def configure_DI_channel(self, channel, sample_rate=None):
+        self.set_DI_channel(channel)
+        self.set_DIO_mode(channel, "I")
+        if sample_rate is not None:
+            self.set_DI_sample_rate(channel, sample_rate)
+
+    def set_DO_channel(self, channel):
+        self.set_DIO_channel(channel)
+
+    def configure_DO_channel(self, channel, sample_rate=None):
+        self.set_DO_channel(channel)
+        self.set_DIO_mode(channel, "O")
+        if sample_rate is not None:
+            self.set_DO_sample_rate(channel, sample_rate)
+
+    def quick_read(self):
+        return self.read_AI(self._selected_ai_channel)
+
+    def read_data(self, channel):
+        return self.read_AI(channel)

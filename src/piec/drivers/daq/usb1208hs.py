@@ -1,4 +1,4 @@
-"""Driver for the Measurement Computing/Digilent USB-1208HS-4AO."""
+"""Driver family for the USB-1208HS, USB-1208HS-2AO, and -4AO."""
 
 import time
 from ctypes import c_double
@@ -27,17 +27,21 @@ except ImportError:
     ULRange = None
 
 
-class USB1208HS4AO(Digilent, Daq):
-    """MCC Universal Library driver for the USB-1208HS-4AO.
+class USB1208HS(Digilent, Daq):
+    """One driver for all three USB-1208HS family models.
 
     The device provides eight single-ended or four differential analog inputs,
-    four fixed-range analog outputs, and 16 individually configurable digital
-    I/O lines. Analog scan data is requested from Universal Library in scaled
+    model-specific fixed-range analog outputs, and 16 individually configurable
+    digital I/O lines. Analog scan data is requested from Universal Library in scaled
     engineering units so the driver does not make assumptions about the
     converter's 12-bit single-ended or 13-bit differential data encoding.
     """
 
-    AUTODETECT_ID = "USB-1208HS-4AO"
+    AUTODETECT_ID = [
+        "USB-1208HS",
+        "USB-1208HS-2AO",
+        "USB-1208HS-4AO",
+    ]
 
     ai_channel = list(range(8))
     ai_range = [
@@ -50,12 +54,21 @@ class USB1208HS4AO(Digilent, Daq):
     ai_mode = ["SE", "DIFF"]
     ai_sample_rate = (1, 1_000_000)
 
+    # The class advertises the family maximum for validation and virtual use.
+    # A physical instance replaces this with its exact model capability after
+    # reading IDN in __init__.
     ao_channel = [0, 1, 2, 3]
     ao_range = [(-10.0, 10.0)]
     ao_sample_rate = (1, 1_000_000)
 
     dio_channel = list(range(16))
     dio_direction = ["I", "O"]
+
+    _AO_CHANNEL_COUNT_BY_MODEL = {
+        "USB-1208HS": 0,
+        "USB-1208HS-2AO": 2,
+        "USB-1208HS-4AO": 4,
+    }
 
     _AI_RANGES_BY_MODE = {
         "se": {
@@ -73,14 +86,36 @@ class USB1208HS4AO(Digilent, Daq):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._configure_model_capabilities(self.idn())
         self._ai_ranges = {}
         self._ai_sample_rates = {}
         self._ao_sample_rates = {}
         self._selected_ai_channel = 0
-        self._selected_ao_channel = 0
+        self._selected_ao_channel = self.ao_channel[0] if self.ao_channel else None
         self._selected_dio_channel = 0
         self._active_memhandle = None
         self.set_input_mode("SE")
+
+    def _configure_model_capabilities(self, identity):
+        """Set instance capabilities from the most-specific model in IDN."""
+        matches = [
+            model for model in self._AO_CHANNEL_COUNT_BY_MODEL if model in identity
+        ]
+        if not matches:
+            raise ValueError(
+                f"Unsupported USB-1208HS identity {identity!r}; expected one of "
+                f"{list(self._AO_CHANNEL_COUNT_BY_MODEL)}"
+            )
+
+        self.model = max(matches, key=len)
+        count = self._AO_CHANNEL_COUNT_BY_MODEL[self.model]
+        self.ao_channel = list(range(count))
+        if count:
+            self.ao_range = [(-10.0, 10.0)]
+            self.ao_sample_rate = (1, 1_000_000)
+        else:
+            self.ao_range = []
+            self.ao_sample_rate = (None, None)
 
     @staticmethod
     def _normalize_range(voltage_range):
@@ -152,11 +187,11 @@ class USB1208HS4AO(Digilent, Daq):
         self._ai_ranges[ai_channel] = voltage_range
 
     def set_ao_range(self, ao_channel, ao_range):
-        """Validate the USB-1208HS-4AO's fixed analog-output range."""
+        """Validate the USB-1208HS AO model's fixed output range."""
         self._validate_channel(ao_channel, self.ao_channel, "AO")
         voltage_range = self._normalize_range(ao_range)
         if voltage_range != (-10.0, 10.0):
-            raise ValueError("USB-1208HS-4AO analog outputs have a fixed +/-10 V range")
+            raise ValueError(f"{self.model} analog outputs have a fixed +/-10 V range")
 
     def read_AI(self, channel):
         """Read one analog-input sample and return volts."""
@@ -197,7 +232,7 @@ class USB1208HS4AO(Digilent, Daq):
                 if status == Status.IDLE:
                     break
                 if time.monotonic() >= timeout_at:
-                    raise TimeoutError("USB-1208HS-4AO analog-input scan timed out")
+                    raise TimeoutError(f"{self.model} analog-input scan timed out")
                 time.sleep(0.01)
 
             values = (c_double * points)()
@@ -345,5 +380,32 @@ class USB1208HS4AO(Digilent, Daq):
     def set_DIO_mode(self, channel, mode):
         self.set_dio_direction(channel, mode)
 
+    def configure_DIO_channel(self, channel, mode, sample_rate=None):
+        self.set_DIO_channel(channel)
+        self.set_DIO_mode(channel, mode)
+        if sample_rate is not None:
+            self.set_DIO_sample_rate(channel, sample_rate)
+
+    def set_DI_channel(self, channel):
+        self.set_DIO_channel(channel)
+
+    def configure_DI_channel(self, channel, sample_rate=None):
+        self.set_DI_channel(channel)
+        self.set_DIO_mode(channel, "I")
+        if sample_rate is not None:
+            self.set_DI_sample_rate(channel, sample_rate)
+
+    def set_DO_channel(self, channel):
+        self.set_DIO_channel(channel)
+
+    def configure_DO_channel(self, channel, sample_rate=None):
+        self.set_DO_channel(channel)
+        self.set_DIO_mode(channel, "O")
+        if sample_rate is not None:
+            self.set_DO_sample_rate(channel, sample_rate)
+
     def quick_read(self):
         return self.read_AI(self._selected_ai_channel)
+
+    def read_data(self, channel):
+        return self.read_AI(channel)
