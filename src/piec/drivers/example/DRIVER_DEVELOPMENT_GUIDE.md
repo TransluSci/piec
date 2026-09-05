@@ -134,11 +134,22 @@ belongs in the category's dedicated virtual class; model-level dispatch is handl
 centrally before the physical constructor runs.
 
 ## 3. Autodetection (`AUTODETECT_ID`)
-Every driver MUST (if possible) define a class-level string attribute named `AUTODETECT_ID`. This is a unique substring expected to be returned by the instrument when queried with an .idn() command.
+Every driver MUST (if possible) define a class-level attribute named `AUTODETECT_ID`. This can be a single unique substring or a list of substrings expected to be returned by the instrument when queried with an `.idn()` command.
 
 ```python
+    # Single model
     AUTODETECT_ID = "MODEL_1234"
+
+    # Multi-model family or model aliases
+    AUTODETECT_ID = [
+        "USB-1208HS",
+        "USB-1208HS-2AO",
+        "USB-1208HS-4AO",
+    ]
 ```
+
+When using a list of identifiers for a hardware family with differing channel counts or limits, declare the family maximum capabilities at the class level (ensuring model-profiled virtual dispatch works out-of-the-box), and let the physical constructor inspect `self.idn()` (e.g. matching `max(matches, key=len)`) to configure instance-specific capabilities.
+
 
 ## 4. Class Attributes (Capabilities & Limits)
 Class attributes define the valid parameters an instrument can accept. The parent base classes (e.g., `Oscilloscope`, `Awg`) define a strict vocabulary of these attribute names.
