@@ -16,6 +16,7 @@ Fulfills Checkpoint 8, 9a, and 9b of MEASUREMENT_STANDARDIZATION_PLAN.md:
 
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple, Union
@@ -33,6 +34,7 @@ from .contracts import (
     SafetyAction,
     SafetyReport,
     SafetyStatus,
+    ShutdownAttemptRecorder,
     TerminalEvent,
 )
 
@@ -155,6 +157,7 @@ class BaseMeasurement:
         self._active_owner_thread_id: Optional[int] = None
         self._session_capture_count: int = 0
         self._last_safing_exc: Optional[BaseException] = None
+        self._active_shutdown_recorder: Optional[ShutdownAttemptRecorder] = None
 
     @property
     def run_state(self) -> RunState:
@@ -363,9 +366,11 @@ class BaseMeasurement:
                 return self._data
 
             primary_error: Optional[BaseException] = None
+            primary_error_tb = None
             primary_error_phase: Optional[str] = None
             configured_ok = False
             safety_report: Optional[SafetyReport] = None
+            sec_errors: List[str] = []
 
             try:
                 # Token validation
@@ -380,6 +385,7 @@ class BaseMeasurement:
                     configured_ok = True
                 except BaseException as exc:
                     primary_error = exc
+                    primary_error_tb = getattr(exc, "__traceback__", None)
                     primary_error_phase = "CONFIGURING"
 
                 # Step 4 & 5: Capture data
@@ -405,6 +411,7 @@ class BaseMeasurement:
                             )
                         except BaseException as exc:
                             primary_error = exc
+                            primary_error_tb = getattr(exc, "__traceback__", None)
                             primary_error_phase = "RUNNING"
 
                         if (
@@ -431,16 +438,21 @@ class BaseMeasurement:
                             pass
 
                     safety_report = self._perform_safe_shutdown()
-                    if (
-                        self._last_safing_exc is not None
-                        and isinstance(
-                            self._last_safing_exc,
-                            (KeyboardInterrupt, SystemExit),
-                        )
-                        and primary_error is None
-                    ):
-                        primary_error = self._last_safing_exc
-                        primary_error_phase = "SAFING"
+                    if self._last_safing_exc is not None:
+                        if primary_error is None:
+                            if isinstance(
+                                self._last_safing_exc,
+                                (KeyboardInterrupt, SystemExit),
+                            ):
+                                primary_error = self._last_safing_exc
+                                primary_error_tb = getattr(
+                                    self._last_safing_exc, "__traceback__", None
+                                )
+                                primary_error_phase = "SAFING"
+                        else:
+                            sec_errors.append(
+                                f"Shutdown error: {safety_report.error or self._last_safing_exc}"
+                            )
 
                 if safety_report is None:
                     safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
@@ -471,6 +483,7 @@ class BaseMeasurement:
                     )
                 except BaseException as exc:
                     primary_error = exc
+                    primary_error_tb = getattr(exc, "__traceback__", None)
                     primary_error_phase = "ANALYZING"
                     target_outcome = RunState.FAILED
 
@@ -489,6 +502,7 @@ class BaseMeasurement:
                             )
                         except BaseException as exc:
                             primary_error = exc
+                            primary_error_tb = getattr(exc, "__traceback__", None)
                             primary_error_phase = "SAVING"
                             self._transition_to(
                                 RunState.FAILED, "Publication failed"
@@ -532,6 +546,7 @@ class BaseMeasurement:
                         )
                     except BaseException as exc:
                         primary_error = exc
+                        primary_error_tb = getattr(exc, "__traceback__", None)
                         primary_error_phase = "SAVING"
                         self._transition_to(
                             RunState.FAILED, "Partial save failed after abort"
@@ -571,8 +586,8 @@ class BaseMeasurement:
                             self._partial_filename = self._publish_data(
                                 self._data, request, is_partial=True
                             )
-                    except Exception:
-                        pass
+                    except BaseException as exc:
+                        sec_errors.append(f"Partial save error: {exc}")
 
                 if self.run_state in {
                     RunState.SAFING,
@@ -583,14 +598,13 @@ class BaseMeasurement:
 
             # Step 11: Finalize record and emit event
             end_time = time.time()
-            sec_errors = []
             if (
                 primary_error_phase != "SAFING"
                 and safety_report.status == SafetyStatus.UNSAFE
             ):
-                sec_errors.append(
-                    f"Shutdown error: {safety_report.error or safety_report.summary}"
-                )
+                err_msg = f"Shutdown error: {safety_report.error or safety_report.summary}"
+                if err_msg not in sec_errors:
+                    sec_errors.append(err_msg)
 
             record = RunRecord(
                 run_id=token.run_id,
@@ -614,11 +628,23 @@ class BaseMeasurement:
                 secondary_errors=tuple(sec_errors),
                 snapshot_count=0,
             )
-            self._record_run(record)
-            self._emit_terminal_event(record, self._data)
+            try:
+                self._record_run(record)
+            except Exception:
+                pass
+            try:
+                self._emit_terminal_event(record, self._data)
+            except Exception:
+                pass
 
             # Step 12: Re-raise error or return data
             if primary_error is not None:
+                if (
+                    primary_error_tb is not None
+                    and getattr(primary_error, "__traceback__", None)
+                    is not primary_error_tb
+                ):
+                    raise primary_error.with_traceback(primary_error_tb)
                 raise primary_error
             if safety_report.status == SafetyStatus.UNSAFE:
                 raise HardwareSafetyError(
@@ -714,8 +740,10 @@ class BaseMeasurement:
             return
 
         primary_error: Optional[BaseException] = None
+        primary_error_tb = None
         primary_error_phase: Optional[str] = None
         safety_report: Optional[SafetyReport] = None
+        sec_errors: List[str] = []
 
         try:
             self._validate_token(token)
@@ -723,6 +751,7 @@ class BaseMeasurement:
             self._configure_instruments(request)
         except BaseException as exc:
             primary_error = exc
+            primary_error_tb = getattr(exc, "__traceback__", None)
             primary_error_phase = "CONFIGURING"
         finally:
             if self.run_state.is_active:
@@ -734,6 +763,20 @@ class BaseMeasurement:
                     except IllegalStateTransitionError:
                         pass
                 safety_report = self._perform_safe_shutdown()
+                if self._last_safing_exc is not None:
+                    if primary_error is None:
+                        if isinstance(
+                            self._last_safing_exc, (KeyboardInterrupt, SystemExit)
+                        ):
+                            primary_error = self._last_safing_exc
+                            primary_error_tb = getattr(
+                                self._last_safing_exc, "__traceback__", None
+                            )
+                            primary_error_phase = "SAFING"
+                    else:
+                        sec_errors.append(
+                            f"Shutdown error: {safety_report.error or self._last_safing_exc}"
+                        )
 
             if safety_report is None:
                 safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
@@ -751,14 +794,13 @@ class BaseMeasurement:
                 target_outcome, f"Configuration finished ({target_outcome.value})"
             )
 
-            sec_errors = []
             if (
                 primary_error_phase != "SAFING"
                 and safety_report.status == SafetyStatus.UNSAFE
             ):
-                sec_errors.append(
-                    f"Shutdown error: {safety_report.error or safety_report.summary}"
-                )
+                err_msg = f"Shutdown error: {safety_report.error or safety_report.summary}"
+                if err_msg not in sec_errors:
+                    sec_errors.append(err_msg)
 
             record = RunRecord(
                 run_id=token.run_id,
@@ -779,11 +821,23 @@ class BaseMeasurement:
                 ),
                 secondary_errors=tuple(sec_errors),
             )
-            self._record_run(record)
-            self._emit_terminal_event(record, pd.DataFrame())
+            try:
+                self._record_run(record)
+            except Exception:
+                pass
+            try:
+                self._emit_terminal_event(record, pd.DataFrame())
+            except Exception:
+                pass
             self._active_owner_thread_id = None
 
         if primary_error is not None:
+            if (
+                primary_error_tb is not None
+                and getattr(primary_error, "__traceback__", None)
+                is not primary_error_tb
+            ):
+                raise primary_error.with_traceback(primary_error_tb)
             raise primary_error
         if safety_report.status == SafetyStatus.UNSAFE:
             raise HardwareSafetyError(
@@ -859,9 +913,11 @@ class BaseMeasurement:
             return self._data
 
         primary_error: Optional[BaseException] = None
+        primary_error_tb = None
         primary_error_phase: Optional[str] = None
         safety_report: Optional[SafetyReport] = None
         configured_ok = False
+        sec_errors: List[str] = []
 
         try:
             self._validate_token(token)
@@ -874,13 +930,15 @@ class BaseMeasurement:
                 configured_ok = True
             except BaseException as exc:
                 primary_error = exc
+                primary_error_tb = getattr(exc, "__traceback__", None)
                 primary_error_phase = "CONFIGURING"
 
             if configured_ok:
                 if self._coordinator.is_stop_requested:
-                    self._transition_to(
-                        RunState.STOPPING, "Stop requested before acquisition"
-                    )
+                    if self.run_state != RunState.STOPPING:
+                        self._transition_to(
+                            RunState.STOPPING, "Stop requested before acquisition"
+                        )
                 else:
                     self._transition_to(
                         RunState.RUNNING, "Starting standalone acquisition"
@@ -893,6 +951,7 @@ class BaseMeasurement:
                         self._data = self._raw_data.copy()
                     except BaseException as exc:
                         primary_error = exc
+                        primary_error_tb = getattr(exc, "__traceback__", None)
                         primary_error_phase = "RUNNING"
 
                     if (
@@ -913,6 +972,20 @@ class BaseMeasurement:
                     except IllegalStateTransitionError:
                         pass
                 safety_report = self._perform_safe_shutdown()
+                if self._last_safing_exc is not None:
+                    if primary_error is None:
+                        if isinstance(
+                            self._last_safing_exc, (KeyboardInterrupt, SystemExit)
+                        ):
+                            primary_error = self._last_safing_exc
+                            primary_error_tb = getattr(
+                                self._last_safing_exc, "__traceback__", None
+                            )
+                            primary_error_phase = "SAFING"
+                    else:
+                        sec_errors.append(
+                            f"Shutdown error: {safety_report.error or self._last_safing_exc}"
+                        )
 
             if safety_report is None:
                 safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
@@ -930,14 +1003,13 @@ class BaseMeasurement:
                 target_outcome, f"Capture finished ({target_outcome.value})"
             )
 
-            sec_errors = []
             if (
                 primary_error_phase != "SAFING"
                 and safety_report.status == SafetyStatus.UNSAFE
             ):
-                sec_errors.append(
-                    f"Shutdown error: {safety_report.error or safety_report.summary}"
-                )
+                err_msg = f"Shutdown error: {safety_report.error or safety_report.summary}"
+                if err_msg not in sec_errors:
+                    sec_errors.append(err_msg)
 
             record = RunRecord(
                 run_id=token.run_id,
@@ -958,11 +1030,23 @@ class BaseMeasurement:
                 ),
                 secondary_errors=tuple(sec_errors),
             )
-            self._record_run(record)
-            self._emit_terminal_event(record, self._data)
+            try:
+                self._record_run(record)
+            except Exception:
+                pass
+            try:
+                self._emit_terminal_event(record, self._data)
+            except Exception:
+                pass
             self._active_owner_thread_id = None
 
         if primary_error is not None:
+            if (
+                primary_error_tb is not None
+                and getattr(primary_error, "__traceback__", None)
+                is not primary_error_tb
+            ):
+                raise primary_error.with_traceback(primary_error_tb)
             raise primary_error
         if safety_report.status == SafetyStatus.UNSAFE:
             raise HardwareSafetyError(
@@ -999,6 +1083,10 @@ class BaseMeasurement:
                 self.request_stop()
                 raise RuntimeError("Shutdown deferred to execution owner")
             report = self._perform_safe_shutdown()
+            if self._last_safing_exc is not None and isinstance(
+                self._last_safing_exc, (KeyboardInterrupt, SystemExit)
+            ):
+                raise self._last_safing_exc
             if report.status == SafetyStatus.UNSAFE:
                 raise HardwareSafetyError(
                     f"Hardware safety could not be verified: {report.error or report.summary}",
@@ -1008,6 +1096,10 @@ class BaseMeasurement:
 
         with self._coordinator.idle_command_lease():
             report = self._perform_safe_shutdown()
+            if self._last_safing_exc is not None and isinstance(
+                self._last_safing_exc, (KeyboardInterrupt, SystemExit)
+            ):
+                raise self._last_safing_exc
             if report.status == SafetyStatus.UNSAFE:
                 raise HardwareSafetyError(
                     f"Hardware safety could not be verified: {report.error or report.summary}",
@@ -1015,48 +1107,135 @@ class BaseMeasurement:
                 )
             return report
 
+    def record_shutdown_action(
+        self,
+        name: str,
+        action_fn: Callable[[], Any],
+        *,
+        readback_fn: Optional[Callable[[], bool]] = None,
+    ) -> bool:
+        """
+        Records and executes a single shutdown action via the active attempt recorder (Section 5.1).
+
+        If called during safe shutdown, executes within the active attempt recorder catching
+        BaseException so subsequent actions can still be attempted.
+        Returns True if the action succeeded, False otherwise.
+        """
+        if getattr(self, "_active_shutdown_recorder", None) is not None:
+            return self._active_shutdown_recorder.record_action(
+                name, action_fn, readback_fn=readback_fn
+            )
+        try:
+            action_fn()
+            return True
+        except BaseException:
+            return False
+
     def _perform_safe_shutdown(self) -> SafetyReport:
         """
         Executes setup-specific safe shutdown hook through attempt recorder (Section 5.1 & 5.3).
         """
         self._last_safing_exc = None
+        recorder = ShutdownAttemptRecorder()
+        self._active_shutdown_recorder = recorder
         try:
-            raw_safety = self._safe_shutdown()
+            try:
+                sig = inspect.signature(self._safe_shutdown)
+                if len(sig.parameters) > 0:
+                    raw_safety = self._safe_shutdown(recorder)
+                else:
+                    raw_safety = self._safe_shutdown()
+            except TypeError:
+                raw_safety = self._safe_shutdown()
+
             if isinstance(raw_safety, SafetyReport):
                 safety_report = raw_safety
             elif isinstance(raw_safety, (list, tuple)):
-                all_ok = all(
-                    getattr(a, "succeeded", False) for a in raw_safety
-                )
-                st = SafetyStatus.SAFE if all_ok else SafetyStatus.UNSAFE
-                safety_report = SafetyReport(
-                    status=st,
-                    actions=tuple(raw_safety),
-                    summary=(
-                        "Safe shutdown completed"
-                        if all_ok
-                        else "One or more shutdown actions failed"
-                    ),
-                )
+                if (
+                    raw_safety
+                    and isinstance(raw_safety[0], (list, tuple))
+                    and len(raw_safety[0]) >= 2
+                ):
+                    for item in raw_safety:
+                        name = item[0]
+                        fn = item[1]
+                        rb = item[2] if len(item) > 2 else None
+                        recorder.record_action(name, fn, readback_fn=rb)
+                    safety_report = recorder.build_report()
+                elif raw_safety and isinstance(raw_safety[0], SafetyAction):
+                    all_ok = all(a.succeeded for a in raw_safety)
+                    st = SafetyStatus.SAFE if all_ok else SafetyStatus.UNSAFE
+                    all_rb = all_ok and all(
+                        a.readback_verified for a in raw_safety
+                    )
+                    errs = [
+                        f"{a.name}: {a.error}"
+                        for a in raw_safety
+                        if not a.succeeded
+                    ]
+                    safety_report = SafetyReport(
+                        status=st,
+                        actions=tuple(raw_safety),
+                        readback_verified=all_rb,
+                        error="; ".join(errs) if errs else None,
+                        summary=(
+                            "Safe shutdown completed"
+                            if all_ok
+                            else f"Shutdown failed: {'; '.join(errs)}"
+                        ),
+                    )
+                elif not raw_safety:
+                    safety_report = SafetyReport(
+                        status=SafetyStatus.SAFE,
+                        summary="Clean shutdown (empty action list)",
+                    )
+                else:
+                    safety_report = recorder.build_report()
+            elif recorder.actions:
+                safety_report = recorder.build_report()
             else:
                 safety_report = SafetyReport(
                     status=SafetyStatus.SAFE,
                     summary="Default clean safe shutdown",
                 )
         except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                if recorder.interrupt_exc is None:
+                    recorder.interrupt_exc = exc
             self._last_safing_exc = exc
             action = SafetyAction(
                 name="safe_shutdown",
                 attempted=True,
                 succeeded=False,
-                error=str(exc),
+                error=str(exc) or repr(exc),
+                readback_verified=False,
             )
+            recorder.actions.append(action)
             safety_report = SafetyReport(
                 status=SafetyStatus.UNSAFE,
-                actions=(action,),
-                error=str(exc),
+                actions=tuple(recorder.actions),
+                error=str(exc) or repr(exc),
                 summary=f"Shutdown failed: {exc}",
             )
+        finally:
+            self._active_shutdown_recorder = None
+
+        if recorder.interrupt_exc is not None:
+            self._last_safing_exc = recorder.interrupt_exc
+
+        if safety_report.actions and any(
+            not a.succeeded for a in safety_report.actions
+        ):
+            if safety_report.status != SafetyStatus.UNSAFE:
+                safety_report = SafetyReport(
+                    status=SafetyStatus.UNSAFE,
+                    actions=safety_report.actions,
+                    readback_verified=False,
+                    error=safety_report.error
+                    or "One or more shutdown actions failed",
+                    summary=safety_report.summary
+                    or "One or more shutdown actions failed",
+                )
 
         self._coordinator.set_safety_status(safety_report.status)
         return safety_report
@@ -1225,8 +1404,10 @@ class BaseMeasurement:
         token = session._token
         request = session._request
         primary_error = exc_val
+        primary_error_tb = exc_tb
         primary_error_phase = "SESSION" if exc_val is not None else None
         safety_report: Optional[SafetyReport] = None
+        sec_errors: List[str] = []
 
         try:
             # Step 1: Safing boundary
@@ -1261,6 +1442,21 @@ class BaseMeasurement:
                             "Session exit safe shutdown",
                         )
                     safety_report = self._perform_safe_shutdown()
+                    if self._last_safing_exc is not None:
+                        if primary_error is None:
+                            if isinstance(
+                                self._last_safing_exc,
+                                (KeyboardInterrupt, SystemExit),
+                            ):
+                                primary_error = self._last_safing_exc
+                                primary_error_tb = getattr(
+                                    self._last_safing_exc, "__traceback__", None
+                                )
+                                primary_error_phase = "SAFING"
+                        else:
+                            sec_errors.append(
+                                f"Shutdown error: {safety_report.error or self._last_safing_exc}"
+                            )
 
             if safety_report is None:
                 safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
@@ -1295,6 +1491,7 @@ class BaseMeasurement:
                         )
                     except BaseException as exc:
                         primary_error = exc
+                        primary_error_tb = getattr(exc, "__traceback__", None)
                         primary_error_phase = "ANALYZING"
                         target_outcome = RunState.FAILED
 
@@ -1313,6 +1510,9 @@ class BaseMeasurement:
                                 )
                             except BaseException as exc:
                                 primary_error = exc
+                                primary_error_tb = getattr(
+                                    exc, "__traceback__", None
+                                )
                                 primary_error_phase = "SAVING"
                                 self._transition_to(
                                     RunState.FAILED, "Publication failed"
@@ -1364,6 +1564,7 @@ class BaseMeasurement:
                         )
                     except BaseException as exc:
                         primary_error = exc
+                        primary_error_tb = getattr(exc, "__traceback__", None)
                         primary_error_phase = "SAVING"
                         self._transition_to(
                             RunState.FAILED, "Partial save failed after abort"
@@ -1402,8 +1603,8 @@ class BaseMeasurement:
                             self._partial_filename = self._publish_data(
                                 self._data, request, is_partial=True
                             )
-                    except Exception:
-                        pass
+                    except BaseException as exc:
+                        sec_errors.append(f"Partial save error: {exc}")
                 if self.run_state in {
                     RunState.SAFING,
                     RunState.ANALYZING,
@@ -1413,14 +1614,13 @@ class BaseMeasurement:
 
             # Step 4: Finalize RunRecord and emit TerminalEvent
             end_time = time.time()
-            sec_errors = []
             if (
                 primary_error_phase != "SAFING"
                 and safety_report.status == SafetyStatus.UNSAFE
             ):
-                sec_errors.append(
-                    f"Shutdown error: {safety_report.error or safety_report.summary}"
-                )
+                err_msg = f"Shutdown error: {safety_report.error or safety_report.summary}"
+                if err_msg not in sec_errors:
+                    sec_errors.append(err_msg)
 
             record = RunRecord(
                 run_id=token.run_id,
@@ -1443,8 +1643,14 @@ class BaseMeasurement:
                 ),
                 secondary_errors=tuple(sec_errors),
             )
-            self._record_run(record)
-            self._emit_terminal_event(record, self._data)
+            try:
+                self._record_run(record)
+            except Exception:
+                pass
+            try:
+                self._emit_terminal_event(record, self._data)
+            except Exception:
+                pass
 
         finally:
             self._active_session = None
@@ -1455,6 +1661,12 @@ class BaseMeasurement:
         if primary_error is not None:
             if exc_val is not None and primary_error is exc_val:
                 return False  # Let caller exception propagate
+            if (
+                primary_error_tb is not None
+                and getattr(primary_error, "__traceback__", None)
+                is not primary_error_tb
+            ):
+                raise primary_error.with_traceback(primary_error_tb)
             raise primary_error
 
         if safety_report.status == SafetyStatus.UNSAFE:

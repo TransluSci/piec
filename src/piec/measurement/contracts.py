@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 import threading
+import time
 from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 import uuid
@@ -194,6 +195,99 @@ class SafetyReport:
     readback_verified: bool = False
     error: Optional[str] = None
     summary: str = ""
+
+
+class ShutdownAttemptRecorder:
+    """
+    Executes and records ordered shutdown actions (Section 5.1 & 5.3).
+
+    Catches BaseException during individual action execution so all required
+    actions are attempted even if an earlier action fails. Records timing,
+    readback verification, errors, and deferred interrupts.
+    """
+
+    def __init__(self) -> None:
+        self.actions: List[SafetyAction] = []
+        self.interrupt_exc: Optional[BaseException] = None
+        self.failures: List[Tuple[str, BaseException]] = []
+
+    def record_action(
+        self,
+        name: str,
+        action_fn: Callable[[], Any],
+        *,
+        readback_fn: Optional[Callable[[], bool]] = None,
+    ) -> bool:
+        """
+        Attempt a single shutdown action, catching BaseException to ensure
+        all subsequent actions can still be attempted.
+        """
+        t0 = time.time()
+        try:
+            action_fn()
+            dur = time.time() - t0
+            readback_ok = False
+            if readback_fn is not None:
+                try:
+                    readback_ok = bool(readback_fn())
+                except BaseException:
+                    readback_ok = False
+            action = SafetyAction(
+                name=name,
+                attempted=True,
+                succeeded=True,
+                duration_seconds=dur,
+                readback_verified=readback_ok,
+            )
+            self.actions.append(action)
+            return True
+        except BaseException as exc:
+            dur = time.time() - t0
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                if self.interrupt_exc is None:
+                    self.interrupt_exc = exc
+            self.failures.append((name, exc))
+            action = SafetyAction(
+                name=name,
+                attempted=True,
+                succeeded=False,
+                duration_seconds=dur,
+                error=str(exc) or repr(exc),
+                readback_verified=False,
+            )
+            self.actions.append(action)
+            return False
+
+    def build_report(self) -> SafetyReport:
+        """Build an immutable SafetyReport summarizing all attempted actions."""
+        if not self.actions:
+            return SafetyReport(
+                status=SafetyStatus.SAFE,
+                summary="No shutdown actions registered",
+            )
+        all_succeeded = all(a.succeeded for a in self.actions)
+        all_readback = all_succeeded and all(
+            a.readback_verified for a in self.actions if a.succeeded
+        )
+        if all_succeeded:
+            return SafetyReport(
+                status=SafetyStatus.SAFE,
+                actions=tuple(self.actions),
+                readback_verified=all_readback,
+                summary="All shutdown actions succeeded",
+            )
+        else:
+            err_msgs = [
+                f"{a.name}: {a.error}" for a in self.actions if not a.succeeded
+            ]
+            err_summary = "; ".join(err_msgs)
+            return SafetyReport(
+                status=SafetyStatus.UNSAFE,
+                actions=tuple(self.actions),
+                readback_verified=False,
+                error=err_summary,
+                summary=f"Shutdown actions failed: {err_summary}",
+            )
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,7 @@ from .contracts import (
     SafetyAction,
     SafetyReport,
     SafetyStatus,
+    ShutdownAttemptRecorder,
     StaleTokenError,
     TerminalEvent,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "RunRecord",
     "SafetyAction",
     "SafetyReport",
+    "ShutdownAttemptRecorder",
     "TerminalEvent",
     "LifecycleCoordinator",
     "MeasurementLifecycleError",
