@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+import uuid
 
 import pandas as pd
 import pytest
@@ -328,19 +329,33 @@ class TestStrictAndFallbackModes:
 
     def test_non_strict_fallback_performs_collision_resistant_publish(self, tmp_path):
         """In non-strict mode (strict=False), cross-volume error falls back to collision-resistant publish."""
-        fd, staging = create_staging_file(tmp_path)
+        dir_a = tmp_path / "volume_a"
+        dir_b = tmp_path / "volume_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        fd, staging = create_staging_file(dir_a)
         os.close(fd)
         staging.write_text("fallback data", encoding="utf-8")
-        target = tmp_path / "target.csv"
+        target = dir_b / "target.csv"
 
-        cross_drive_error = OSError()
-        cross_drive_error.winerror = 17
+        real_rename = os.rename
 
-        with patch("os.rename", side_effect=cross_drive_error):
+        def mock_rename(src, dst):
+            # Simulate cross-volume move failure on direct rename from dir_a to dir_b
+            if str(src) == str(staging):
+                err = OSError("The system cannot move the file to a different disk drive")
+                err.winerror = 17
+                raise err
+            return real_rename(src, dst)
+
+        with patch("os.rename", side_effect=mock_rename):
             result = atomic_publish_no_replace(staging, target, strict=False)
             assert result == target
             assert target.exists()
             assert target.read_text(encoding="utf-8") == "fallback data"
+            # Hidden reservation marker must be cleaned up
+            assert not (dir_b / ".target.csv.res").exists()
 
     def test_collision_resistant_fallback_rejects_existing_target(self, tmp_path):
         """_collision_resistant_publish rejects existing target with FileExistsError."""
@@ -351,11 +366,54 @@ class TestStrictAndFallbackModes:
         os.close(fd)
         staging.write_text("NEW DATA", encoding="utf-8")
 
-        with pytest.raises(FileExistsError):
+        with pytest.raises(FileExistsError, match="Target file already exists"):
             _collision_resistant_publish(staging, target)
 
         assert target.read_text(encoding="utf-8") == "ALREADY HERE"
         assert staging.exists()
+        assert not (tmp_path / ".collision_target.csv.res").exists()
+
+    def test_collision_resistant_fallback_rejects_active_reservation(self, tmp_path):
+        """If reservation marker already exists, fallback rejects with FileExistsError."""
+        target = tmp_path / "reserved_target.csv"
+        marker = tmp_path / ".reserved_target.csv.res"
+        marker.write_text("pid=99999", encoding="utf-8")
+
+        fd, staging = create_staging_file(tmp_path)
+        os.close(fd)
+        staging.write_text("NEW DATA", encoding="utf-8")
+
+        with pytest.raises(FileExistsError, match="Target file is currently reserved"):
+            _collision_resistant_publish(staging, target)
+
+        # Target was never created!
+        assert not target.exists()
+        assert staging.exists()
+
+    def test_collision_resistant_fallback_no_empty_csv_on_interruption(self, tmp_path):
+        """An interruption during fallback copying never exposes an empty completed-looking CSV."""
+        dir_a = tmp_path / "source"
+        dir_b = tmp_path / "dest"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        fd, staging = create_staging_file(dir_a)
+        os.close(fd)
+        staging.write_text("STAGING DATA", encoding="utf-8")
+        target = dir_b / "final.csv"
+
+        # Simulate interruption during copy
+        with patch("shutil.copyfileobj", side_effect=KeyboardInterrupt("Interrupted!")):
+            with pytest.raises(KeyboardInterrupt):
+                _collision_resistant_publish(staging, target)
+
+        # CRITICAL: final.csv was NEVER created on disk!
+        assert not target.exists()
+        # Original staging preserved intact for recovery
+        assert staging.exists()
+        assert staging.read_text(encoding="utf-8") == "STAGING DATA"
+        # Marker cleaned up
+        assert not (dir_b / ".final.csv.res").exists()
 
 
 # ============================================================================
@@ -383,35 +441,40 @@ class TestOptInSMBPublish:
         smb_base = Path(os.environ["PIEC_TEST_SMB_PATH"])
         assert smb_base.is_dir(), f"Configured PIEC_TEST_SMB_PATH does not exist: {smb_base}"
 
-        test_dir = smb_base / "piec_test_atomic_publish"
-        test_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            target = test_dir / "smb_published.csv"
-            target.unlink(missing_ok=True)
+        # Use a uniquely created test directory for this invocation
+        test_dir_str = tempfile.mkdtemp(prefix="piec_test_atomic_", dir=smb_base)
+        test_dir = Path(test_dir_str)
+        invocation_artifacts: list[Path] = []
+        target = test_dir / "smb_published.csv"
+        invocation_artifacts.append(target)
 
+        test_run_id = f"smb-test-{uuid.uuid4()}"
+        try:
             # 1. Publish new file
-            meta = sample_metadata("smb-test-uuid")
+            meta = sample_metadata(test_run_id)
             data = sample_data()
             atomic_publish_measurement_csv(target, meta, data)
             assert target.exists()
 
-            # 2. Reject existing file
+            # 2. Reject existing file without overwrite; staging file is preserved for recovery
+            stg_before = set(test_dir.iterdir())
             with pytest.raises(FileExistsError):
                 atomic_publish_measurement_csv(target, meta, data)
+            stg_after = set(test_dir.iterdir()) - stg_before
+            invocation_artifacts.extend(stg_after)
 
             # 3. Read back and verify
             meta_loaded, data_loaded, _ = read_measurement_csv(target)
-            assert meta_loaded["run_id"] == "smb-test-uuid"
+            assert meta_loaded["run_id"] == test_run_id
             pd.testing.assert_frame_equal(data_loaded, data)
         finally:
-            # Clean up test artifacts
-            if test_dir.exists():
-                for f in test_dir.iterdir():
-                    try:
-                        f.unlink()
-                    except OSError:
-                        pass
+            # Restrict cleanup strictly to this invocation's artifacts
+            for artifact in invocation_artifacts:
                 try:
-                    test_dir.rmdir()
+                    artifact.unlink(missing_ok=True)
                 except OSError:
                     pass
+            try:
+                test_dir.rmdir()
+            except OSError:
+                pass

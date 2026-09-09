@@ -26,9 +26,11 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple, Union
+import uuid
 
 import pandas as pd
 
@@ -335,24 +337,101 @@ def create_staging_file(
 def _collision_resistant_publish(staging: Path, target: Path) -> Path:
     """
     Opt-in non-strict fallback. Labeled collision-resistant, never collision-proof (Section 8.1 Rule 7).
+
+    Redesigned around a hidden reservation marker and destination-local staging
+    without exposing an incomplete or empty final CSV (Section 8.1 Rule 5 & 7).
     """
     if target.exists():
         raise FileExistsError(f"Target file already exists: {target}")
-    # Attempt exclusive file creation at target to claim it
+
+    target_parent = target.parent
+    target_parent.mkdir(parents=True, exist_ok=True)
+
+    # Deterministic hidden reservation marker derived from candidate target name (Section 8.1 Rule 5)
+    marker = target_parent / f".{target.name}.res"
+
+    # Claim candidate with exclusively created hidden marker
     try:
-        with open(target, "xb"):
-            pass
+        with open(marker, "xb") as f:
+            f.write(f"pid={os.getpid()}\n".encode("utf-8"))
     except FileExistsError as exc:
-        raise FileExistsError(f"Target file already exists: {target}") from exc
-    # Replace the claimed marker with staging
+        raise FileExistsError(
+            f"Target file is currently reserved or already exists: {target}"
+        ) from exc
+
+    dest_staging: Optional[Path] = None
     try:
-        os.replace(str(staging), str(target))
-    except Exception:
+        # Re-verify target existence after claiming reservation
+        if target.exists():
+            raise FileExistsError(f"Target file already exists: {target}")
+
+        same_dir = False
         try:
-            target.unlink(missing_ok=True)
+            same_dir = staging.resolve().parent == target_parent.resolve()
+        except (OSError, RuntimeError):
+            pass
+
+        if same_dir:
+            file_to_publish = staging
+        else:
+            # Cross-volume / cross-directory: stage into a hidden temporary file in target_parent
+            # so the final publication step is intra-volume.
+            # Never write directly into target.csv before publication.
+            fd, dest_staging = create_staging_file(
+                target_parent, prefix=f".{target.name}-staging-", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "wb") as dst, open(staging, "rb") as src:
+                    shutil.copyfileobj(src, dst)
+                    dst.flush()
+                    os.fsync(dst.fileno())
+            except Exception:
+                try:
+                    dest_staging.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+            file_to_publish = dest_staging
+
+        # Intra-volume publish to target
+        if os.name == "nt":
+            # On Windows, os.rename fails with FileExistsError if target exists
+            os.rename(str(file_to_publish), str(target))
+        else:
+            try:
+                os.link(str(file_to_publish), str(target))
+                try:
+                    file_to_publish.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            except OSError as exc:
+                if exc.errno == errno.EEXIST:
+                    raise FileExistsError(f"Target file already exists: {target}") from exc
+                if target.exists():
+                    raise FileExistsError(f"Target file already exists: {target}")
+                os.rename(str(file_to_publish), str(target))
+
+        # When destination staging was used, clean up original staging since publication succeeded
+        if dest_staging is not None:
+            try:
+                staging.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except Exception:
+        # Preserve original staging intact for recovery; remove partial destination staging if created
+        if dest_staging is not None:
+            try:
+                dest_staging.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+    finally:
+        # Always release the hidden reservation marker
+        try:
+            marker.unlink(missing_ok=True)
         except OSError:
             pass
-        raise
+
     return target
 
 
