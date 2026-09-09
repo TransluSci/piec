@@ -730,3 +730,428 @@ def read_measurement_csv(
         raise ValueError("column_units_json must match saved data columns exactly")
 
     return metadata, data_df, column_units
+
+
+# ============================================================================
+# Checkpoint 11c: Bundles, Partials, and Recovery (Sections 8.1, 8.2, 8.3)
+# ============================================================================
+
+class BundlePublishError(AtomicPublishError):
+    """
+    Raised when publication of a multi-artifact bundle fails (Section 8.2).
+
+    Attributes:
+        primary_error: The underlying exception that caused the failure.
+        published_artifacts: List of side artifacts that were published before failure.
+        orphan_cleanup_failures: List of errors encountered while removing orphaned artifacts.
+        recoverable_staging_paths: List of intact staging paths that can be recovered.
+    """
+    def __init__(
+        self,
+        message: str,
+        primary_error: Optional[BaseException] = None,
+        published_artifacts: Optional[Sequence[Path]] = None,
+        orphan_cleanup_failures: Optional[Sequence[str]] = None,
+        recoverable_staging_paths: Optional[Sequence[Path]] = None,
+    ):
+        super().__init__(message)
+        self.primary_error = primary_error
+        self.published_artifacts = list(published_artifacts or [])
+        self.orphan_cleanup_failures = list(orphan_cleanup_failures or [])
+        self.recoverable_staging_paths = list(recoverable_staging_paths or [])
+
+
+class CandidateReservation:
+    """
+    Holds an exclusively claimed candidate filename and its reservation marker (Section 8.1 Rule 5).
+    """
+    def __init__(
+        self,
+        candidate_path: Path,
+        marker_path: Path,
+        run_id: str,
+        index: int,
+        schema: str,
+    ):
+        self.candidate_path = Path(candidate_path)
+        self.marker_path = Path(marker_path)
+        self.run_id = str(run_id)
+        self.index = index
+        self.schema = schema
+        self._released = False
+
+    @property
+    def candidate_basename(self) -> str:
+        return self.candidate_path.stem
+
+    def release(self) -> None:
+        """Releases the reservation marker if not already released."""
+        if not self._released:
+            try:
+                self.marker_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            self._released = True
+
+    def __enter__(self) -> "CandidateReservation":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.release()
+
+    def __repr__(self) -> str:
+        return (
+            f"CandidateReservation(candidate={self.candidate_path.name!r}, "
+            f"index={self.index}, schema={self.schema!r}, run_id={self.run_id!r}, "
+            f"released={self._released})"
+        )
+
+
+def _read_marker_info(marker_path: Path) -> Dict[str, str]:
+    """Reads metadata from a reservation marker file."""
+    info: Dict[str, str] = {}
+    try:
+        content = marker_path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line = line.strip()
+            if "=" in line:
+                k, v = line.split("=", 1)
+                info[k.strip()] = v.strip()
+    except (OSError, UnicodeDecodeError):
+        pass
+    return info
+
+
+def reserve_candidate_filename(
+    destination_dir: Union[str, Path],
+    measurement_schema: str,
+    run_id: str,
+    *,
+    index_start: int = 1,
+    index_format: str = "{index:04d}",
+    max_candidates: int = 10000,
+    stale_age_seconds: Optional[float] = None,
+) -> CandidateReservation:
+    """
+    Exclusively reserves the next available candidate filename in destination_dir (Section 8.1 Rule 5).
+
+    Follows the documented filename grammar: {index}_{measurement_schema}.csv.
+    Claims candidate with an exclusively created hidden marker (.candidate.csv.res) storing
+    the full owner UUID. Never reserves by creating an empty completed-looking CSV.
+    On collision, iterates to the next index.
+    """
+    dest = Path(destination_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    clean_schema = str(measurement_schema).strip().lower()
+
+    for idx in range(index_start, index_start + max_candidates):
+        index_str = index_format.format(index=idx)
+        candidate_basename = f"{index_str}_{clean_schema}"
+        candidate_target = dest / f"{candidate_basename}.csv"
+        marker_target = dest / f".{candidate_basename}.csv.res"
+
+        # If candidate target already exists, skip
+        if candidate_target.exists():
+            continue
+
+        # Check if marker exists
+        if marker_target.exists():
+            # Check stale policy if enabled
+            if stale_age_seconds is not None:
+                info = _read_marker_info(marker_target)
+                ts_str = info.get("timestamp")
+                if ts_str:
+                    try:
+                        marker_ts = float(ts_str)
+                        if time.time() - marker_ts > stale_age_seconds:
+                            # Stale marker approved for reuse
+                            try:
+                                marker_target.unlink(missing_ok=True)
+                            except OSError:
+                                continue
+                    except (ValueError, TypeError):
+                        pass
+            if marker_target.exists():
+                # Marker is active or not stale
+                continue
+
+        # Attempt exclusive creation of marker
+        try:
+            with open(marker_target, "xb") as f:
+                f.write(
+                    f"owner_uuid={run_id}\npid={os.getpid()}\ntimestamp={time.time()}\n".encode("utf-8")
+                )
+        except FileExistsError:
+            # Another writer claimed this marker simultaneously
+            continue
+
+        # Double check candidate existence under the marker lock
+        if candidate_target.exists():
+            try:
+                marker_target.unlink(missing_ok=True)
+            except OSError:
+                pass
+            continue
+
+        return CandidateReservation(
+            candidate_path=candidate_target,
+            marker_path=marker_target,
+            run_id=run_id,
+            index=idx,
+            schema=clean_schema,
+        )
+
+    raise FileExistsError(
+        f"Could not reserve candidate filename in {dest} after checking {max_candidates} indices."
+    )
+
+
+def publish_artifact_bundle(
+    reservation: CandidateReservation,
+    completed_csv_staging: Union[str, Path],
+    side_artifacts: Optional[Sequence[Tuple[Union[str, Path], Union[str, Path]]]] = None,
+    *,
+    strict: bool = True,
+) -> Path:
+    """
+    Publishes a multi-artifact measurement bundle (Section 8.2).
+
+    Rules:
+    1. Uses the reserved candidate basename for the bundle.
+    2. Side artifacts are published FIRST via atomic_publish_no_replace.
+    3. The completed CSV is published LAST as the completion marker.
+    4. Never overwrites an existing side artifact or completed CSV.
+    5. On failure, removes ONLY artifacts proven to belong to the current reservation,
+       and records any orphan cleanup failure.
+    6. Releases the reservation marker on completion or failure.
+    7. Leaves un-published staging files intact for recovery.
+
+    Parameters:
+        reservation: The active CandidateReservation holding the exclusive claim.
+        completed_csv_staging: Path to the prepared staging file for the completed CSV.
+        side_artifacts: Optional sequence of (staged_side_path, target_side_path) pairs.
+        strict: Whether to require strict atomic filesystem primitives.
+
+    Returns:
+        Path to the published completed CSV.
+    """
+    csv_staging = Path(completed_csv_staging)
+    if not csv_staging.is_file():
+        raise FileNotFoundError(f"Completed CSV staging file does not exist: {csv_staging}")
+
+    # Validate side artifact inputs
+    prepared_sides: List[Tuple[Path, Path]] = []
+    if side_artifacts:
+        for staged, target in side_artifacts:
+            stg_p = Path(staged)
+            tgt_p = Path(target)
+            if not stg_p.is_file():
+                raise FileNotFoundError(f"Side artifact staging file does not exist: {stg_p}")
+            if tgt_p.exists():
+                raise FileExistsError(f"Side artifact target already exists: {tgt_p}")
+            prepared_sides.append((stg_p, tgt_p))
+
+    # Pre-check completed CSV target
+    if reservation.candidate_path.exists():
+        raise FileExistsError(f"Target completed CSV already exists: {reservation.candidate_path}")
+
+    published_side_artifacts: List[Path] = []
+    orphan_cleanup_failures: List[str] = []
+
+    try:
+        # Step 1: Publish side artifacts FIRST
+        for stg_side, tgt_side in prepared_sides:
+            atomic_publish_no_replace(
+                stg_side, tgt_side, strict=strict, owner_uuid=reservation.run_id
+            )
+            published_side_artifacts.append(tgt_side)
+
+        # Step 2: Publish completed CSV LAST as completion marker
+        published_csv = atomic_publish_no_replace(
+            csv_staging,
+            reservation.candidate_path,
+            strict=strict,
+            owner_uuid=reservation.run_id,
+        )
+
+        # Success: release reservation marker
+        reservation.release()
+        return published_csv
+
+    except BaseException as exc:
+        # Failure: remove ONLY artifacts proven to belong to current reservation
+        for pub_art in published_side_artifacts:
+            try:
+                pub_art.unlink(missing_ok=True)
+            except OSError as unlink_exc:
+                orphan_cleanup_failures.append(f"Failed to remove {pub_art}: {unlink_exc}")
+
+        # Collect recoverable staging paths (both side staging and csv staging)
+        recoverable_staging: List[Path] = []
+        if csv_staging.exists():
+            recoverable_staging.append(csv_staging)
+        for stg_side, tgt_side in prepared_sides:
+            if stg_side.exists():
+                recoverable_staging.append(stg_side)
+
+        reservation.release()
+
+        raise BundlePublishError(
+            f"Failed to publish artifact bundle: {exc}",
+            primary_error=exc,
+            published_artifacts=published_side_artifacts,
+            orphan_cleanup_failures=orphan_cleanup_failures,
+            recoverable_staging_paths=recoverable_staging,
+        ) from exc
+
+
+def write_partial_csv(
+    destination_dir: Union[str, Path],
+    candidate_basename: str,
+    run_id: str,
+    metadata: Union[Mapping[str, Any], pd.DataFrame],
+    data: pd.DataFrame,
+    *,
+    column_units: Optional[Mapping[str, Optional[str]]] = None,
+    sync: bool = True,
+    encoding: str = "utf-8",
+) -> Path:
+    """
+    Writes or updates an in-progress checkpoint or terminal partial CSV (Section 8.3).
+
+    Rules:
+    1. Uses documented naming grammar: {candidate_basename}.{run_id}.partial.csv.
+       This ensures it contains the full run_id and never looks like a completed CSV.
+    2. Replaces any existing checkpoint owned by the same run (intentional overwrite).
+    3. Stages through a hidden file in destination_dir before replacing.
+    """
+    dest = Path(destination_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    # Force partial=True in metadata
+    meta_dict: Dict[str, Any] = {}
+    if isinstance(metadata, Mapping):
+        meta_dict = dict(metadata)
+    elif isinstance(metadata, pd.DataFrame):
+        meta_dict = metadata.iloc[0].to_dict()
+    meta_dict["partial"] = True
+    meta_dict["run_id"] = str(run_id)
+
+    target_partial_path = dest / f"{candidate_basename}.{run_id}.partial.csv"
+
+    fd, staging_path = create_staging_file(
+        dest, prefix=f".partial-staging-{candidate_basename}-", suffix=".tmp"
+    )
+
+    write_ok = False
+    try:
+        meta_df = _prepare_metadata(meta_dict, data, column_units)
+        with io.open(fd, "w", encoding=encoding, newline="") as handle:
+            write_measurement_handle(handle, meta_df, data, sync=sync)
+        write_ok = True
+    finally:
+        if not write_ok:
+            try:
+                staging_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    # Safe intentional overwrite of own run's checkpoint
+    os.replace(str(staging_path), str(target_partial_path))
+    return target_partial_path
+
+
+def is_completed_measurement_file(path: Union[str, Path]) -> bool:
+    """
+    Returns True if the path represents a completed measurement CSV file (Section 8.1 Rule 9).
+
+    Readers ignore .partial files, staging files, and reservation markers.
+    """
+    p = Path(path)
+    name = p.name
+    if name.startswith("."):
+        return False
+    if name.endswith(".partial.csv"):
+        return False
+    if name.endswith((".tmp", ".res", ".part")):
+        return False
+    return name.endswith(".csv")
+
+
+def cleanup_stale_reservations(
+    destination_dir: Union[str, Path],
+    max_age_seconds: float,
+    *,
+    owner_uuid: Optional[str] = None,
+) -> List[Path]:
+    """
+    Explicit, ownership-checked, age-gated reservation cleanup (Section 8.1 Rule 5 & Section 8.3).
+
+    Never deletes unknown or non-marker files automatically.
+    """
+    dest = Path(destination_dir)
+    if not dest.is_dir():
+        return []
+
+    now = time.time()
+    cleaned: List[Path] = []
+
+    for item in dest.iterdir():
+        if item.is_file() and item.name.startswith(".") and item.name.endswith(".res"):
+            info = _read_marker_info(item)
+            ts_str = info.get("timestamp")
+            marker_owner = info.get("owner_uuid")
+            if not ts_str:
+                continue
+            try:
+                marker_ts = float(ts_str)
+            except (ValueError, TypeError):
+                continue
+
+            if (now - marker_ts) >= max_age_seconds:
+                if owner_uuid is not None and marker_owner != str(owner_uuid):
+                    continue
+                try:
+                    item.unlink(missing_ok=True)
+                    cleaned.append(item)
+                except OSError:
+                    pass
+
+    return cleaned
+
+
+def cleanup_stale_partials(
+    destination_dir: Union[str, Path],
+    max_age_seconds: float,
+    *,
+    owner_uuid: Optional[str] = None,
+) -> List[Path]:
+    """
+    Explicit, ownership-checked, age-gated partial file cleanup (Section 8.3).
+
+    Never deletes completed CSV files or non-partial files.
+    """
+    dest = Path(destination_dir)
+    if not dest.is_dir():
+        return []
+
+    now = time.time()
+    cleaned: List[Path] = []
+
+    for item in dest.iterdir():
+        if item.is_file() and item.name.endswith(".partial.csv"):
+            try:
+                mtime = item.stat().st_mtime
+            except OSError:
+                continue
+
+            if (now - mtime) >= max_age_seconds:
+                if owner_uuid is not None and f".{owner_uuid}.partial.csv" not in item.name:
+                    continue
+                try:
+                    item.unlink(missing_ok=True)
+                    cleaned.append(item)
+                except OSError:
+                    pass
+
+    return cleaned
