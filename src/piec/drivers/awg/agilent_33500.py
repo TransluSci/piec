@@ -1,15 +1,16 @@
 # This driver has not been tested yet
 from ..scpi import Scpi
 from .awg import Awg
+from ._scpi_trigger import ScpiTriggerMixin
 
-class Agilent33500(Scpi, Awg):
+class Agilent33500(ScpiTriggerMixin, Scpi, Awg):
     """
     Driver for the Agilent 33500 Series Arbitrary Waveform Generators.
     Covering models like 33511B, 33512B, 33521A, 33522A, etc.
 
-    Trigger control is currently unsupported by this Python driver: output_trigger
-    and set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
-    This is a software implementation gap, not a statement about hardware capabilities.
+    Trigger source, external edge and triggered/gated burst configuration are
+    implemented using the model's programming reference. See
+    docs/awg_trigger_support.md for prerequisites and per-model limitations.
     """
     
     # Class attributes for parameter restrictions
@@ -19,6 +20,7 @@ class Agilent33500(Scpi, Awg):
     
     # 33500 series can have 1 or 2 channels
     channel = [1, 2]
+    _trigger_level_range = (0.9, 3.8)
     
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER', 'PRBS']
     
@@ -68,7 +70,9 @@ class Agilent33500(Scpi, Awg):
     def set_waveform(self, channel=1, waveform=None):
         if waveform is None:
              raise ValueError("waveform must be provided")
-        self.instrument.write(f"SOUR{channel}:FUNC {waveform}")
+        # The common USER waveform is named ARB on Trueform generators.
+        token = 'ARB' if waveform.lower() == 'user' else waveform.upper()
+        self.instrument.write(f"SOUR{channel}:FUNC {token}")
 
     def set_frequency(self, channel=1, frequency=None):
         if frequency is None:
@@ -108,8 +112,8 @@ class Agilent33500(Scpi, Awg):
     def set_pulse_edge_time(self, channel=1, edge_time=None):
         if edge_time is None:
              raise ValueError("edge_time must be provided")
-        # 33500 supports separate rise/fall, but we define a common interface here first
-        self.instrument.write(f"SOUR{channel}:FUNC:PULS:TRAN {edge_time}")
+        self.set_pulse_rise_time(channel, edge_time)
+        self.set_pulse_fall_time(channel, edge_time)
 
     def set_pulse_rise_time(self, channel=1, rise_time=None):
         if rise_time is None:

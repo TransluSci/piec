@@ -1,20 +1,28 @@
 # This driver has not been tested yet
 from ..scpi import Scpi
 from .awg import Awg
+from ._scpi_trigger import ScpiTriggerMixin
 
-class Agilent33220A(Scpi, Awg):
+class Agilent33220A(ScpiTriggerMixin, Scpi, Awg):
     """
     Driver for the Agilent 33220A Arbitrary Waveform Generator.
 
-    Trigger control is currently unsupported by this Python driver: output_trigger
-    and set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
-    This is a software implementation gap, not a statement about hardware capabilities.
+    Trigger source, external edge and triggered/gated burst configuration are
+    implemented using the model's programming reference. See
+    docs/awg_trigger_support.md for prerequisites and per-model limitations.
     """
     
     # Class attributes for parameter restrictions
     AUTODETECT_ID = "33220A"
     
     channel = [1]
+
+    def _trigger_prefix(self, channel, trigger_function):
+        return 'TRIG'
+
+    def _burst_prefix(self, channel):
+        return 'BURS'
+
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
     
     # Frequency ranges depend on the function

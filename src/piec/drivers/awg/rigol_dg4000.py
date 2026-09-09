@@ -1,21 +1,27 @@
 # This driver has not been tested yet
 from ..scpi import Scpi
 from .awg import Awg
+from ._scpi_trigger import ScpiTriggerMixin
 
-class RigolDG4000(Scpi, Awg):
+class RigolDG4000(ScpiTriggerMixin, Scpi, Awg):
     """
     Driver for the Rigol DG4000 Series Arbitrary Waveform Generators.
     e.g. DG4062, DG4102, DG4162, DG4202
 
-    Trigger control is currently unsupported by this Python driver: output_trigger
-    and set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
-    This is a software implementation gap, not a statement about hardware capabilities.
+    Trigger source, external edge and triggered/gated burst configuration are
+    implemented using the model's programming reference. See
+    docs/awg_trigger_support.md for prerequisites and per-model limitations.
     """
     
     # "RIGOL TECHNOLOGIES,DG4162,..."
     AUTODETECT_ID = "DG4"
     
     channel = [1, 2]
+    _trigger_source_map = {'imm': 'INT', 'int': 'INT', 'ext': 'EXT', 'man': 'MAN', 'bus': 'MAN'}
+
+    def _trigger_prefix(self, channel, trigger_function):
+        subsystem = 'BURS' if trigger_function == 'burst' else 'SWE'
+        return f'SOUR{channel}:{subsystem}:TRIG'
     
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER', 'HARM']
     

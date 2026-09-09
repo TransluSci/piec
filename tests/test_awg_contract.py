@@ -42,19 +42,7 @@ AWG_ADAPTERS = [
 
 ALL_AWG_IMPLEMENTATIONS = CONCRETE_AWG_DRIVERS + AWG_ADAPTERS
 
-SUPPORTED_TRIGGER_DRIVERS = [
-    VirtualAwg,
-    Keysight81150a,
-    SDG2000X,
-]
-
-UNSUPPORTED_TRIGGER_CLASSES = [
-    Agilent33220A,
-    Agilent33500,
-    RigolDG1000,
-    RigolDG4000,
-    DaqAsAwg,
-]
+UNSUPPORTED_TRIGGER_CLASSES = [DaqAsAwg]
 
 
 class _MinimalAwg(Awg):
@@ -273,8 +261,8 @@ class TestAwgDriverAuditAndSafingContract:
         """
         Distinguish explicitly overridden trigger methods from inherited empty stubs on Awg.
 
-        A method is considered implemented by a driver only if it is defined in that class's
-        own __dict__, overriding the empty base stub in Awg.
+        Implementations can be local or inherited from a tested mixin; merely
+        inheriting the empty Awg stub does not establish support.
         """
         # VirtualAwg overrides all trigger methods
         for method in ("output_trigger", "set_trigger_source", "set_trigger_level", "set_trigger_slope", "set_trigger_mode"):
@@ -289,15 +277,13 @@ class TestAwgDriverAuditAndSafingContract:
         assert "set_trigger_source" in SDG2000X.__dict__
         assert "set_trigger_slope" in SDG2000X.__dict__
         assert "set_trigger_mode" in SDG2000X.__dict__
-        assert "set_trigger_level" not in SDG2000X.__dict__, "SDG2000X does not support set_trigger_level"
+        assert "set_trigger_level" not in SDG2000X.__dict__, "SDG2000X driver level setter is still unimplemented"
 
-        # Unsupported drivers/adapters must NOT define these methods in their own __dict__;
-        # they must inherit empty stubs from Awg.
-        for cls in UNSUPPORTED_TRIGGER_CLASSES:
-            for method in ("output_trigger", "set_trigger_source", "set_trigger_level", "set_trigger_slope", "set_trigger_mode"):
-                assert method not in cls.__dict__, (
-                    f"{cls.__name__} should not define {method} in __dict__; it is an unsupported inherited stub"
-                )
+        # New hardware implementations may inherit a real implementation from a mixin.
+        for cls in (Agilent33220A, Agilent33500, RigolDG1000, RigolDG4000):
+            for method in ("output_trigger", "set_trigger_source", "set_trigger_slope", "set_trigger_mode"):
+                assert inspect.unwrap(getattr(cls, method)) is not inspect.unwrap(getattr(Awg, method))
+
 
     def test_keysight_81150a_supported_trigger_commands(self):
         """Keysight81150a supported trigger methods write exact SCPI commands."""
@@ -402,37 +388,6 @@ class TestAwgDriverAuditAndSafingContract:
         assert isinstance(vawg.sample.output_voltage, np.ndarray)
         assert len(vawg.sample.output_voltage) == 70
         assert np.any(vawg.sample.output_voltage != 0.0)
-
-    @pytest.mark.parametrize(
-        "cls",
-        [
-            Agilent33220A,
-            Agilent33500,
-            RigolDG1000,
-            RigolDG4000,
-        ],
-    )
-    def test_unsupported_awg_drivers_produce_no_hardware_commands(self, cls):
-        """Drivers with unsupported trigger features inherit empty methods that emit zero hardware commands."""
-        mock_inst = Mock()
-        inst = cls.__new__(cls)
-        inst.instrument = mock_inst
-
-        # Calling output_trigger does nothing and writes 0 commands
-        result = inst.output_trigger()
-        assert result is None
-        mock_inst.write.assert_not_called()
-
-        # Calling individual trigger setters does nothing and writes 0 commands
-        inst.set_trigger_source(1, "MAN")
-        inst.set_trigger_level(1, 1.0)
-        inst.set_trigger_slope(1, "POS")
-        inst.set_trigger_mode(1, "EDGE")
-        mock_inst.write.assert_not_called()
-
-        # configure_trigger gracefully no-ops without error or writes
-        inst.configure_trigger(1, trigger_source="MAN", trigger_level=1.0, trigger_slope="POS", trigger_mode="EDGE")
-        mock_inst.write.assert_not_called()
 
     def test_unsupported_daq_adapter_produces_no_hardware_commands(self):
         """DaqAsAwg adapter inherits empty trigger methods and does not call underlying DAQ methods."""
