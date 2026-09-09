@@ -372,7 +372,7 @@ class TestMeasurementReader:
     def test_reader_rejects_truncated_file(self):
         """Truncated files with fewer than 3 lines raise ValueError."""
         buf = io.StringIO("header1,header2\nvalue1,value2\n")
-        with pytest.raises(ValueError, match="at least metadata row and data header"):
+        with pytest.raises(ValueError, match="must contain metadata"):
             read_measurement_csv(buf)
 
     def test_reader_handles_empty_data_table(self, tmp_path):
@@ -401,7 +401,7 @@ class TestMeasurementReader:
     def test_reader_rejects_missing_blank_separator_line(self):
         """Files without a blank separator at line 3 (index 2) raise ValueError."""
         buf = io.StringIO("meta_a,meta_b\n1,2\nnot_blank_line\ncol_a,col_b\n10,20\n")
-        with pytest.raises(ValueError, match="must be a blank separator line"):
+        with pytest.raises(ValueError, match="blank separator line"):
             read_measurement_csv(buf)
 
 
@@ -459,7 +459,7 @@ class TestMetadataValidation:
             validate_metadata(meta, strict_schema=True)
 
     def test_validate_metadata_empty_dataframe_rejected(self):
-        with pytest.raises(ValueError, match="Metadata DataFrame is empty"):
+        with pytest.raises(ValueError, match="exactly 1 row"):
             validate_metadata(pd.DataFrame())
 
 
@@ -513,4 +513,3 @@ class TestStandardSchemaConstants:
             "field_calibrated",
             "detector_voltage",
         )
-

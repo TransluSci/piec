@@ -19,10 +19,7 @@ def metadata_and_data_to_csv(metadata, data, path):
         f.write("\n")
         data.to_csv(f, index=False, header=True, lineterminator="\n")
         f.flush()
-        try:
-            os.fsync(f.fileno())
-        except (AttributeError, OSError):
-            pass
+        os.fsync(f.fileno())
 
 def standard_csv_to_metadata_and_data(path, metadata_header_row=0, data_header_row=2):
     """

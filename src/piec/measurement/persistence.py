@@ -12,6 +12,7 @@ Fulfills Checkpoint 11a of MEASUREMENT_STANDARDIZATION_PLAN.md:
 from __future__ import annotations
 
 import io
+import csv
 import json
 import os
 from pathlib import Path
@@ -101,7 +102,9 @@ def deserialize_column_units(json_str: str) -> Dict[str, Optional[str]]:
     parsed = json.loads(json_str)
     if not isinstance(parsed, dict):
         raise ValueError(f"Expected JSON object, got {type(parsed).__name__}")
-    return {str(k): (str(v) if v is not None else None) for k, v in parsed.items()}
+    # Reject malformed units rather than quietly turning numbers/objects into labels.
+    serialize_column_units(parsed)
+    return parsed
 
 
 def validate_column_units(
@@ -142,8 +145,8 @@ def validate_metadata(
         Dictionary of validated metadata fields.
     """
     if isinstance(metadata, pd.DataFrame):
-        if len(metadata) == 0:
-            raise ValueError("Metadata DataFrame is empty")
+        if len(metadata) != 1:
+            raise ValueError("Metadata DataFrame must have exactly 1 row")
         meta_dict = metadata.iloc[0].to_dict()
     elif isinstance(metadata, Mapping):
         meta_dict = dict(metadata)
@@ -170,6 +173,76 @@ def validate_metadata(
     return meta_dict
 
 
+def _prepare_metadata(metadata, data, column_units):
+    """Validate the complete CSV contract without touching a stream or path."""
+    # Prepare metadata DataFrame
+    if isinstance(metadata, pd.DataFrame):
+        if len(metadata) != 1:
+            raise ValueError(f"Metadata DataFrame must have exactly 1 row, got {len(metadata)}")
+        meta_df = metadata.copy()
+        if column_units is not None:
+            validated_units = validate_column_units(data.columns, column_units)
+            units_json = serialize_column_units(validated_units)
+            if "column_units_json" in meta_df.columns:
+                existing_units_json = meta_df.iloc[0]["column_units_json"]
+                if pd.notna(existing_units_json):
+                    existing_map = deserialize_column_units(str(existing_units_json))
+                    if existing_map != validated_units:
+                        raise ValueError(
+                            f"Conflicting column_units provided: argument specifies {validated_units}, "
+                            f"but metadata already contains {existing_map}"
+                        )
+            meta_df["column_units_json"] = units_json
+    elif isinstance(metadata, Mapping):
+        meta_dict = dict(metadata)
+        if column_units is not None:
+            validated_units = validate_column_units(data.columns, column_units)
+            units_json = serialize_column_units(validated_units)
+            if "column_units_json" in meta_dict:
+                existing_units_json = meta_dict["column_units_json"]
+                if pd.notna(existing_units_json):
+                    existing_map = deserialize_column_units(str(existing_units_json))
+                    if existing_map != validated_units:
+                        raise ValueError(
+                            f"Conflicting column_units provided: argument specifies {validated_units}, "
+                            f"but metadata already contains {existing_map}"
+                        )
+            meta_dict["column_units_json"] = units_json
+        # Convert any dict/list values to JSON strings
+        for k, v in list(meta_dict.items()):
+            if isinstance(v, (dict, list)):
+                meta_dict[k] = json.dumps(v, sort_keys=True)
+        meta_df = pd.DataFrame([meta_dict])
+    else:
+        raise TypeError(
+            f"metadata must be a Mapping or DataFrame, got {type(metadata).__name__}"
+        )
+
+    # Validate before the first write, including when no explicit units were supplied.
+    validate_metadata(meta_df, strict_schema=True)
+    if not data.columns.is_unique:
+        raise ValueError("Data columns must be unique")
+
+    # Validate column units if column_units_json is present
+    if "column_units_json" in meta_df.columns:
+        raw_units_json = meta_df.iloc[0]["column_units_json"]
+        if pd.notna(raw_units_json):
+            units_map = deserialize_column_units(str(raw_units_json))
+            # Validate every data column has an entry
+            missing = set(data.columns) - set(units_map.keys())
+            if missing:
+                raise ValueError(
+                    f"column_units_json is missing entries for columns: {sorted(missing)}"
+                )
+            extra = set(units_map.keys()) - set(data.columns)
+            if extra:
+                raise ValueError(
+                    f"column_units_json contains extraneous columns not in data: {sorted(extra)}"
+                )
+
+    return meta_df
+
+
 def write_measurement_handle(
     handle: TextIO,
     metadata: Union[Mapping[str, Any], pd.DataFrame],
@@ -194,67 +267,7 @@ def write_measurement_handle(
     if not hasattr(handle, "write"):
         raise TypeError(f"handle must be a writable text stream, got {type(handle).__name__}")
 
-    # Prepare metadata DataFrame
-    if isinstance(metadata, pd.DataFrame):
-        if len(metadata) != 1:
-            raise ValueError(f"Metadata DataFrame must have exactly 1 row, got {len(metadata)}")
-        meta_df = metadata.copy()
-        if column_units is not None:
-            validated_units = validate_column_units(data.columns, column_units)
-            units_json = serialize_column_units(validated_units)
-            if "column_units_json" in meta_df.columns:
-                existing_units_json = meta_df.iloc[0]["column_units_json"]
-                if pd.notna(existing_units_json):
-                    existing_map = deserialize_column_units(str(existing_units_json))
-                    if existing_map != validated_units:
-                        raise ValueError(
-                            f"Conflicting column_units provided: argument specifies {validated_units}, "
-                            f"but metadata already contains {existing_map}"
-                        )
-            else:
-                meta_df["column_units_json"] = units_json
-    elif isinstance(metadata, Mapping):
-        meta_dict = dict(metadata)
-        if column_units is not None:
-            validated_units = validate_column_units(data.columns, column_units)
-            units_json = serialize_column_units(validated_units)
-            if "column_units_json" in meta_dict:
-                existing_units_json = meta_dict["column_units_json"]
-                if pd.notna(existing_units_json):
-                    existing_map = deserialize_column_units(str(existing_units_json))
-                    if existing_map != validated_units:
-                        raise ValueError(
-                            f"Conflicting column_units provided: argument specifies {validated_units}, "
-                            f"but metadata already contains {existing_map}"
-                        )
-            else:
-                meta_dict["column_units_json"] = units_json
-        # Convert any dict/list values to JSON strings
-        for k, v in list(meta_dict.items()):
-            if isinstance(v, (dict, list)):
-                meta_dict[k] = json.dumps(v, sort_keys=True)
-        meta_df = pd.DataFrame([meta_dict])
-    else:
-        raise TypeError(
-            f"metadata must be a Mapping or DataFrame, got {type(metadata).__name__}"
-        )
-
-    # Validate column units if column_units_json is present
-    if "column_units_json" in meta_df.columns:
-        raw_units_json = meta_df.iloc[0]["column_units_json"]
-        if pd.notna(raw_units_json):
-            units_map = deserialize_column_units(str(raw_units_json))
-            # Validate every data column has an entry
-            missing = set(data.columns) - set(units_map.keys())
-            if missing:
-                raise ValueError(
-                    f"column_units_json is missing entries for columns: {sorted(missing)}"
-                )
-            extra = set(units_map.keys()) - set(data.columns)
-            if extra and len(data.columns) > 0:
-                raise ValueError(
-                    f"column_units_json contains extraneous columns not in data: {sorted(extra)}"
-                )
+    meta_df = _prepare_metadata(metadata, data, column_units)
 
     # 1. Write metadata (1 row with header)
     meta_df.to_csv(handle, index=False, header=True, lineterminator="\n")
@@ -272,9 +285,10 @@ def write_measurement_handle(
     if sync:
         try:
             fileno = handle.fileno()
-            os.fsync(fileno)
-        except (AttributeError, io.UnsupportedOperation, OSError):
+        except (AttributeError, io.UnsupportedOperation):
             pass
+        else:
+            os.fsync(fileno)
 
 
 def write_measurement_csv(
@@ -291,14 +305,14 @@ def write_measurement_csv(
 
     Opens the file once, writes metadata, blank line, and data, flushes and fsyncs, then closes.
     """
+    meta_df = _prepare_metadata(metadata, data, column_units)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "w", encoding=encoding, newline="") as handle:
         write_measurement_handle(
             handle,
-            metadata,
+            meta_df,
             data,
-            column_units=column_units,
             sync=sync,
         )
     return target
@@ -312,51 +326,54 @@ def read_measurement_csv(
     """
     Reads a standard PIEC measurement CSV file (Section 7.1).
 
-    Parses the 1-row metadata, skips the blank separator line, parses the data table,
-    and unpacks `column_units_json` into a dictionary.
+    Parses CSV records, including quoted newlines, followed by the blank separator
+    and data table. Free-form metadata stays text; only the schema version and
+    schema Boolean fields are decoded. Unit JSON is returned separately.
 
     Returns:
         (metadata_dict, data_df, column_units_dict)
     """
     if isinstance(source, (str, Path)):
-        with open(source, "r", encoding=encoding) as f:
+        with open(source, "r", encoding=encoding, newline="") as f:
             content = f.read()
     elif hasattr(source, "read"):
         content = source.read()
     else:
         raise TypeError(f"source must be a path or text stream, got {type(source).__name__}")
 
-    lines = content.splitlines()
-    if len(lines) < 3:
-        raise ValueError(
-            f"Measurement CSV must contain at least metadata row and data header (got {len(lines)} lines)"
-        )
-
-    # Line 2 must be blank separator
-    if lines[2].strip() != "":
-        raise ValueError(
-            f"Line 3 (index 2) of measurement CSV must be a blank separator line, got: {lines[2]!r}"
-        )
-
-    # Read metadata using StringIO for the first two lines (header + 1 row)
-    meta_text = "\n".join(lines[:2])
-    meta_df = pd.read_csv(io.StringIO(meta_text))
-    metadata: Dict[str, Any] = meta_df.iloc[0].to_dict()
-
-    # Locate data table start (after blank line)
-    data_start = 2
-    while data_start < len(lines) and not lines[data_start].strip():
-        data_start += 1
-
-    if data_start < len(lines):
-        data_text = "\n".join(lines[data_start:])
-        data_df = pd.read_csv(io.StringIO(data_text))
-    else:
-        data_df = pd.DataFrame()
+    stream = io.StringIO(content, newline="")
+    records = csv.reader(stream, strict=True)
+    try:
+        header = next(records)
+        values = next(records)
+        separator = next(records)
+    except StopIteration as exc:
+        raise ValueError("Measurement CSV must contain metadata and a blank separator line") from exc
+    if separator:
+        raise ValueError("Metadata must be followed by a blank separator line")
+    if not header or len(header) != len(values) or len(set(header)) != len(header):
+        raise ValueError("Metadata must have unique headers and one matching values record")
+    metadata: Dict[str, Any] = dict(zip(header, values))
+    # CSV has no type tags: preserve all free-form scientific/text metadata as
+    # text. Decode only fields whose types are defined by the schema contract.
+    if "measurement_schema_version" in metadata:
+        metadata["measurement_schema_version"] = int(metadata["measurement_schema_version"])
+    for field in ("partial", "save_requested"):
+        if field in metadata:
+            value = metadata[field].lower()
+            if value not in ("true", "false"):
+                raise ValueError(f"{field} must be True or False")
+            metadata[field] = value == "true"
+    validate_metadata(metadata, strict_schema=True)
+    data_df = pd.read_csv(stream)
 
     # Extract column units if present
     column_units: Dict[str, Optional[str]] = {}
     if "column_units_json" in metadata and pd.notna(metadata["column_units_json"]):
         column_units = deserialize_column_units(str(metadata["column_units_json"]))
+
+    validate_column_units(data_df.columns, column_units)
+    if set(column_units) != set(data_df.columns):
+        raise ValueError("column_units_json must match saved data columns exactly")
 
     return metadata, data_df, column_units
