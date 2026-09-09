@@ -587,13 +587,19 @@ class BaseMeasurement:
         )
 
         current_thread = threading.get_ident()
-        self._active_owner_thread_id = current_thread
+        # Claim execution before touching results or entering cleanup. A rejected
+        # caller must never safe hardware owned by another invocation.
+        if token is None:
+            with self._coordinator._state_lock:
+                if self._active_owner_thread_id is not None:
+                    raise ConcurrentRunError("Previous execution owner has not returned")
+            token = self._reserve(request)
+        with self._coordinator._state_lock:
+            self._validate_token(token)
+            self._active_owner_thread_id = current_thread
         start_time = time.time()
 
         try:
-            if token is None:
-                token = self._reserve(request)
-
             # Reset active results for this run
             self._raw_data = None
             self._data = None
@@ -635,9 +641,6 @@ class BaseMeasurement:
             sec_errors: List[str] = []
 
             try:
-                # Token validation
-                self._validate_token(token)
-
                 # Step 3: Configure instruments
                 self._transition_to(
                     RunState.CONFIGURING, "Configuring instruments"
