@@ -11,14 +11,17 @@ Fulfills Checkpoint 8 of MEASUREMENT_STANDARDIZATION_PLAN.md:
 
 from __future__ import annotations
 
+import collections
+import collections.abc
 import copy
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
+import queue
 import threading
 import time
 from types import MappingProxyType
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 import uuid
 
 import pandas as pd
@@ -390,6 +393,311 @@ class RunRecord:
         object.__setattr__(self, "metadata", MappingProxyType(meta))
 
 
+# ============================================================================
+# 3b. Snapshots and Events (Section 6.1 & 6.2)
+# ============================================================================
+
+class SnapshotViews(collections.abc.Mapping):
+    """
+    Read-only view mapping that defensively copies DataFrames upon retrieval (Section 6.1).
+    """
+
+    def __init__(self, views: Optional[Mapping[str, pd.DataFrame]] = None) -> None:
+        self._views: Dict[str, pd.DataFrame] = {}
+        if views:
+            for k, v in views.items():
+                if isinstance(v, pd.DataFrame):
+                    self._views[str(k)] = v.copy(deep=True)
+                else:
+                    self._views[str(k)] = copy.deepcopy(v)
+
+    def __getitem__(self, key: str) -> pd.DataFrame:
+        v = self._views[key]
+        return v.copy(deep=True) if isinstance(v, pd.DataFrame) else copy.deepcopy(v)
+
+    def __iter__(self):
+        return iter(self._views)
+
+    def __len__(self) -> int:
+        return len(self._views)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._views
+
+    def keys(self):
+        return self._views.keys()
+
+    def values(self):
+        return [self[k] for k in self._views]
+
+    def items(self):
+        return [(k, self[k]) for k in self._views]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in self._views:
+            return self[key]
+        return default
+
+    def to_dict(self) -> Dict[str, pd.DataFrame]:
+        return {k: self[k] for k in self._views}
+
+    def __repr__(self) -> str:
+        return f"SnapshotViews({list(self._views.keys())})"
+
+
+class MeasurementSnapshot:
+    """
+    Immutable, mutation-isolated snapshot of measurement state and bounded data views (Section 6.1).
+
+    All DataFrame views are defensively copied on construction and on retrieval so consumer
+    or UI mutations cannot corrupt internal measurement buffers or subsequent queries.
+    """
+
+    def __init__(
+        self,
+        run_id: Optional[str],
+        generation: int,
+        sequence: int,
+        state: Union[RunState, str],
+        safety: Union[SafetyStatus, str] = SafetyStatus.UNKNOWN,
+        completed_steps: int = 0,
+        total_steps: Optional[int] = None,
+        message: str = "",
+        views: Optional[Mapping[str, pd.DataFrame]] = None,
+        timestamp: Optional[float] = None,
+        **extra: Any,
+    ) -> None:
+        object.__setattr__(self, "_run_id", str(run_id) if run_id is not None else None)
+        object.__setattr__(self, "_generation", int(generation))
+        object.__setattr__(self, "_sequence", int(sequence))
+        object.__setattr__(
+            self, "_state", RunState(state) if isinstance(state, str) else state
+        )
+        object.__setattr__(
+            self,
+            "_safety",
+            SafetyStatus(safety) if isinstance(safety, str) else safety,
+        )
+        object.__setattr__(self, "_completed_steps", int(completed_steps))
+        object.__setattr__(
+            self,
+            "_total_steps",
+            int(total_steps) if total_steps is not None else None,
+        )
+        object.__setattr__(self, "_message", str(message))
+        object.__setattr__(
+            self, "_timestamp", float(timestamp) if timestamp is not None else time.time()
+        )
+        object.__setattr__(self, "_views", SnapshotViews(views))
+        object.__setattr__(self, "_extra", MappingProxyType(dict(extra)))
+
+    @property
+    def run_id(self) -> Optional[str]:
+        return self._run_id
+
+    @property
+    def generation(self) -> int:
+        return self._generation
+
+    @property
+    def sequence(self) -> int:
+        return self._sequence
+
+    @property
+    def state(self) -> RunState:
+        return self._state
+
+    @property
+    def safety(self) -> SafetyStatus:
+        return self._safety
+
+    @property
+    def completed_steps(self) -> int:
+        return self._completed_steps
+
+    @property
+    def total_steps(self) -> Optional[int]:
+        return self._total_steps
+
+    @property
+    def message(self) -> str:
+        return self._message
+
+    @property
+    def status_message(self) -> str:
+        return self._message
+
+    @property
+    def timestamp(self) -> float:
+        return self._timestamp
+
+    @property
+    def views(self) -> SnapshotViews:
+        return self._views
+
+    def get_view(self, name: str) -> Optional[pd.DataFrame]:
+        """Returns a defensively copied DataFrame view if present, else None."""
+        if name in self._views:
+            return self._views[name]
+        return None
+
+    @property
+    def raw_window(self) -> Optional[pd.DataFrame]:
+        """Bounded raw window view (e.g. MOKE raw window points)."""
+        if "raw_window" in self._views:
+            return self.get_view("raw_window")
+        if "raw" in self._views:
+            return self.get_view("raw")
+        return None
+
+    @property
+    def raw(self) -> Optional[pd.DataFrame]:
+        """Alias for raw_window."""
+        return self.raw_window
+
+    @property
+    def last_cycle(self) -> Optional[pd.DataFrame]:
+        """Bounded last cycle view."""
+        return self.get_view("last_cycle")
+
+    @property
+    def cycle_average(self) -> Optional[pd.DataFrame]:
+        """Bounded cycle average view."""
+        return self.get_view("cycle_average")
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "run_id":
+            return self.run_id
+        elif key == "generation":
+            return self.generation
+        elif key == "sequence":
+            return self.sequence
+        elif key == "state":
+            return self.state.value if isinstance(self.state, RunState) else self.state
+        elif key == "safety":
+            return self.safety.value if isinstance(self.safety, SafetyStatus) else self.safety
+        elif key == "completed_steps":
+            return self.completed_steps
+        elif key == "total_steps":
+            return self.total_steps
+        elif key in ("message", "status_message"):
+            return self.message
+        elif key == "timestamp":
+            return self.timestamp
+        elif key == "views":
+            return self.views
+        elif key in self._views:
+            return self.get_view(key)
+        elif key in self._extra:
+            return self._extra[key]
+        raise KeyError(key)
+
+    def __contains__(self, key: object) -> bool:
+        if key in {
+            "run_id",
+            "generation",
+            "sequence",
+            "state",
+            "safety",
+            "completed_steps",
+            "total_steps",
+            "message",
+            "status_message",
+            "timestamp",
+            "views",
+        }:
+            return True
+        if key in self._views or key in self._extra:
+            return True
+        return False
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def keys(self) -> Sequence[str]:
+        standard = [
+            "run_id",
+            "generation",
+            "sequence",
+            "state",
+            "safety",
+            "completed_steps",
+            "total_steps",
+            "message",
+            "timestamp",
+            "views",
+        ]
+        return standard + list(self._views.keys()) + list(self._extra.keys())
+
+    def __getattr__(self, name: str) -> Any:
+        if "_extra" in self.__dict__ and name in self._extra:
+            return self._extra[name]
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError(f"'{type(self).__name__}' object is immutable")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError(f"'{type(self).__name__}' object is immutable")
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = {
+            "run_id": self.run_id,
+            "generation": self.generation,
+            "sequence": self.sequence,
+            "state": self.state.value if isinstance(self.state, RunState) else str(self.state),
+            "safety": self.safety.value if isinstance(self.safety, SafetyStatus) else str(self.safety),
+            "completed_steps": self.completed_steps,
+            "total_steps": self.total_steps,
+            "message": self.message,
+            "timestamp": self.timestamp,
+            "views": self._views.to_dict(),
+        }
+        d.update(self._extra)
+        return d
+
+    def __repr__(self) -> str:
+        views_keys = list(self._views.keys())
+        return (
+            f"MeasurementSnapshot(run_id={self.run_id!r}, gen={self.generation}, "
+            f"seq={self.sequence}, state={self.state.value if isinstance(self.state, RunState) else self.state}, "
+            f"views={views_keys})"
+        )
+
+
+@dataclass(frozen=True)
+class StateChangeEvent:
+    """
+    Event emitted upon every forward legal state transition (Section 6.2).
+    """
+
+    run_id: str
+    generation: int
+    from_state: RunState
+    to_state: RunState
+    timestamp: float = field(default_factory=time.time)
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class SafetyAlertEvent:
+    """
+    Immediate safety alert event emitted when any required shutdown action fails (Section 4.4 & 6.2).
+    """
+
+    run_id: str
+    generation: int
+    safety_status: SafetyStatus
+    report: SafetyReport
+    timestamp: float = field(default_factory=time.time)
+    message: str = ""
+
+
 @dataclass(frozen=True)
 class TerminalEvent:
     """
@@ -408,6 +716,134 @@ class TerminalEvent:
     secondary_errors: Tuple[str, ...] = ()
     record: Optional[RunRecord] = None
     data: Optional[pd.DataFrame] = None
+    final_snapshot: Optional[MeasurementSnapshot] = None
+
+
+class DisplayQueue:
+    """
+    Bounded coalescing display queue for high-rate snapshot updates (Section 6.2).
+
+    When queue capacity is saturated (len >= maxsize), oldest snapshots are discarded
+    to ensure the publisher thread never blocks. Dropped snapshot count is tracked.
+    """
+
+    def __init__(self, maxsize: int = 1) -> None:
+        if maxsize <= 0:
+            raise ValueError(f"DisplayQueue maxsize must be >= 1, got {maxsize}")
+        self._maxsize = int(maxsize)
+        self._lock = threading.Lock()
+        self._not_empty = threading.Condition(self._lock)
+        self._deque: collections.deque[MeasurementSnapshot] = collections.deque()
+        self._dropped_count = 0
+
+    @property
+    def maxsize(self) -> int:
+        """Maximum capacity of the display queue."""
+        return self._maxsize
+
+    @property
+    def dropped_count(self) -> int:
+        """Total number of snapshots dropped due to queue saturation."""
+        with self._lock:
+            return self._dropped_count
+
+    def put(self, snapshot: MeasurementSnapshot) -> None:
+        """
+        Pushes a snapshot into the queue without blocking.
+        If queue is at capacity, the oldest unread snapshot is dropped.
+        """
+        if not isinstance(snapshot, MeasurementSnapshot):
+            raise TypeError(
+                f"DisplayQueue only accepts MeasurementSnapshot, got {type(snapshot).__name__}"
+            )
+        with self._lock:
+            if len(self._deque) >= self._maxsize:
+                self._deque.popleft()
+                self._dropped_count += 1
+            self._deque.append(snapshot)
+            self._not_empty.notify()
+
+    def get(self, block: bool = True, timeout: Optional[float] = None) -> MeasurementSnapshot:
+        """
+        Retrieves the next snapshot from the queue.
+        """
+        with self._not_empty:
+            if not block:
+                if not self._deque:
+                    raise queue.Empty
+                return self._deque.popleft()
+
+            if timeout is None:
+                while not self._deque:
+                    self._not_empty.wait()
+                return self._deque.popleft()
+
+            if timeout < 0:
+                raise ValueError("timeout must be non-negative")
+
+            endtime = time.monotonic() + timeout
+            while not self._deque:
+                remaining = endtime - time.monotonic()
+                if remaining <= 0:
+                    raise queue.Empty
+                self._not_empty.wait(remaining)
+            return self._deque.popleft()
+
+    def get_nowait(self) -> MeasurementSnapshot:
+        """Non-blocking get. Raises queue.Empty if queue is empty."""
+        return self.get(block=False)
+
+    def empty(self) -> bool:
+        """Returns True if queue is empty."""
+        with self._lock:
+            return len(self._deque) == 0
+
+    def full(self) -> bool:
+        """Returns True if queue is at capacity."""
+        with self._lock:
+            return len(self._deque) >= self._maxsize
+
+    def qsize(self) -> int:
+        """Current number of snapshots in queue."""
+        with self._lock:
+            return len(self._deque)
+
+    def clear(self) -> None:
+        """Clears all queued snapshots."""
+        with self._lock:
+            self._deque.clear()
+
+
+class ControlQueue:
+    """
+    Unbounded, non-droppable FIFO control queue (Section 6.2).
+
+    Transports StateChangeEvent, SafetyAlertEvent, and TerminalEvent in strict FIFO order.
+    Queue saturation on the display path can never discard control or safety information.
+    """
+
+    def __init__(self) -> None:
+        self._queue: queue.Queue[Any] = queue.Queue()
+
+    def put(self, event: Any) -> None:
+        """Pushes a control event into the FIFO queue."""
+        self._queue.put(event)
+
+    def get(self, block: bool = True, timeout: Optional[float] = None) -> Any:
+        """Retrieves the next control event from the queue."""
+        return self._queue.get(block=block, timeout=timeout)
+
+    def get_nowait(self) -> Any:
+        """Non-blocking get. Raises queue.Empty if queue is empty."""
+        return self._queue.get_nowait()
+
+    def empty(self) -> bool:
+        """Returns True if queue is empty."""
+        return self._queue.empty()
+
+    def qsize(self) -> int:
+        """Current number of queued control events."""
+        return self._queue.qsize()
 
 
 # ============================================================================
@@ -432,6 +868,9 @@ class LifecycleCoordinator:
         self._idle_lease_active = False
         self._last_run_record: Optional[RunRecord] = None
         self._run_records: List[RunRecord] = []
+        self._on_state_change: Optional[
+            Callable[[RunState, RunState, Optional[str]], None]
+        ] = None
 
     @property
     def run_state(self) -> RunState:
@@ -584,6 +1023,12 @@ class LifecycleCoordinator:
                 f"Allowed transitions: {[s.value for s in allowed]}"
             )
         self._run_state = next_state
+        cb = self._on_state_change
+        if cb is not None:
+            try:
+                cb(current, next_state, reason)
+            except Exception:
+                pass
 
     def set_safety_status(self, status: SafetyStatus) -> None:
         """Sets the current safety status."""

@@ -24,17 +24,22 @@ import pandas as pd
 
 from .contracts import (
     ConcurrentRunError,
+    ControlQueue,
+    DisplayQueue,
     HardwareSafetyError,
     IllegalStateTransitionError,
     LifecycleCoordinator,
+    MeasurementSnapshot,
     ReservationToken,
     RunRecord,
     RunRequest,
     RunState,
     SafetyAction,
+    SafetyAlertEvent,
     SafetyReport,
     SafetyStatus,
     ShutdownAttemptRecorder,
+    StateChangeEvent,
     TerminalEvent,
 )
 
@@ -148,6 +153,7 @@ class BaseMeasurement:
 
     def __init__(self) -> None:
         self._coordinator = LifecycleCoordinator()
+        self._coordinator._on_state_change = self._on_coordinator_state_change
         self._event_listeners: List[Callable[[TerminalEvent], None]] = []
         self._raw_data: Optional[pd.DataFrame] = None
         self._data: Optional[pd.DataFrame] = None
@@ -158,6 +164,17 @@ class BaseMeasurement:
         self._session_capture_count: int = 0
         self._last_safing_exc: Optional[BaseException] = None
         self._active_shutdown_recorder: Optional[ShutdownAttemptRecorder] = None
+
+        # Checkpoint 10a: Snapshot and two-event-path state (Section 6.1 & 6.2)
+        self._snapshot_lock = threading.Lock()
+        self._snapshot_sequence: int = 0
+        self._latest_snapshot: Optional[MeasurementSnapshot] = None
+        self._display_queues: List[DisplayQueue] = []
+        self._control_queues: List[ControlQueue] = []
+        self._display_listeners: List[Callable[[MeasurementSnapshot], None]] = []
+        self._control_listeners: List[
+            Callable[[Union[StateChangeEvent, SafetyAlertEvent, TerminalEvent]], None]
+        ] = []
 
     @property
     def run_state(self) -> RunState:
@@ -209,19 +226,213 @@ class BaseMeasurement:
         """Current active piecewise session context, if any."""
         return self._active_session
 
-    def snapshot(self) -> Mapping[str, Any]:
+    def snapshot(self) -> MeasurementSnapshot:
         """
         Public snapshot query wrapper (Section 6.1).
 
-        Thread-safe read-only snapshot of current measurement state.
+        Thread-safe read-only snapshot of current measurement state with mutation-isolated views.
         """
+        with self._snapshot_lock:
+            if self._latest_snapshot is not None:
+                return MeasurementSnapshot(
+                    run_id=self._latest_snapshot.run_id,
+                    generation=self._latest_snapshot.generation,
+                    sequence=self._latest_snapshot.sequence,
+                    state=self.run_state,
+                    safety=self.safety_status,
+                    completed_steps=self._latest_snapshot.completed_steps,
+                    total_steps=self._latest_snapshot.total_steps,
+                    message=self._latest_snapshot.message,
+                    views=self._latest_snapshot.views,
+                    timestamp=self._latest_snapshot.timestamp,
+                    **self._latest_snapshot._extra,
+                )
+            else:
+                active_tok = self.active_token
+                return MeasurementSnapshot(
+                    run_id=active_tok.run_id if active_tok is not None else None,
+                    generation=active_tok.generation if active_tok is not None else self._coordinator.generation,
+                    sequence=0,
+                    state=self.run_state,
+                    safety=self.safety_status,
+                    completed_steps=0,
+                    total_steps=None,
+                    message="",
+                    views={},
+                )
+
+    def publish_snapshot(
+        self,
+        views: Optional[Mapping[str, pd.DataFrame]] = None,
+        *,
+        message: str = "",
+        completed_steps: int = 0,
+        total_steps: Optional[int] = None,
+        **extra: Any,
+    ) -> MeasurementSnapshot:
+        """
+        Creates, stores, and publishes a fresh bounded snapshot (Section 6.1 & 6.2).
+
+        - Defensively copies all DataFrame views under the snapshot lock.
+        - Increments monotonic snapshot sequence number.
+        - Updates latest snapshot.
+        - Dispatches non-blocking to all registered DisplayQueues (dropping older if full).
+        - Dispatches to registered display listeners.
+        """
+        with self._snapshot_lock:
+            self._snapshot_sequence += 1
+            seq = self._snapshot_sequence
+            active_tok = self.active_token
+            run_id = active_tok.run_id if active_tok is not None else ""
+            generation = (
+                active_tok.generation
+                if active_tok is not None
+                else self._coordinator.generation
+            )
+            state = self.run_state
+            safety = self.safety_status
+
+            snap = MeasurementSnapshot(
+                run_id=run_id,
+                generation=generation,
+                sequence=seq,
+                state=state,
+                safety=safety,
+                completed_steps=completed_steps,
+                total_steps=total_steps,
+                message=message,
+                views=views or {},
+                **extra,
+            )
+            self._latest_snapshot = snap
+            queues = list(self._display_queues)
+            listeners = list(self._display_listeners)
+
+        for q in queues:
+            try:
+                q.put(snap)
+            except Exception:
+                pass
+
+        for listener in listeners:
+            try:
+                listener(snap)
+            except Exception:
+                pass
+
+        return snap
+
+    def create_display_queue(self, maxsize: int = 1) -> DisplayQueue:
+        """
+        Creates, registers, and returns a bounded coalescing DisplayQueue (Section 6.2).
+        """
+        q = DisplayQueue(maxsize=maxsize)
+        with self._snapshot_lock:
+            self._display_queues.append(q)
+        return q
+
+    def remove_display_queue(self, queue: DisplayQueue) -> None:
+        """Unregisters a DisplayQueue."""
+        with self._snapshot_lock:
+            if queue in self._display_queues:
+                self._display_queues.remove(queue)
+
+    def create_control_queue(self) -> ControlQueue:
+        """
+        Creates, registers, and returns an unbounded non-droppable ControlQueue (Section 6.2).
+        """
+        q = ControlQueue()
         with self._coordinator._state_lock:
-            return {
-                "run_id": getattr(self._coordinator.active_token, "run_id", None),
-                "generation": self._coordinator.generation,
-                "state": self.run_state.value,
-                "safety": self.safety_status.value,
-            }
+            self._control_queues.append(q)
+        return q
+
+    def remove_control_queue(self, queue: ControlQueue) -> None:
+        """Unregisters a ControlQueue."""
+        with self._coordinator._state_lock:
+            if queue in self._control_queues:
+                self._control_queues.remove(queue)
+
+    def add_display_listener(
+        self, listener: Callable[[MeasurementSnapshot], None]
+    ) -> None:
+        """Registers a callback for display snapshot updates."""
+        if not callable(listener):
+            raise TypeError("Display listener must be callable")
+        with self._snapshot_lock:
+            if listener not in self._display_listeners:
+                self._display_listeners.append(listener)
+
+    def remove_display_listener(
+        self, listener: Callable[[MeasurementSnapshot], None]
+    ) -> None:
+        """Unregisters a display snapshot callback."""
+        with self._snapshot_lock:
+            if listener in self._display_listeners:
+                self._display_listeners.remove(listener)
+
+    def add_control_listener(
+        self,
+        listener: Callable[
+            [Union[StateChangeEvent, SafetyAlertEvent, TerminalEvent]], None
+        ],
+    ) -> None:
+        """Registers a callback for control events (state changes, safety alerts, terminal events)."""
+        if not callable(listener):
+            raise TypeError("Control listener must be callable")
+        with self._coordinator._state_lock:
+            if listener not in self._control_listeners:
+                self._control_listeners.append(listener)
+
+    def remove_control_listener(
+        self,
+        listener: Callable[
+            [Union[StateChangeEvent, SafetyAlertEvent, TerminalEvent]], None
+        ],
+    ) -> None:
+        """Unregisters a control event callback."""
+        with self._coordinator._state_lock:
+            if listener in self._control_listeners:
+                self._control_listeners.remove(listener)
+
+    def _on_coordinator_state_change(
+        self, from_state: RunState, to_state: RunState, reason: Optional[str] = None
+    ) -> None:
+        """Callback invoked by coordinator under lock on every state transition."""
+        if from_state == to_state:
+            return
+        active_tok = self.active_token
+        event = StateChangeEvent(
+            run_id=active_tok.run_id if active_tok is not None else "",
+            generation=(
+                active_tok.generation
+                if active_tok is not None
+                else self._coordinator.generation
+            ),
+            from_state=from_state,
+            to_state=to_state,
+            message=reason or "",
+        )
+        self._dispatch_control_event(event)
+
+    def _dispatch_control_event(
+        self, event: Union[StateChangeEvent, SafetyAlertEvent, TerminalEvent]
+    ) -> None:
+        """Dispatches control events in order to registered queues and listeners."""
+        with self._coordinator._state_lock:
+            queues = list(self._control_queues)
+            listeners = list(self._control_listeners)
+
+        for q in queues:
+            try:
+                q.put(event)
+            except Exception:
+                pass
+
+        for listener in listeners:
+            try:
+                listener(event)
+            except Exception:
+                pass
 
     def request_stop(self) -> None:
         """Requests cooperative software stop of the active run."""
@@ -255,9 +466,56 @@ class BaseMeasurement:
                 self._event_listeners.remove(listener)
 
     def _emit_terminal_event(self, record: RunRecord, data: Optional[pd.DataFrame]) -> None:
-        """Emits exactly one terminal event to all registered listeners."""
+        """Emits exactly one terminal event to all registered listeners, queues, and control paths."""
         with self._coordinator._state_lock:
             listeners = list(self._event_listeners)
+
+        # Build authoritative final snapshot (Section 6.2)
+        with self._snapshot_lock:
+            if self._latest_snapshot is not None:
+                final_views = {
+                    k: self._latest_snapshot.get_view(k)
+                    for k in self._latest_snapshot.views
+                }
+                completed_steps = self._latest_snapshot.completed_steps
+                total_steps = self._latest_snapshot.total_steps
+                extra = dict(self._latest_snapshot._extra)
+            else:
+                final_views = {}
+                completed_steps = 0
+                total_steps = None
+                extra = {}
+
+            if data is not None and not data.empty and "data" not in final_views:
+                final_views["data"] = data.copy()
+
+            final_snapshot = MeasurementSnapshot(
+                run_id=record.run_id,
+                generation=record.generation,
+                sequence=self._snapshot_sequence,
+                state=record.state,
+                safety=record.safety.status,
+                completed_steps=completed_steps,
+                total_steps=total_steps,
+                message=f"Terminal state {record.state.value}",
+                views=final_views,
+                **extra,
+            )
+            self._latest_snapshot = final_snapshot
+            display_queues = list(self._display_queues)
+            display_listeners = list(self._display_listeners)
+
+        # Put final snapshot into display queues and notify display listeners
+        for dq in display_queues:
+            try:
+                dq.put(final_snapshot)
+            except Exception:
+                pass
+        for dl in display_listeners:
+            try:
+                dl(final_snapshot)
+            except Exception:
+                pass
 
         event = TerminalEvent(
             run_id=record.run_id,
@@ -272,6 +530,7 @@ class BaseMeasurement:
             secondary_errors=record.secondary_errors,
             record=record,
             data=data.copy() if data is not None else None,
+            final_snapshot=final_snapshot,
         )
 
         for listener in listeners:
@@ -280,6 +539,9 @@ class BaseMeasurement:
             except Exception:
                 # Listener failures must never corrupt measurement lifecycle or mask errors
                 pass
+
+        # Dispatch to control queues and listeners
+        self._dispatch_control_event(event)
 
     # ========================================================================
     # Full-Run Execution Engine (Section 4.4 & 4.6)
@@ -1238,6 +1500,24 @@ class BaseMeasurement:
                 )
 
         self._coordinator.set_safety_status(safety_report.status)
+        if safety_report.status == SafetyStatus.UNSAFE:
+            active_tok = self.active_token
+            alert_event = SafetyAlertEvent(
+                run_id=active_tok.run_id if active_tok is not None else "",
+                generation=(
+                    active_tok.generation
+                    if active_tok is not None
+                    else self._coordinator.generation
+                ),
+                safety_status=SafetyStatus.UNSAFE,
+                report=safety_report,
+                message=(
+                    safety_report.error
+                    or safety_report.summary
+                    or "Safe shutdown failed"
+                ),
+            )
+            self._dispatch_control_event(alert_event)
         return safety_report
 
     # ========================================================================
@@ -1748,7 +2028,11 @@ class BaseMeasurement:
 
     def _reserve(self, request: Optional[RunRequest] = None) -> ReservationToken:
         """Reserve a new run generation."""
-        return self._coordinator.reserve(request)
+        token = self._coordinator.reserve(request)
+        with self._snapshot_lock:
+            self._snapshot_sequence = 0
+            self._latest_snapshot = None
+        return token
 
     def _validate_token(self, token: ReservationToken) -> None:
         """Validate token before execution begins."""

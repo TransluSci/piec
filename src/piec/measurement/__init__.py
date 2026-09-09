@@ -2,20 +2,25 @@ from .adapters import WaveformReader, WaveformRecord
 from .base import BaseMeasurement, MeasurementSession
 from .contracts import (
     ConcurrentRunError,
+    ControlQueue,
+    DisplayQueue,
     DuplicateExecutionError,
     HardwareSafetyError,
     IllegalStateTransitionError,
     LifecycleCoordinator,
     MeasurementLifecycleError,
+    MeasurementSnapshot,
     ReservationToken,
     RunRecord,
     RunRequest,
     RunState,
     SafetyAction,
+    SafetyAlertEvent,
     SafetyReport,
     SafetyStatus,
     ShutdownAttemptRecorder,
     StaleTokenError,
+    StateChangeEvent,
     TerminalEvent,
 )
 
@@ -40,6 +45,12 @@ __all__ = [
     "StaleTokenError",
     "DuplicateExecutionError",
     "HardwareSafetyError",
+    "MeasurementSnapshot",
+    "DisplayQueue",
+    "ControlQueue",
+    "StateChangeEvent",
+    "SafetyAlertEvent",
 ]
+
 
 
