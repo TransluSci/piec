@@ -17,6 +17,7 @@ Verifies:
 from __future__ import annotations
 
 import concurrent.futures
+import errno
 import io
 import os
 from pathlib import Path
@@ -414,6 +415,88 @@ class TestStrictAndFallbackModes:
         assert staging.read_text(encoding="utf-8") == "STAGING DATA"
         # Marker cleaned up
         assert not (dir_b / ".final.csv.res").exists()
+
+    def test_competing_writer_creates_target_during_publication(self, tmp_path):
+        """If a competing writer creates target during publication, FileExistsError is raised,
+        competing target is never overwritten, and staging is preserved intact."""
+        fd, staging = create_staging_file(tmp_path)
+        os.close(fd)
+        staging.write_text("MY VALUABLE STAGING DATA", encoding="utf-8")
+        target = tmp_path / "race_target.csv"
+
+        real_rename = os.rename
+
+        def mock_rename_with_collision(src, dst):
+            # Competing writer creates target immediately before publish move
+            target.write_text("COMPETING WRITER CONTENT", encoding="utf-8")
+            return real_rename(src, dst)
+
+        with patch("os.rename", side_effect=mock_rename_with_collision):
+            with pytest.raises(FileExistsError):
+                atomic_publish_no_replace(staging, target)
+
+        # Competing target is unmodified
+        assert target.read_text(encoding="utf-8") == "COMPETING WRITER CONTENT"
+        # Staging file is preserved intact for recovery
+        assert staging.exists()
+        assert staging.read_text(encoding="utf-8") == "MY VALUABLE STAGING DATA"
+
+    def test_posix_fallback_without_safe_no_replace_raises_unsupported_and_preserves_staging(self, tmp_path):
+        """On POSIX where no safe no-replace operation is available (e.g. link fails with EOPNOTSUPP),
+        UnsupportedFilesystemError is raised, check-then-rename is NOT performed, and staging is preserved."""
+        fd, staging = create_staging_file(tmp_path)
+        os.close(fd)
+        staging.write_text("VALUABLE STAGING DATA", encoding="utf-8")
+        target = tmp_path / "posix_target.csv"
+
+        link_err = OSError(errno.EOPNOTSUPP, "Operation not supported")
+
+        with patch("os.name", "posix"):
+            with patch("os.link", side_effect=link_err):
+                with pytest.raises(UnsupportedFilesystemError, match="does not support safe atomic no-replace"):
+                    _collision_resistant_publish(staging, target)
+
+        # Staging must be preserved intact for recovery
+        assert staging.exists()
+        assert staging.read_text(encoding="utf-8") == "VALUABLE STAGING DATA"
+        # Target was never created
+        assert not target.exists()
+
+    def test_reservation_marker_records_full_owner_uuid(self, tmp_path):
+        """Reservation marker stores the full owner UUID (Section 8.1 Rule 5)."""
+        dir_a = tmp_path / "vol_a"
+        dir_b = tmp_path / "vol_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        fd, staging = create_staging_file(dir_a)
+        os.close(fd)
+        staging.write_text("data", encoding="utf-8")
+        target = dir_b / "marked.csv"
+
+        test_owner_uuid = "12345678-abcd-ef01-2345-6789abcdef01"
+        real_rename = os.rename
+
+        def mock_rename_inspect_marker(src, dst):
+            if str(src) == str(staging):
+                err = OSError("cross drive")
+                err.winerror = 17
+                raise err
+            # When intra-volume publish executes, verify reservation marker content
+            marker = dir_b / ".marked.csv.res"
+            assert marker.exists()
+            content = marker.read_text(encoding="utf-8")
+            assert f"owner_uuid={test_owner_uuid}" in content
+            return real_rename(src, dst)
+
+        with patch("os.rename", side_effect=mock_rename_inspect_marker):
+            atomic_publish_no_replace(
+                staging, target, strict=False, owner_uuid=test_owner_uuid
+            )
+
+        assert target.exists()
+        # Marker cleaned up on completion
+        assert not (dir_b / ".marked.csv.res").exists()
 
 
 # ============================================================================

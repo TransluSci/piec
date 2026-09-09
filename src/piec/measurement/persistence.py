@@ -29,6 +29,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple, Union
 import uuid
 
@@ -334,7 +335,12 @@ def create_staging_file(
     return fd, Path(abs_path_str)
 
 
-def _collision_resistant_publish(staging: Path, target: Path) -> Path:
+def _collision_resistant_publish(
+    staging: Path,
+    target: Path,
+    *,
+    owner_uuid: Optional[str] = None,
+) -> Path:
     """
     Opt-in non-strict fallback. Labeled collision-resistant, never collision-proof (Section 8.1 Rule 7).
 
@@ -347,13 +353,18 @@ def _collision_resistant_publish(staging: Path, target: Path) -> Path:
     target_parent = target.parent
     target_parent.mkdir(parents=True, exist_ok=True)
 
+    # Use caller-provided full owner UUID or generate a fresh UUID4
+    full_owner_uuid = str(owner_uuid) if owner_uuid else str(uuid.uuid4())
+
     # Deterministic hidden reservation marker derived from candidate target name (Section 8.1 Rule 5)
     marker = target_parent / f".{target.name}.res"
 
-    # Claim candidate with exclusively created hidden marker
+    # Claim candidate with exclusively created hidden marker storing full owner UUID
     try:
         with open(marker, "xb") as f:
-            f.write(f"pid={os.getpid()}\n".encode("utf-8"))
+            f.write(
+                f"owner_uuid={full_owner_uuid}\npid={os.getpid()}\ntimestamp={time.time()}\n".encode("utf-8")
+            )
     except FileExistsError as exc:
         raise FileExistsError(
             f"Target file is currently reserved or already exists: {target}"
@@ -393,11 +404,12 @@ def _collision_resistant_publish(staging: Path, target: Path) -> Path:
                 raise
             file_to_publish = dest_staging
 
-        # Intra-volume publish to target
+        # Intra-volume publish to target using safe no-replace primitives
         if os.name == "nt":
-            # On Windows, os.rename fails with FileExistsError if target exists
+            # On Windows, os.rename fails with FileExistsError if target exists (MoveFileEx without replace)
             os.rename(str(file_to_publish), str(target))
         else:
+            # POSIX: Try atomic hardlink first (fails with FileExistsError / EEXIST if target exists)
             try:
                 os.link(str(file_to_publish), str(target))
                 try:
@@ -407,9 +419,10 @@ def _collision_resistant_publish(staging: Path, target: Path) -> Path:
             except OSError as exc:
                 if exc.errno == errno.EEXIST:
                     raise FileExistsError(f"Target file already exists: {target}") from exc
-                if target.exists():
-                    raise FileExistsError(f"Target file already exists: {target}")
-                os.rename(str(file_to_publish), str(target))
+                # If no safe no-replace operation is available, raise UnsupportedFilesystemError and preserve staging
+                raise UnsupportedFilesystemError(
+                    f"Filesystem does not support safe atomic no-replace publication ({exc.strerror}): {target}"
+                ) from exc
 
         # When destination staging was used, clean up original staging since publication succeeded
         if dest_staging is not None:
@@ -440,6 +453,7 @@ def atomic_publish_no_replace(
     target_path: Union[str, Path],
     *,
     strict: bool = True,
+    owner_uuid: Optional[str] = None,
 ) -> Path:
     """
     Atomically publishes a staged file to target_path without replacing an existing file (Section 8.1 Rule 6).
@@ -453,6 +467,7 @@ def atomic_publish_no_replace(
         strict: If True, requires true atomic no-replace filesystem primitives.
                 If the filesystem cannot provide atomic no-replace, raises UnsupportedFilesystemError.
                 If False, allows fallback to collision-resistant (never collision-proof) mode.
+        owner_uuid: Optional full owner UUID to record in reservation markers (Section 8.1 Rule 5).
 
     Returns:
         Path to the published target file.
@@ -498,7 +513,7 @@ def atomic_publish_no_replace(
                         f"Cannot atomically publish across drives/volumes ({staging} -> {target}). "
                         f"Staging files must be created in the destination directory."
                     ) from exc
-                return _collision_resistant_publish(staging, target)
+                return _collision_resistant_publish(staging, target, owner_uuid=owner_uuid)
             raise AtomicPublishError(
                 f"Failed to publish {staging} to {target}: {exc}"
             ) from exc
@@ -551,7 +566,7 @@ def atomic_publish_no_replace(
                     raise UnsupportedFilesystemError(
                         f"Filesystem does not support atomic no-replace publication ({exc.strerror}): {target}"
                     ) from exc
-                return _collision_resistant_publish(staging, target)
+                return _collision_resistant_publish(staging, target, owner_uuid=owner_uuid)
 
     return target
 
@@ -565,6 +580,7 @@ def atomic_publish_measurement_csv(
     sync: bool = True,
     encoding: str = "utf-8",
     strict: bool = True,
+    owner_uuid: Optional[str] = None,
 ) -> Path:
     """
     Atomically writes and publishes a measurement CSV file without replacing an existing target (Section 8.1).
@@ -581,6 +597,12 @@ def atomic_publish_measurement_csv(
     target = Path(path)
     if target.exists():
         raise FileExistsError(f"Target file already exists: {target}")
+
+    if owner_uuid is None:
+        if isinstance(metadata, Mapping) and "run_id" in metadata:
+            owner_uuid = str(metadata["run_id"])
+        elif isinstance(metadata, pd.DataFrame) and "run_id" in metadata.columns and not metadata.empty:
+            owner_uuid = str(metadata.iloc[0]["run_id"])
 
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, staging_path = create_staging_file(
@@ -601,7 +623,9 @@ def atomic_publish_measurement_csv(
             except OSError:
                 pass
 
-    return atomic_publish_no_replace(staging_path, target, strict=strict)
+    return atomic_publish_no_replace(
+        staging_path, target, strict=strict, owner_uuid=owner_uuid
+    )
 
 
 def write_measurement_csv(
@@ -614,6 +638,7 @@ def write_measurement_csv(
     encoding: str = "utf-8",
     atomic: bool = False,
     strict: bool = True,
+    owner_uuid: Optional[str] = None,
 ) -> Path:
     """
     Convenience function writing a measurement CSV file through a single text handle (Section 8.1).
@@ -631,6 +656,7 @@ def write_measurement_csv(
             sync=sync,
             encoding=encoding,
             strict=strict,
+            owner_uuid=owner_uuid,
         )
     meta_df = _prepare_metadata(metadata, data, column_units)
     target = Path(path)
