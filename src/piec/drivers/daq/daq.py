@@ -4,6 +4,10 @@ This is an outline for what the daq.py file should be like.
 A daq (Data Acqusition System) is defined as an instrument that has the typical features one expects a daq to have
 """
 from ..instrument import Instrument, optional
+import math
+import threading
+import time
+from numbers import Integral, Real
 class Daq(Instrument):
     # Initializer / Instance attributes
     """
@@ -166,3 +170,87 @@ class Daq(Instrument):
 
     def write_DO(self, channel, data):
         """Write one or more Boolean states to a digital-output line."""
+
+    def get_trigger_pulse_capabilities(self):
+        """Return pulse-output resources, channels, timing and width bounds (seconds).
+
+        Advertise only real implementations. Digital channel 0 and timer channel 0
+        name different physical terminals; callers must explicitly choose a resource.
+        """
+        if (self.dio_channel and type(self).write_DO is not Daq.write_DO
+                and type(self).set_DIO_mode is not Daq.set_DIO_mode):
+            return {'digital': {'channels': list(self.dio_channel), 'timing': 'software',
+                                'min_width': 0.0, 'max_width': 60.0}}
+        return {}
+
+    def validate_trigger_pulse(self, channel, pulse_width, active_high=True, *,
+                               resource='digital', require_hardware_timing=False):
+        """Validate a pulse request without touching outputs; return its capabilities."""
+        if not isinstance(resource, str):
+            raise ValueError('resource must be a string naming a pulse output')
+        capabilities = self.get_trigger_pulse_capabilities()
+        if resource not in capabilities:
+            raise NotImplementedError(f'{type(self).__name__} has no {resource!r} trigger-pulse resource')
+        selected = capabilities[resource]
+        if isinstance(channel, bool) or not isinstance(channel, Integral) or channel not in selected['channels']:
+            raise ValueError(f'{resource} channel must be one of {selected["channels"]}')
+        if (isinstance(pulse_width, bool) or not isinstance(pulse_width, Real)
+                or not math.isfinite(pulse_width) or pulse_width <= 0
+                or not selected['min_width'] <= pulse_width <= selected['max_width']):
+            raise ValueError(f'pulse_width must be positive, finite and within '
+                             f'{selected["min_width"]} to {selected["max_width"]} seconds')
+        if not isinstance(active_high, bool) or not isinstance(require_hardware_timing, bool):
+            raise ValueError('active_high and require_hardware_timing must be Boolean')
+        if require_hardware_timing and selected['timing'] != 'hardware':
+            raise NotImplementedError('The selected output does not provide hardware-timed pulses')
+        return selected
+
+    @staticmethod
+    def _wait_trigger_pulse(duration, cancel_event):
+        if cancel_event is None:
+            time.sleep(duration)
+        elif cancel_event.wait(duration):
+            raise InterruptedError('Trigger pulse cancelled')
+
+    def send_trigger_pulse(self, channel, pulse_width, active_high=True, *,
+                           resource='digital', require_hardware_timing=False, cancel_event=None):
+        """Emit one physical pulse, then restore idle; block until done or cancelled.
+
+        Driver authors: override this method to use a hardware timer/pulse engine
+        when supported, and override get_trigger_pulse_capabilities accordingly.
+        If hardware pulse generation is unsupported, inherit this software fallback
+        or override with an equivalent SOFTWARE-TIMED implementation using the
+        driver's digital-output commands. Label it 'software', propagate I/O errors,
+        and restore idle in finally. Do not silently substitute another physical pin
+        or fall back to software after a hardware start error (a pulse may have fired).
+
+        This default uses set_DIO_mode and write_DO. It requests idle -> active ->
+        idle, with USB/OS-dependent latency and pulse width; it guarantees no precise
+        synchronization with analog output. The software width limit is 60 seconds.
+        Callers must reserve the output, match voltage/load requirements, and avoid
+        concurrent operations on it. Mode changes can produce device-specific edges.
+        Cancellation attempts idle restoration; cleanup failures propagate too.
+
+        resource='digital' means a DIO line, not a timer terminal. Drivers without
+        implemented DIO reject the request. require_hardware_timing rejects software
+        and simulation before I/O. Return metadata describes timing and programmed
+        width; no physical edge timestamp or measured pulse width is claimed.
+        """
+        capability = self.validate_trigger_pulse(channel, pulse_width, active_high,
+            resource=resource, require_hardware_timing=require_hardware_timing)
+        if resource != 'digital':
+            raise NotImplementedError('This resource needs a driver-specific pulse implementation')
+        lock = self.__dict__.setdefault('_trigger_pulse_lock', threading.Lock())
+        with lock:
+            self._wait_trigger_pulse(0, cancel_event)
+            idle = int(not active_high)
+            try:
+                self.set_DIO_mode(channel, 'O')
+                self.write_DO(channel, idle)
+                self.write_DO(channel, int(active_high))
+                self._wait_trigger_pulse(float(pulse_width), cancel_event)
+            finally:
+                self.write_DO(channel, idle)
+        return {'resource': resource, 'channel': int(channel), 'timing': capability['timing'],
+                'requested_pulse_width': float(pulse_width), 'programmed_pulse_width': None,
+                'active_high': active_high}

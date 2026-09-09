@@ -18,9 +18,10 @@ class DaqAsAwg(Awg):
     synthesizing standard waveforms (SIN, SQU, etc.) into data arrays
     that the DAQ can write to its analog outputs.
 
-    Trigger control is currently unsupported by this adapter: output_trigger and
-    set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
-    The underlying DAQ's hardware capabilities depend on its model and driver.
+    configure_trigger_output selects a DAQ pulse resource for output_trigger.
+    Hardware or software timing is supplied by the general DAQ API. Triggered
+    analog playback remains unsupported: an output pulse does not start or
+    synchronize this adapter's analog waveform.
     """
     
     def __init__(self, daq_instance: Daq, **kwargs):
@@ -36,6 +37,7 @@ class DaqAsAwg(Awg):
         )
 
         self.daq = daq_instance
+        self._trigger_pulse_config = None
 
         daq_channels = list(getattr(daq_instance, "ao_channel", None) or [0])
         self._daq_channel_map = {
@@ -62,6 +64,31 @@ class DaqAsAwg(Awg):
         # Track active channels for auto-update
         self._active_channels = set()
         
+    def configure_trigger_output(self, pulse_channel, pulse_width=0.001, active_high=True, *,
+                                 resource='digital', require_hardware_timing=False):
+        """Select an explicit DAQ terminal and pulse width (seconds), without I/O.
+
+        Channel numbers belong to the DAQ resource, not the AWG analog channels.
+        Use get_trigger_pulse_capabilities on the DAQ to inspect available outputs.
+        """
+        config = dict(channel=pulse_channel, pulse_width=pulse_width, active_high=active_high,
+                      resource=resource, require_hardware_timing=require_hardware_timing)
+        self.daq.validate_trigger_pulse(**config)
+        self._trigger_pulse_config = config
+
+    def output_trigger(self, *, cancel_event=None):
+        """Emit the configured external pulse; this does not launch analog playback."""
+        if self._trigger_pulse_config is None:
+            raise RuntimeError('Call configure_trigger_output to select a DAQ terminal first')
+        return self.daq.send_trigger_pulse(**self._trigger_pulse_config, cancel_event=cancel_event)
+
+    def configure_trigger(self, channel, trigger_source=None, trigger_level=None,
+                          trigger_slope=None, trigger_mode=None):
+        """Triggered analog playback is unsupported; pulse output is configured separately."""
+        if any(value is not None for value in
+               (trigger_source, trigger_level, trigger_slope, trigger_mode)):
+            raise NotImplementedError('DAQ adapter does not support triggered analog playback')
+
     def _get_params(self, channel):
         if channel not in self._wav_params:
             self._wav_params[channel] = {

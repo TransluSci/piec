@@ -1,6 +1,8 @@
 """Driver family for the USB-1208HS, USB-1208HS-2AO, and -4AO."""
 
 import time
+import math
+import threading
 from ctypes import c_double
 
 from ..digilent import Digilent
@@ -14,6 +16,7 @@ try:
         FunctionType,
         ScanOptions,
         Status,
+        TimerIdleState,
         ULRange,
     )
 except ImportError:
@@ -24,6 +27,7 @@ except ImportError:
     FunctionType = None
     ScanOptions = None
     Status = None
+    TimerIdleState = None
     ULRange = None
 
 
@@ -63,6 +67,51 @@ class USB1208HS(Digilent, Daq):
 
     dio_channel = list(range(16))
     dio_direction = ["I", "O"]
+
+    def get_trigger_pulse_capabilities(self):
+        capabilities = super().get_trigger_pulse_capabilities()
+        # 50% duty: 25 ns--50 s high/low widths stay within the documented
+        # 0.0094 Hz--20 MHz timer frequency range for all USB-1208HS variants.
+        capabilities['timer'] = {'channels': [0], 'timing': 'hardware',
+                                  'min_width': 25e-9, 'max_width': 50.0}
+        return capabilities
+
+    def send_trigger_pulse(self, channel, pulse_width, active_high=True, *,
+                           resource='digital', require_hardware_timing=False, cancel_event=None):
+        """Use TMR timer 0 for hardware pulses, or the base DIO software fallback.
+
+        Universal Library pulse_out_start returns quantized frequency/duty/delay.
+        Exactly one pulse is requested. Software controls launch latency; hardware
+        controls the pulse width. This does not arm or synchronize an AO/AI scan.
+        The TMR terminal must be reserved by the caller for the duration of this call.
+        See docs/daq_trigger_output.md for the manufacturer references.
+        """
+        if resource == 'digital':
+            return super().send_trigger_pulse(channel, pulse_width, active_high,
+                resource=resource, require_hardware_timing=require_hardware_timing,
+                cancel_event=cancel_event)
+        self.validate_trigger_pulse(channel, pulse_width, active_high,
+            resource=resource, require_hardware_timing=require_hardware_timing)
+        lock = self.__dict__.setdefault('_trigger_pulse_lock', threading.Lock())
+        with lock:
+            self._wait_trigger_pulse(0, cancel_event)
+            idle = TimerIdleState.LOW if active_high else TimerIdleState.HIGH
+            try:
+                frequency, duty, delay = self.ul.pulse_out_start(
+                    self.board_num, channel, 0.5 / pulse_width, 0.5,
+                    pulse_count=1, initial_delay=0, idle_state=idle)
+                if (not all(math.isfinite(v) for v in (frequency, duty, delay))
+                        or not 0.0094 <= frequency <= 20_000_000
+                        or not 0 < duty < 1 or not 0 <= delay <= 107.37):
+                    raise ValueError('Invalid timer settings returned by Universal Library')
+                # Wait a complete actual period, rather than stopping halfway
+                # through the programmed pulse. Cancellation still stops early.
+                self._wait_trigger_pulse(delay + 1.0 / frequency, cancel_event)
+            finally:
+                self.ul.pulse_out_stop(self.board_num, channel)
+        return {'resource': resource, 'channel': int(channel), 'timing': 'hardware',
+                'requested_pulse_width': float(pulse_width),
+                'programmed_pulse_width': duty / frequency, 'active_high': active_high}
 
     _AO_CHANNEL_COUNT_BY_MODEL = {
         "USB-1208HS": 0,

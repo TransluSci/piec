@@ -390,7 +390,7 @@ class TestAwgDriverAuditAndSafingContract:
         assert np.any(vawg.sample.output_voltage != 0.0)
 
     def test_unsupported_daq_adapter_produces_no_hardware_commands(self):
-        """DaqAsAwg adapter inherits empty trigger methods and does not call underlying DAQ methods."""
+        """Unconfigured pulses and unsupported playback fail before hardware I/O."""
         mock_daq = Mock()
         mock_daq.ao_channel = [0, 1]
         mock_daq.ao_sample_rate = 10000
@@ -398,13 +398,12 @@ class TestAwgDriverAuditAndSafingContract:
         adapter = DaqAsAwg(mock_daq)
         mock_daq.reset_mock()
 
-        # Calling output_trigger does nothing
-        result = adapter.output_trigger()
-        assert result is None
+        with pytest.raises(RuntimeError, match='configure_trigger_output'):
+            adapter.output_trigger()
         assert mock_daq.method_calls == []
 
-        # Calling configure_trigger does nothing
-        adapter.configure_trigger(1, trigger_source="MAN", trigger_level=1.0)
+        with pytest.raises(NotImplementedError, match='analog playback'):
+            adapter.configure_trigger(1, trigger_source="MAN", trigger_level=1.0)
         assert mock_daq.method_calls == []
 
     @pytest.mark.parametrize("cls", UNSUPPORTED_TRIGGER_CLASSES)

@@ -54,6 +54,18 @@ class VirtualDaq(VirtualInstrument, Daq):
 
     # --- SCPI-Equivalent Commands ---
 
+    def get_trigger_pulse_capabilities(self):
+        """Expose digital pulses as simulation, never hardware timing."""
+        capabilities = super().get_trigger_pulse_capabilities()
+        capabilities['digital']['timing'] = 'simulated'
+        return capabilities
+
+    def send_trigger_pulse(self, *args, **kwargs):
+        """Simulate digital transitions and retain metadata for completed pulses."""
+        result = super().send_trigger_pulse(*args, **kwargs)
+        self.state.setdefault('trigger_pulses', []).append(dict(result))
+        return result
+
     def idn(self):
         """
         Returns the identification string for the virtual DAQ.

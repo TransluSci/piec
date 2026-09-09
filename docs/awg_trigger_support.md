@@ -71,9 +71,10 @@ On 33500, the common `USER` waveform now maps to its documented `ARB` token,
 and `set_pulse_edge_time` sets both leading and trailing transitions instead of
 only the default leading edge.
 
-The DAQ adapter's operating code is unchanged. The generic DAQ contract has no
-trigger-arming/firing interface to delegate to; adding external synchronization
-requires a specific DAQ backend and timing contract. Existing Keysight81150a and
+The DAQ adapter now delegates explicitly configured external pulses to the general
+DAQ pulse API: USB1208HS timer output or software digital output, including USB231.
+This does not arm or synchronize analog playback. See [DAQ trigger output](daq_trigger_output.md).
+Existing Keysight81150a and
 SDG2000X trigger implementations are retained. Their mock command tests are not
 a new full hardware/protocol certification.
 
