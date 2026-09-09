@@ -260,6 +260,7 @@ class SDG2000X(Scpi, Awg):
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
 
+        trigger_source = trigger_source.upper()
         mapping = {'INT': 'INT', 'EXT': 'EXT', 'MAN': 'MAN'}
         if trigger_source not in mapping:
              raise ValueError(f"Invalid trigger source. Must be one of {list(mapping.keys())}")
@@ -273,6 +274,7 @@ class SDG2000X(Scpi, Awg):
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
 
+        trigger_slope = trigger_slope.upper()
         mapping = {'POS': 'RISE', 'NEG': 'FALL'}
         if trigger_slope not in mapping:
             raise ValueError(f"Invalid trigger slope. Must be one of {list(mapping.keys())}")
@@ -286,6 +288,7 @@ class SDG2000X(Scpi, Awg):
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
 
+        trigger_mode = trigger_mode.upper()
         mapping = {'EDGE': 'NCYC', 'LEV': 'GATE'}
         if trigger_mode not in mapping:
              raise ValueError(f"Invalid trigger mode. Must be one of {list(mapping.keys())}")

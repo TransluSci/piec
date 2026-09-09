@@ -367,7 +367,7 @@ class Awg(Instrument):
             trigger_slope (str): The trigger slope
             trigger_mode (str): The trigger mode
         """
-        if trigger_source is None:
+        if trigger_source is not None:
             self.set_trigger_source(channel, trigger_source)
         if trigger_level is not None:
             self.set_trigger_level(channel, trigger_level)
