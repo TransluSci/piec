@@ -238,64 +238,60 @@ class MeasurementRunner:
             save_partial=save_partial,
             options=options,
         )
+        # Measurement-specific validation must fail on the caller thread before
+        # a reservation exists. The worker validates again before entering I/O.
+        self._measurement._validate_options(request.options)
 
         with self._lock:
             if self._is_closing:
                 raise ConcurrentRunError("Cannot start run while window/application is closing")
+            if self._worker_thread is not None and self._worker_thread.is_alive():
+                raise ConcurrentRunError("Previous worker has not finished terminal delivery")
 
             # Step 1 & 2: Synchronous reservation on caller thread
             token = self._measurement._reserve(request)
             self._active_token = token
             self._last_worker_exc = None
 
-            # Step 3: Create non-daemon worker thread
-            worker = threading.Thread(
-                target=self._worker_entry,
-                args=(token, request),
-                name=f"MeasurementWorker-{token.run_id[:8]}",
-                daemon=False,
-            )
-
             # Step 4: Launch worker thread with start failure handling
             try:
+                worker = threading.Thread(
+                    target=self._worker_entry,
+                    args=(token, request),
+                    name=f"MeasurementWorker-{token.run_id[:8]}",
+                    daemon=False,
+                )
                 worker.start()
                 self._worker_thread = worker
                 return token
             except BaseException as exc:
-                # Thread start failed: finalize reservation as FAILED with safety NOT_NEEDED
-                start_time = time.time()
-                try:
-                    self._measurement._transition_to(
-                        RunState.FAILED, f"Worker thread start failed: {exc}"
-                    )
-                except Exception:
-                    pass
+                self._last_worker_exc = exc
+                self._finalize_unstarted(token, request, exc)
+                raise
 
-                safety = SafetyReport(
-                    status=SafetyStatus.NOT_NEEDED,
-                    summary=f"Worker thread creation failed: {exc}",
-                )
-                self._measurement._coordinator.set_safety_status(safety.status)
-
-                record = RunRecord(
-                    run_id=token.run_id,
-                    generation=token.generation,
-                    start_time=start_time,
-                    end_time=time.time(),
-                    state=RunState.FAILED,
-                    safety=safety,
-                    save_requested=request.save,
-                    primary_error_phase="STARTING",
-                    primary_error_type=type(exc).__name__,
-                    primary_error_message=str(exc) or repr(exc),
-                )
-                try:
-                    self._measurement._record_run(record)
-                    self._measurement._emit_terminal_event(record, None)
-                except Exception:
-                    pass
-
-                raise exc
+    def _finalize_unstarted(self, token, request, exc) -> None:
+        """Finalize only this runner's unconsumed reservation, with no hardware I/O."""
+        coordinator = self._measurement._coordinator
+        with coordinator._state_lock:
+            if (coordinator.active_token != token
+                    or coordinator._consumed_token == token
+                    or coordinator.run_state not in {RunState.STARTING, RunState.STOPPING}):
+                return
+            if coordinator.run_state == RunState.STOPPING:
+                coordinator.transition_to(RunState.SAFING, "Finalizing unstarted worker")
+            safety = SafetyReport(
+                status=SafetyStatus.NOT_NEEDED,
+                summary=f"Worker failed before execution: {exc}",
+            )
+            record = RunRecord(
+                run_id=token.run_id, generation=token.generation,
+                start_time=time.time(), end_time=time.time(),
+                state=RunState.FAILED, safety=safety, save_requested=request.save,
+                primary_error_phase="STARTING", primary_error_type=type(exc).__name__,
+                primary_error_message=str(exc) or repr(exc),
+            )
+            self._measurement._record_run(record)
+        self._measurement._emit_terminal_event(record, None)
 
     def _worker_entry(
         self, token: ReservationToken, request: RunRequest
@@ -312,6 +308,7 @@ class MeasurementRunner:
         except BaseException as exc:
             with self._lock:
                 self._last_worker_exc = exc
+            self._finalize_unstarted(token, request, exc)
 
     def request_stop(self) -> None:
         """
