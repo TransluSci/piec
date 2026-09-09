@@ -20,6 +20,8 @@ from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 import uuid
 
+import pandas as pd
+
 
 # ============================================================================
 # 1. State Enums & Legal Transitions (Section 4.1)
@@ -292,6 +294,26 @@ class RunRecord:
         object.__setattr__(self, "snapshot_count", int(snapshot_count))
         meta = copy.deepcopy(dict(metadata)) if metadata is not None else {}
         object.__setattr__(self, "metadata", MappingProxyType(meta))
+
+
+@dataclass(frozen=True)
+class TerminalEvent:
+    """
+    Terminal event emitted upon conclusion of a run reservation (Section 6.2).
+    """
+
+    run_id: str
+    generation: int
+    state: RunState
+    safety: SafetyReport
+    filename: Optional[str] = None
+    partial_filename: Optional[str] = None
+    primary_error_phase: Optional[str] = None
+    primary_error_type: Optional[str] = None
+    primary_error_message: Optional[str] = None
+    secondary_errors: Tuple[str, ...] = ()
+    record: Optional[RunRecord] = None
+    data: Optional[pd.DataFrame] = None
 
 
 # ============================================================================
