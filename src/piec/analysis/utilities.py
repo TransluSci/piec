@@ -6,24 +6,23 @@ import os
 
 def metadata_and_data_to_csv(metadata, data, path):
     """
-    Convenience function that takes two arbitrary dataframes and writes them to a csv one below the other with a space in between.
-    Used nominally for a 1XN metadata df and a data df
+    Convenience function that takes two arbitrary dataframes and writes them to a csv
+    one below the other with a space in between through a single UTF-8 handle (Section 8.1).
+    Used nominally for a 1XN metadata df and a data df.
 
     :param metadata: dataframe containing metadata, standard is a 1XN table (many columns with one value each)
     :param data: dataframe containing time data captured from measurment, appended to csv below metadata
     :param path: path to save csv in
-
-    ***NOTE Made with help from ChatGPT LLM***
     """
-
-    metadata.to_csv(path, index=False, header=True)
-
-    # Add a blank line to the CSV file
-    with open(path, 'a') as f:
-        f.write('\n')
-
-    # Append data to the same CSV file with its own header
-    data.to_csv(path, mode='a', index=False, header=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        metadata.to_csv(f, index=False, header=True, lineterminator="\n")
+        f.write("\n")
+        data.to_csv(f, index=False, header=True, lineterminator="\n")
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except (AttributeError, OSError):
+            pass
 
 def standard_csv_to_metadata_and_data(path, metadata_header_row=0, data_header_row=2):
     """
