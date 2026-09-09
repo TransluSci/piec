@@ -101,7 +101,7 @@ class IllegalStateTransitionError(MeasurementLifecycleError):
     """Raised when an illegal state transition is attempted."""
 
 
-class ConcurrentRunError(MeasurementLifecycleError):
+class ConcurrentRunError(MeasurementLifecycleError, RuntimeError):
     """Raised when a run reservation is attempted while another run or idle lease is active."""
 
 

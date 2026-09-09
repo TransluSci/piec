@@ -1,22 +1,28 @@
 """
-BaseMeasurement class implementing standardized lifecycle contracts and full-run engine.
+BaseMeasurement class implementing standardized lifecycle contracts, full-run engine,
+and piecewise execution sessions / standalone scopes.
 
-Fulfills Checkpoint 8 and 9a of MEASUREMENT_STANDARDIZATION_PLAN.md:
+Fulfills Checkpoint 8, 9a, and 9b of MEASUREMENT_STANDARDIZATION_PLAN.md:
 - Public execution wrapper run_experiment() enforcing canonical ordering (Section 3.1 & 4.4);
 - Stop-before-start zero-I/O aborts with safety NOT_NEEDED (Section 4.2 & 4.4);
 - Safing guarantee and error precedence handling (Section 5.1 & 5.3);
 - Outcome and persistence matrix compliance (Section 4.6);
 - Single RunRecord and TerminalEvent per reservation (Section 4.4 & 6.2);
+- Piecewise execution sessions via session() context manager (Section 4.5);
+- Standalone configure_instruments() and capture_data() scopes (Section 4.5);
+- Idle safe_shutdown() with command lease, and non-owner deferral (Section 4.3 & 5.1);
 - Protected subclass hooks for configuration, acquisition, safing, analysis, and publication.
 """
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple, Union
 import pandas as pd
 
 from .contracts import (
+    ConcurrentRunError,
     HardwareSafetyError,
     IllegalStateTransitionError,
     LifecycleCoordinator,
@@ -29,6 +35,101 @@ from .contracts import (
     SafetyStatus,
     TerminalEvent,
 )
+
+
+class MeasurementSession:
+    """
+    Context manager representing a piecewise execution session (Section 4.5).
+
+    Created via `measurement.session(*, save=False, save_partial=None, options=None)`.
+    Owns one synchronous reservation and exactly one shutdown boundary on exit.
+    """
+
+    def __init__(
+        self,
+        measurement: BaseMeasurement,
+        save: bool = False,
+        save_partial: Optional[bool] = None,
+        options: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        self._measurement = measurement
+        self._save = save
+        self._save_partial = save_partial
+        self._options = options
+        self._token: Optional[ReservationToken] = None
+        self._request: Optional[RunRequest] = None
+        self._start_time: float = 0.0
+        self._captured: bool = False
+        self._configured: bool = False
+
+    @property
+    def token(self) -> Optional[ReservationToken]:
+        """Active reservation token for this session."""
+        return self._token
+
+    @property
+    def run_state(self) -> RunState:
+        """Current lifecycle run state."""
+        return self._measurement.run_state
+
+    @property
+    def safety_status(self) -> SafetyStatus:
+        """Current verified safety status."""
+        return self._measurement.safety_status
+
+    @property
+    def data(self) -> Optional[pd.DataFrame]:
+        """Analyzed result data, or raw partial data on abort/failure."""
+        return self._measurement.data
+
+    @property
+    def raw_data(self) -> Optional[pd.DataFrame]:
+        """Full raw acquisition data after completion."""
+        return self._measurement.raw_data
+
+    @property
+    def filename(self) -> Optional[str]:
+        """Path to successfully published completed data CSV, or None."""
+        return self._measurement.filename
+
+    @property
+    def partial_filename(self) -> Optional[str]:
+        """Path to published incomplete/aborted data CSV, or None."""
+        return self._measurement.partial_filename
+
+    def configure_instruments(
+        self, *, options: Optional[Mapping[str, Any]] = None
+    ) -> None:
+        """Configures instruments within the active session scope."""
+        self._measurement._session_configure(options=options)
+
+    def capture_data(
+        self,
+        *,
+        on_update: Optional[Callable[[Any], None]] = None,
+        options: Optional[Mapping[str, Any]] = None,
+    ) -> pd.DataFrame:
+        """Captures data within the active session scope (at most once)."""
+        return self._measurement._session_capture(
+            on_update=on_update, options=options
+        )
+
+    def safe_shutdown(self) -> SafetyReport:
+        """Safely shuts down instruments within the session."""
+        return self._measurement.safe_shutdown()
+
+    def request_stop(self) -> None:
+        """Requests cooperative stop."""
+        self._measurement.request_stop()
+
+    def __enter__(self) -> MeasurementSession:
+        self._measurement._enter_session(
+            self, self._save, self._save_partial, self._options
+        )
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        return self._measurement._exit_session(self, exc_type, exc_val, exc_tb)
 
 
 class BaseMeasurement:
@@ -50,6 +151,10 @@ class BaseMeasurement:
         self._data: Optional[pd.DataFrame] = None
         self._filename: Optional[str] = None
         self._partial_filename: Optional[str] = None
+        self._active_session: Optional[MeasurementSession] = None
+        self._active_owner_thread_id: Optional[int] = None
+        self._session_capture_count: int = 0
+        self._last_safing_exc: Optional[BaseException] = None
 
     @property
     def run_state(self) -> RunState:
@@ -95,6 +200,25 @@ class BaseMeasurement:
     def raw_data(self) -> Optional[pd.DataFrame]:
         """Full raw acquisition data after completion."""
         return self._raw_data
+
+    @property
+    def active_session(self) -> Optional[MeasurementSession]:
+        """Current active piecewise session context, if any."""
+        return self._active_session
+
+    def snapshot(self) -> Mapping[str, Any]:
+        """
+        Public snapshot query wrapper (Section 6.1).
+
+        Thread-safe read-only snapshot of current measurement state.
+        """
+        with self._coordinator._state_lock:
+            return {
+                "run_id": getattr(self._coordinator.active_token, "run_id", None),
+                "generation": self._coordinator.generation,
+                "state": self.run_state.value,
+                "safety": self.safety_status.value,
+            }
 
     def request_stop(self) -> None:
         """Requests cooperative software stop of the active run."""
@@ -184,6 +308,11 @@ class BaseMeasurement:
         11. Record diagnostics/history, finalize RunRecord, and emit TerminalEvent.
         12. Re-raise primary error (or HardwareSafetyError if cleanup failed), otherwise return data.
         """
+        if self._active_session is not None:
+            raise ConcurrentRunError(
+                "Cannot call run_experiment() while a session is active."
+            )
+
         self._validate_options(options)
         request = RunRequest(
             on_update=on_update,
@@ -192,25 +321,528 @@ class BaseMeasurement:
             options=options,
         )
 
+        current_thread = threading.get_ident()
+        self._active_owner_thread_id = current_thread
         start_time = time.time()
-        if token is None:
-            token = self._reserve(request)
 
-        # Reset active results for this run
+        try:
+            if token is None:
+                token = self._reserve(request)
+
+            # Reset active results for this run
+            self._raw_data = None
+            self._data = None
+            self._filename = None
+            self._partial_filename = None
+
+            # Step 2: Stop-before-start check (Section 4.2 & 4.4)
+            if self._coordinator.is_stop_requested:
+                if self.run_state != RunState.STOPPING:
+                    self._transition_to(
+                        RunState.STOPPING, "Stop requested before I/O"
+                    )
+                self._transition_to(
+                    RunState.ABORTED, "Aborted before I/O began"
+                )
+                safety = SafetyReport(
+                    status=SafetyStatus.NOT_NEEDED,
+                    summary="Stop requested before instrument I/O began",
+                )
+                record = RunRecord(
+                    run_id=token.run_id,
+                    generation=token.generation,
+                    start_time=start_time,
+                    end_time=time.time(),
+                    state=RunState.ABORTED,
+                    safety=safety,
+                    save_requested=False,
+                )
+                self._record_run(record)
+                self._data = pd.DataFrame()
+                self._emit_terminal_event(record, self._data)
+                return self._data
+
+            primary_error: Optional[BaseException] = None
+            primary_error_phase: Optional[str] = None
+            configured_ok = False
+            safety_report: Optional[SafetyReport] = None
+
+            try:
+                # Token validation
+                self._validate_token(token)
+
+                # Step 3: Configure instruments
+                self._transition_to(
+                    RunState.CONFIGURING, "Configuring instruments"
+                )
+                try:
+                    self._configure_instruments(request)
+                    configured_ok = True
+                except BaseException as exc:
+                    primary_error = exc
+                    primary_error_phase = "CONFIGURING"
+
+                # Step 4 & 5: Capture data
+                if configured_ok:
+                    if self._coordinator.is_stop_requested:
+                        if self.run_state != RunState.STOPPING:
+                            self._transition_to(
+                                RunState.STOPPING,
+                                "Stop requested before acquisition",
+                            )
+                    else:
+                        self._transition_to(
+                            RunState.RUNNING, "Starting acquisition"
+                        )
+                        try:
+                            raw = self._capture_data(
+                                request, on_update=on_update
+                            )
+                            self._raw_data = (
+                                raw.copy()
+                                if raw is not None
+                                else pd.DataFrame()
+                            )
+                        except BaseException as exc:
+                            primary_error = exc
+                            primary_error_phase = "RUNNING"
+
+                        if (
+                            self._coordinator.is_stop_requested
+                            and self.run_state == RunState.RUNNING
+                        ):
+                            self._transition_to(
+                                RunState.STOPPING,
+                                "Stop requested during acquisition",
+                            )
+
+            finally:
+                # Step 6 & 7: Safing
+                if (
+                    self.run_state.is_active
+                    and self.run_state != RunState.STARTING
+                ):
+                    if self.run_state != RunState.SAFING:
+                        try:
+                            self._transition_to(
+                                RunState.SAFING, "Performing safe shutdown"
+                            )
+                        except IllegalStateTransitionError:
+                            pass
+
+                    safety_report = self._perform_safe_shutdown()
+                    if (
+                        self._last_safing_exc is not None
+                        and isinstance(
+                            self._last_safing_exc,
+                            (KeyboardInterrupt, SystemExit),
+                        )
+                        and primary_error is None
+                    ):
+                        primary_error = self._last_safing_exc
+                        primary_error_phase = "SAFING"
+
+                if safety_report is None:
+                    safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
+
+            # Step 8, 9, 10: Analysis and Persistence (Section 4.4 & 4.6)
+            target_outcome = RunState.COMPLETED
+            if primary_error is not None:
+                target_outcome = RunState.FAILED
+            elif self._coordinator.is_stop_requested:
+                target_outcome = RunState.ABORTED
+            elif safety_report.status == SafetyStatus.UNSAFE:
+                target_outcome = RunState.FAILED
+
+            if target_outcome == RunState.COMPLETED:
+                # Step 8: Analyze
+                self._transition_to(RunState.ANALYZING, "Analyzing data")
+                raw_to_analyze = (
+                    self._raw_data.copy()
+                    if self._raw_data is not None
+                    else pd.DataFrame()
+                )
+                try:
+                    analyzed = self._analyze_data(raw_to_analyze, request)
+                    self._data = (
+                        analyzed.copy()
+                        if analyzed is not None
+                        else pd.DataFrame()
+                    )
+                except BaseException as exc:
+                    primary_error = exc
+                    primary_error_phase = "ANALYZING"
+                    target_outcome = RunState.FAILED
+
+                # Step 9: Save
+                if target_outcome == RunState.COMPLETED:
+                    if request.save:
+                        self._transition_to(
+                            RunState.SAVING, "Publishing completed data"
+                        )
+                        try:
+                            self._filename = self._publish_data(
+                                self._data, request, is_partial=False
+                            )
+                            self._transition_to(
+                                RunState.COMPLETED, "Completed successfully"
+                            )
+                        except BaseException as exc:
+                            primary_error = exc
+                            primary_error_phase = "SAVING"
+                            self._transition_to(
+                                RunState.FAILED, "Publication failed"
+                            )
+                            target_outcome = RunState.FAILED
+                    else:
+                        self._transition_to(
+                            RunState.COMPLETED, "Completed without saving"
+                        )
+
+            if target_outcome == RunState.ABORTED:
+                # Analysis skipped; data is raw partial data
+                self._data = (
+                    self._raw_data.copy()
+                    if self._raw_data is not None
+                    else pd.DataFrame()
+                )
+                should_save_partial = (
+                    request.save_partial
+                    if request.save_partial is not None
+                    else (
+                        request.save
+                        and self._data is not None
+                        and not self._data.empty
+                    )
+                )
+                if (
+                    should_save_partial
+                    and self._data is not None
+                    and not self._data.empty
+                ):
+                    self._transition_to(
+                        RunState.SAVING, "Publishing partial data"
+                    )
+                    try:
+                        self._partial_filename = self._publish_data(
+                            self._data, request, is_partial=True
+                        )
+                        self._transition_to(
+                            RunState.ABORTED, "Aborted with partial data saved"
+                        )
+                    except BaseException as exc:
+                        primary_error = exc
+                        primary_error_phase = "SAVING"
+                        self._transition_to(
+                            RunState.FAILED, "Partial save failed after abort"
+                        )
+                        target_outcome = RunState.FAILED
+                else:
+                    self._transition_to(
+                        RunState.ABORTED, "Aborted without saving partial"
+                    )
+
+            if target_outcome == RunState.FAILED:
+                # Analysis skipped; data is raw partial data
+                self._data = (
+                    self._raw_data.copy()
+                    if self._raw_data is not None
+                    else pd.DataFrame()
+                )
+                should_save_partial = (
+                    request.save_partial
+                    if request.save_partial is not None
+                    else False
+                )
+                if (
+                    should_save_partial
+                    and self._data is not None
+                    and not self._data.empty
+                ):
+                    try:
+                        if self.run_state in {
+                            RunState.SAFING,
+                            RunState.ANALYZING,
+                        }:
+                            self._transition_to(
+                                RunState.SAVING,
+                                "Publishing partial data on failure",
+                            )
+                            self._partial_filename = self._publish_data(
+                                self._data, request, is_partial=True
+                            )
+                    except Exception:
+                        pass
+
+                if self.run_state in {
+                    RunState.SAFING,
+                    RunState.ANALYZING,
+                    RunState.SAVING,
+                }:
+                    self._transition_to(RunState.FAILED, "Run failed")
+
+            # Step 11: Finalize record and emit event
+            end_time = time.time()
+            sec_errors = []
+            if (
+                primary_error_phase != "SAFING"
+                and safety_report.status == SafetyStatus.UNSAFE
+            ):
+                sec_errors.append(
+                    f"Shutdown error: {safety_report.error or safety_report.summary}"
+                )
+
+            record = RunRecord(
+                run_id=token.run_id,
+                generation=token.generation,
+                start_time=start_time,
+                end_time=end_time,
+                state=self.run_state,
+                safety=safety_report,
+                save_requested=request.save,
+                filename=self._filename,
+                partial_filename=self._partial_filename,
+                primary_error_phase=primary_error_phase,
+                primary_error_type=(
+                    type(primary_error).__name__
+                    if primary_error is not None
+                    else None
+                ),
+                primary_error_message=(
+                    str(primary_error) if primary_error is not None else None
+                ),
+                secondary_errors=tuple(sec_errors),
+                snapshot_count=0,
+            )
+            self._record_run(record)
+            self._emit_terminal_event(record, self._data)
+
+            # Step 12: Re-raise error or return data
+            if primary_error is not None:
+                raise primary_error
+            if safety_report.status == SafetyStatus.UNSAFE:
+                raise HardwareSafetyError(
+                    f"Hardware safety could not be verified: {safety_report.error or safety_report.summary}",
+                    safety_report=safety_report,
+                )
+
+            return self._data
+        finally:
+            self._active_owner_thread_id = None
+
+    # ========================================================================
+    # Sessions & Standalone Scopes (Section 4.5 & 5.1)
+    # ========================================================================
+
+    def session(
+        self,
+        *,
+        save: bool = False,
+        save_partial: Optional[bool] = None,
+        options: Optional[Mapping[str, Any]] = None,
+    ) -> MeasurementSession:
+        """
+        Public piecewise session context manager (Section 3.1 & 4.5).
+
+        Creates one synchronous reservation bound to the calling thread and owns
+        exactly one shutdown boundary on exit. Default save is False.
+        """
+        return MeasurementSession(
+            measurement=self,
+            save=save,
+            save_partial=save_partial,
+            options=options,
+        )
+
+    def configure_instruments(
+        self, *, options: Optional[Mapping[str, Any]] = None
+    ) -> None:
+        """
+        Public instrument configuration wrapper (Section 3.1 & 4.5).
+
+        - Inside an active session on owner thread: executes within session scope without creating nested reservations.
+        - Outside session: transient operation scope that enters CONFIGURING, executes configuration hook,
+          safes on exit, and transitions to COMPLETED without analyzing or saving.
+        """
+        current_thread = threading.get_ident()
+        if self._active_session is not None:
+            if self._active_owner_thread_id != current_thread:
+                raise ConcurrentRunError(
+                    "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
+                )
+            self._session_configure(options=options)
+            return
+
+        if (
+            self._active_owner_thread_id is not None
+            and self._active_owner_thread_id != current_thread
+        ):
+            raise ConcurrentRunError(
+                "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
+            )
+
+        # Standalone transient scope
+        self._validate_options(options)
+        request = RunRequest(save=False, save_partial=False, options=options)
+        token = self._reserve(request)
+        self._active_owner_thread_id = current_thread
+        start_time = time.time()
+
         self._raw_data = None
         self._data = None
         self._filename = None
         self._partial_filename = None
 
-        # Step 2: Stop-before-start check (Section 4.2 & 4.4)
         if self._coordinator.is_stop_requested:
-            if self.run_state != RunState.STOPPING:
-                self._transition_to(RunState.STOPPING, "Stop requested before I/O")
-            self._transition_to(RunState.ABORTED, "Aborted before I/O began")
-            safety = SafetyReport(
-                status=SafetyStatus.NOT_NEEDED,
-                summary="Stop requested before instrument I/O began",
+            self._transition_to(
+                RunState.STOPPING, "Stop requested before configuration"
             )
+            self._transition_to(RunState.ABORTED, "Aborted before I/O began")
+            safety = SafetyReport(status=SafetyStatus.NOT_NEEDED)
+            record = RunRecord(
+                run_id=token.run_id,
+                generation=token.generation,
+                start_time=start_time,
+                end_time=time.time(),
+                state=RunState.ABORTED,
+                safety=safety,
+                save_requested=False,
+            )
+            self._record_run(record)
+            self._emit_terminal_event(record, pd.DataFrame())
+            self._active_owner_thread_id = None
+            return
+
+        primary_error: Optional[BaseException] = None
+        primary_error_phase: Optional[str] = None
+        safety_report: Optional[SafetyReport] = None
+
+        try:
+            self._validate_token(token)
+            self._transition_to(RunState.CONFIGURING, "Configuring instruments")
+            self._configure_instruments(request)
+        except BaseException as exc:
+            primary_error = exc
+            primary_error_phase = "CONFIGURING"
+        finally:
+            if self.run_state.is_active:
+                if self.run_state != RunState.SAFING:
+                    try:
+                        self._transition_to(
+                            RunState.SAFING, "Performing safe shutdown"
+                        )
+                    except IllegalStateTransitionError:
+                        pass
+                safety_report = self._perform_safe_shutdown()
+
+            if safety_report is None:
+                safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
+
+            target_outcome = RunState.COMPLETED
+            if (
+                primary_error is not None
+                or safety_report.status == SafetyStatus.UNSAFE
+            ):
+                target_outcome = RunState.FAILED
+            elif self._coordinator.is_stop_requested:
+                target_outcome = RunState.ABORTED
+
+            self._transition_to(
+                target_outcome, f"Configuration finished ({target_outcome.value})"
+            )
+
+            sec_errors = []
+            if (
+                primary_error_phase != "SAFING"
+                and safety_report.status == SafetyStatus.UNSAFE
+            ):
+                sec_errors.append(
+                    f"Shutdown error: {safety_report.error or safety_report.summary}"
+                )
+
+            record = RunRecord(
+                run_id=token.run_id,
+                generation=token.generation,
+                start_time=start_time,
+                end_time=time.time(),
+                state=self.run_state,
+                safety=safety_report,
+                save_requested=False,
+                primary_error_phase=primary_error_phase,
+                primary_error_type=(
+                    type(primary_error).__name__
+                    if primary_error is not None
+                    else None
+                ),
+                primary_error_message=(
+                    str(primary_error) if primary_error is not None else None
+                ),
+                secondary_errors=tuple(sec_errors),
+            )
+            self._record_run(record)
+            self._emit_terminal_event(record, pd.DataFrame())
+            self._active_owner_thread_id = None
+
+        if primary_error is not None:
+            raise primary_error
+        if safety_report.status == SafetyStatus.UNSAFE:
+            raise HardwareSafetyError(
+                f"Hardware safety could not be verified: {safety_report.error or safety_report.summary}",
+                safety_report=safety_report,
+            )
+
+    def capture_data(
+        self,
+        *,
+        on_update: Optional[Callable[[Any], None]] = None,
+        options: Optional[Mapping[str, Any]] = None,
+    ) -> pd.DataFrame:
+        """
+        Public data capture wrapper (Section 3.1 & 4.5).
+
+        - Inside an active session on owner thread: delegates within session scope without a second cleanup.
+        - Outside session: transient capture scope that passes through CONFIGURING for prerequisite validation,
+          runs acquisition, safes on exit, and transitions to COMPLETED without analyzing or saving. Returns raw DataFrame.
+        """
+        current_thread = threading.get_ident()
+        if self._active_session is not None:
+            if self._active_owner_thread_id != current_thread:
+                raise ConcurrentRunError(
+                    "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
+                )
+            return self._session_capture(on_update=on_update, options=options)
+
+        if (
+            self._active_owner_thread_id is not None
+            and self._active_owner_thread_id != current_thread
+        ):
+            raise ConcurrentRunError(
+                "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
+            )
+
+        # Standalone transient scope
+        self._validate_options(options)
+        request = RunRequest(
+            on_update=on_update,
+            save=False,
+            save_partial=False,
+            options=options,
+        )
+        token = self._reserve(request)
+        self._active_owner_thread_id = current_thread
+        start_time = time.time()
+
+        self._raw_data = None
+        self._data = None
+        self._filename = None
+        self._partial_filename = None
+
+        if self._coordinator.is_stop_requested:
+            self._transition_to(
+                RunState.STOPPING, "Stop requested before capture"
+            )
+            self._transition_to(RunState.ABORTED, "Aborted before I/O began")
+            safety = SafetyReport(status=SafetyStatus.NOT_NEEDED)
             record = RunRecord(
                 run_id=token.run_id,
                 generation=token.generation,
@@ -223,19 +855,20 @@ class BaseMeasurement:
             self._record_run(record)
             self._data = pd.DataFrame()
             self._emit_terminal_event(record, self._data)
+            self._active_owner_thread_id = None
             return self._data
 
         primary_error: Optional[BaseException] = None
         primary_error_phase: Optional[str] = None
-        configured_ok = False
         safety_report: Optional[SafetyReport] = None
+        configured_ok = False
 
         try:
-            # Token validation
             self._validate_token(token)
-
-            # Step 3: Configure instruments
-            self._transition_to(RunState.CONFIGURING, "Configuring instruments")
+            # Pass through CONFIGURING for prerequisite validation
+            self._transition_to(
+                RunState.CONFIGURING, "Validating prerequisites"
+            )
             try:
                 self._configure_instruments(request)
                 configured_ok = True
@@ -243,20 +876,21 @@ class BaseMeasurement:
                 primary_error = exc
                 primary_error_phase = "CONFIGURING"
 
-            # Step 4 & 5: Capture data
             if configured_ok:
                 if self._coordinator.is_stop_requested:
-                    if self.run_state != RunState.STOPPING:
-                        self._transition_to(
-                            RunState.STOPPING, "Stop requested before acquisition"
-                        )
+                    self._transition_to(
+                        RunState.STOPPING, "Stop requested before acquisition"
+                    )
                 else:
-                    self._transition_to(RunState.RUNNING, "Starting acquisition")
+                    self._transition_to(
+                        RunState.RUNNING, "Starting standalone acquisition"
+                    )
                     try:
                         raw = self._capture_data(request, on_update=on_update)
                         self._raw_data = (
                             raw.copy() if raw is not None else pd.DataFrame()
                         )
+                        self._data = self._raw_data.copy()
                     except BaseException as exc:
                         primary_error = exc
                         primary_error_phase = "RUNNING"
@@ -266,205 +900,68 @@ class BaseMeasurement:
                         and self.run_state == RunState.RUNNING
                     ):
                         self._transition_to(
-                            RunState.STOPPING, "Stop requested during acquisition"
+                            RunState.STOPPING,
+                            "Stop requested during acquisition",
                         )
-
         finally:
-            # Step 6 & 7: Safing
-            if self.run_state.is_active and self.run_state != RunState.STARTING:
+            if self.run_state.is_active:
                 if self.run_state != RunState.SAFING:
                     try:
-                        self._transition_to(RunState.SAFING, "Performing safe shutdown")
+                        self._transition_to(
+                            RunState.SAFING, "Performing safe shutdown"
+                        )
                     except IllegalStateTransitionError:
                         pass
-
-                try:
-                    raw_safety = self._safe_shutdown()
-                    if isinstance(raw_safety, SafetyReport):
-                        safety_report = raw_safety
-                    elif isinstance(raw_safety, (list, tuple)):
-                        all_ok = all(
-                            getattr(a, "succeeded", False) for a in raw_safety
-                        )
-                        st = SafetyStatus.SAFE if all_ok else SafetyStatus.UNSAFE
-                        safety_report = SafetyReport(
-                            status=st,
-                            actions=tuple(raw_safety),
-                            summary=(
-                                "Safe shutdown completed"
-                                if all_ok
-                                else "One or more shutdown actions failed"
-                            ),
-                        )
-                    else:
-                        safety_report = SafetyReport(
-                            status=SafetyStatus.SAFE, summary="Default clean shutdown"
-                        )
-                except BaseException as exc:
-                    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                        if primary_error is None:
-                            primary_error = exc
-                            primary_error_phase = "SAFING"
-
-                    action = SafetyAction(
-                        name="safe_shutdown",
-                        attempted=True,
-                        succeeded=False,
-                        error=str(exc),
-                    )
-                    safety_report = SafetyReport(
-                        status=SafetyStatus.UNSAFE,
-                        actions=(action,),
-                        error=str(exc),
-                        summary=f"Shutdown failed: {exc}",
-                    )
+                safety_report = self._perform_safe_shutdown()
 
             if safety_report is None:
                 safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
 
-        # Step 8, 9, 10: Analysis and Persistence (Section 4.4 & 4.6)
-        target_outcome = RunState.COMPLETED
-        if primary_error is not None:
-            target_outcome = RunState.FAILED
-        elif self._coordinator.is_stop_requested:
-            target_outcome = RunState.ABORTED
-        elif safety_report.status == SafetyStatus.UNSAFE:
-            target_outcome = RunState.FAILED
-
-        if target_outcome == RunState.COMPLETED:
-            # Step 8: Analyze
-            self._transition_to(RunState.ANALYZING, "Analyzing data")
-            raw_to_analyze = (
-                self._raw_data.copy()
-                if self._raw_data is not None
-                else pd.DataFrame()
-            )
-            try:
-                analyzed = self._analyze_data(raw_to_analyze, request)
-                self._data = analyzed.copy() if analyzed is not None else pd.DataFrame()
-            except BaseException as exc:
-                primary_error = exc
-                primary_error_phase = "ANALYZING"
+            target_outcome = RunState.COMPLETED
+            if (
+                primary_error is not None
+                or safety_report.status == SafetyStatus.UNSAFE
+            ):
                 target_outcome = RunState.FAILED
+            elif self._coordinator.is_stop_requested:
+                target_outcome = RunState.ABORTED
 
-            # Step 9: Save
-            if target_outcome == RunState.COMPLETED:
-                if request.save:
-                    self._transition_to(RunState.SAVING, "Publishing completed data")
-                    try:
-                        self._filename = self._publish_data(
-                            self._data, request, is_partial=False
-                        )
-                        self._transition_to(
-                            RunState.COMPLETED, "Completed successfully"
-                        )
-                    except BaseException as exc:
-                        primary_error = exc
-                        primary_error_phase = "SAVING"
-                        self._transition_to(RunState.FAILED, "Publication failed")
-                        target_outcome = RunState.FAILED
-                else:
-                    self._transition_to(
-                        RunState.COMPLETED, "Completed without saving"
-                    )
+            self._transition_to(
+                target_outcome, f"Capture finished ({target_outcome.value})"
+            )
 
-        if target_outcome == RunState.ABORTED:
-            # Analysis skipped; data is raw partial data
-            self._data = (
-                self._raw_data.copy()
-                if self._raw_data is not None
-                else pd.DataFrame()
-            )
-            should_save_partial = (
-                request.save_partial
-                if request.save_partial is not None
-                else (
-                    request.save
-                    and self._data is not None
-                    and not self._data.empty
-                )
-            )
-            if should_save_partial and self._data is not None and not self._data.empty:
-                self._transition_to(RunState.SAVING, "Publishing partial data")
-                try:
-                    self._partial_filename = self._publish_data(
-                        self._data, request, is_partial=True
-                    )
-                    self._transition_to(
-                        RunState.ABORTED, "Aborted with partial data saved"
-                    )
-                except BaseException as exc:
-                    primary_error = exc
-                    primary_error_phase = "SAVING"
-                    self._transition_to(
-                        RunState.FAILED, "Partial save failed after abort"
-                    )
-                    target_outcome = RunState.FAILED
-            else:
-                self._transition_to(
-                    RunState.ABORTED, "Aborted without saving partial"
+            sec_errors = []
+            if (
+                primary_error_phase != "SAFING"
+                and safety_report.status == SafetyStatus.UNSAFE
+            ):
+                sec_errors.append(
+                    f"Shutdown error: {safety_report.error or safety_report.summary}"
                 )
 
-        if target_outcome == RunState.FAILED:
-            # Analysis skipped; data is raw partial data
-            self._data = (
-                self._raw_data.copy()
-                if self._raw_data is not None
-                else pd.DataFrame()
+            record = RunRecord(
+                run_id=token.run_id,
+                generation=token.generation,
+                start_time=start_time,
+                end_time=time.time(),
+                state=self.run_state,
+                safety=safety_report,
+                save_requested=False,
+                primary_error_phase=primary_error_phase,
+                primary_error_type=(
+                    type(primary_error).__name__
+                    if primary_error is not None
+                    else None
+                ),
+                primary_error_message=(
+                    str(primary_error) if primary_error is not None else None
+                ),
+                secondary_errors=tuple(sec_errors),
             )
-            should_save_partial = (
-                request.save_partial if request.save_partial is not None else False
-            )
-            if should_save_partial and self._data is not None and not self._data.empty:
-                try:
-                    if self.run_state in {RunState.SAFING, RunState.ANALYZING}:
-                        self._transition_to(
-                            RunState.SAVING, "Publishing partial data on failure"
-                        )
-                        self._partial_filename = self._publish_data(
-                            self._data, request, is_partial=True
-                        )
-                except Exception:
-                    pass
+            self._record_run(record)
+            self._emit_terminal_event(record, self._data)
+            self._active_owner_thread_id = None
 
-            if self.run_state in {RunState.SAFING, RunState.ANALYZING, RunState.SAVING}:
-                self._transition_to(RunState.FAILED, "Run failed")
-
-        # Step 11: Finalize record and emit event
-        end_time = time.time()
-        sec_errors = []
-        if (
-            primary_error_phase != "SAFING"
-            and safety_report.status == SafetyStatus.UNSAFE
-        ):
-            sec_errors.append(
-                f"Shutdown error: {safety_report.error or safety_report.summary}"
-            )
-
-        record = RunRecord(
-            run_id=token.run_id,
-            generation=token.generation,
-            start_time=start_time,
-            end_time=end_time,
-            state=self.run_state,
-            safety=safety_report,
-            save_requested=request.save,
-            filename=self._filename,
-            partial_filename=self._partial_filename,
-            primary_error_phase=primary_error_phase,
-            primary_error_type=(
-                type(primary_error).__name__ if primary_error is not None else None
-            ),
-            primary_error_message=(
-                str(primary_error) if primary_error is not None else None
-            ),
-            secondary_errors=tuple(sec_errors),
-            snapshot_count=0,
-        )
-        self._record_run(record)
-        self._emit_terminal_event(record, self._data)
-
-        # Step 12: Re-raise error or return data
         if primary_error is not None:
             raise primary_error
         if safety_report.status == SafetyStatus.UNSAFE:
@@ -473,7 +970,500 @@ class BaseMeasurement:
                 safety_report=safety_report,
             )
 
-        return self._data
+        return self._data if self._data is not None else pd.DataFrame()
+
+    def safe_shutdown(self) -> SafetyReport:
+        """
+        Public safe shutdown wrapper (Section 5.1).
+
+        - If an active run or session is owned by another thread:
+          Latches cooperative Stop and raises RuntimeError("Shutdown deferred to execution owner").
+          Does not write hardware.
+        - If called by the owner during an active run or session:
+          Executes shutdown actions directly and returns SafetyReport.
+        - If called when IDLE/terminal:
+          Acquires idle command lease, executes shutdown actions, sets safety status,
+          and returns SafetyReport.
+        """
+        current_thread = threading.get_ident()
+        is_active = (
+            self._coordinator.run_state.is_active
+            or self._active_session is not None
+        )
+
+        if is_active:
+            if (
+                self._active_owner_thread_id is not None
+                and self._active_owner_thread_id != current_thread
+            ):
+                self.request_stop()
+                raise RuntimeError("Shutdown deferred to execution owner")
+            report = self._perform_safe_shutdown()
+            if report.status == SafetyStatus.UNSAFE:
+                raise HardwareSafetyError(
+                    f"Hardware safety could not be verified: {report.error or report.summary}",
+                    safety_report=report,
+                )
+            return report
+
+        with self._coordinator.idle_command_lease():
+            report = self._perform_safe_shutdown()
+            if report.status == SafetyStatus.UNSAFE:
+                raise HardwareSafetyError(
+                    f"Hardware safety could not be verified: {report.error or report.summary}",
+                    safety_report=report,
+                )
+            return report
+
+    def _perform_safe_shutdown(self) -> SafetyReport:
+        """
+        Executes setup-specific safe shutdown hook through attempt recorder (Section 5.1 & 5.3).
+        """
+        self._last_safing_exc = None
+        try:
+            raw_safety = self._safe_shutdown()
+            if isinstance(raw_safety, SafetyReport):
+                safety_report = raw_safety
+            elif isinstance(raw_safety, (list, tuple)):
+                all_ok = all(
+                    getattr(a, "succeeded", False) for a in raw_safety
+                )
+                st = SafetyStatus.SAFE if all_ok else SafetyStatus.UNSAFE
+                safety_report = SafetyReport(
+                    status=st,
+                    actions=tuple(raw_safety),
+                    summary=(
+                        "Safe shutdown completed"
+                        if all_ok
+                        else "One or more shutdown actions failed"
+                    ),
+                )
+            else:
+                safety_report = SafetyReport(
+                    status=SafetyStatus.SAFE,
+                    summary="Default clean safe shutdown",
+                )
+        except BaseException as exc:
+            self._last_safing_exc = exc
+            action = SafetyAction(
+                name="safe_shutdown",
+                attempted=True,
+                succeeded=False,
+                error=str(exc),
+            )
+            safety_report = SafetyReport(
+                status=SafetyStatus.UNSAFE,
+                actions=(action,),
+                error=str(exc),
+                summary=f"Shutdown failed: {exc}",
+            )
+
+        self._coordinator.set_safety_status(safety_report.status)
+        return safety_report
+
+    # ========================================================================
+    # Internal Session Delegation Handlers
+    # ========================================================================
+
+    def _enter_session(
+        self,
+        session: MeasurementSession,
+        save: bool,
+        save_partial: Optional[bool],
+        options: Optional[Mapping[str, Any]],
+    ) -> None:
+        """Called by MeasurementSession.__enter__."""
+        self._validate_options(options)
+        with self._coordinator._state_lock:
+            if (
+                self._coordinator.run_state.is_active
+                or self._active_session is not None
+            ):
+                raise ConcurrentRunError(
+                    "Cannot start session: another run or session is currently active "
+                    f"(state: {self._coordinator.run_state.value})."
+                )
+            request = RunRequest(
+                save=save,
+                save_partial=save_partial,
+                options=options,
+            )
+            token = self._reserve(request)
+            session._token = token
+            session._request = request
+            session._start_time = time.time()
+            self._active_session = session
+            self._active_owner_thread_id = threading.get_ident()
+            self._session_capture_count = 0
+
+        # Reset active results for this session
+        self._raw_data = None
+        self._data = None
+        self._filename = None
+        self._partial_filename = None
+
+    def _session_configure(
+        self, *, options: Optional[Mapping[str, Any]] = None
+    ) -> None:
+        """Session-scoped instrument configuration."""
+        current_thread = threading.get_ident()
+        if self._active_owner_thread_id != current_thread:
+            raise ConcurrentRunError(
+                "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
+            )
+        if self._active_session is None:
+            raise RuntimeError("No active session")
+
+        if self.run_state == RunState.STARTING:
+            self._transition_to(
+                RunState.CONFIGURING, "Session configuring instruments"
+            )
+        elif self.run_state != RunState.CONFIGURING:
+            raise IllegalStateTransitionError(
+                f"Cannot configure instruments in state {self.run_state.value}"
+            )
+
+        request = self._active_session._request
+        if options is not None:
+            self._validate_options(options)
+            opts = dict(request.options)
+            opts.update(options)
+            request = RunRequest(
+                save=request.save,
+                save_partial=request.save_partial,
+                options=opts,
+            )
+            self._active_session._request = request
+
+        self._configure_instruments(request)
+        self._active_session._configured = True
+
+    def _session_capture(
+        self,
+        *,
+        on_update: Optional[Callable[[Any], None]] = None,
+        options: Optional[Mapping[str, Any]] = None,
+    ) -> pd.DataFrame:
+        """Session-scoped data acquisition (at most once per session)."""
+        current_thread = threading.get_ident()
+        if self._active_owner_thread_id != current_thread:
+            raise ConcurrentRunError(
+                "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
+            )
+        if self._active_session is None:
+            raise RuntimeError("No active session")
+
+        if self._session_capture_count >= 1:
+            raise RuntimeError(
+                "A session supports at most one capture operation; repeated acquisition belongs "
+                "inside the concrete capture hook or in separate sessions."
+            )
+        self._session_capture_count += 1
+
+        request = self._active_session._request
+        if options is not None or on_update is not None:
+            opts = dict(request.options)
+            if options is not None:
+                self._validate_options(options)
+                opts.update(options)
+            request = RunRequest(
+                on_update=(
+                    on_update if on_update is not None else request.on_update
+                ),
+                save=request.save,
+                save_partial=request.save_partial,
+                options=opts,
+            )
+            self._active_session._request = request
+
+        # Prerequisite validation / transition
+        if self.run_state == RunState.STARTING:
+            self._transition_to(
+                RunState.CONFIGURING, "Validating prerequisites"
+            )
+            self._configure_instruments(request)
+            self._active_session._configured = True
+
+        if self.run_state == RunState.CONFIGURING:
+            if self._coordinator.is_stop_requested:
+                self._transition_to(
+                    RunState.STOPPING, "Stop requested before acquisition"
+                )
+                return pd.DataFrame()
+            self._transition_to(
+                RunState.RUNNING, "Starting session acquisition"
+            )
+        elif self.run_state != RunState.RUNNING:
+            raise IllegalStateTransitionError(
+                f"Cannot capture data in state {self.run_state.value}"
+            )
+
+        raw = self._capture_data(request, on_update=request.on_update)
+        self._raw_data = raw.copy() if raw is not None else pd.DataFrame()
+        self._data = self._raw_data.copy()
+        self._active_session._captured = True
+
+        if (
+            self._coordinator.is_stop_requested
+            and self.run_state == RunState.RUNNING
+        ):
+            self._transition_to(
+                RunState.STOPPING, "Stop requested during acquisition"
+            )
+
+        return self._raw_data
+
+    def _exit_session(
+        self,
+        session: MeasurementSession,
+        exc_type,
+        exc_val,
+        exc_tb,
+    ) -> bool:
+        """Called by MeasurementSession.__exit__."""
+        start_time = session._start_time
+        token = session._token
+        request = session._request
+        primary_error = exc_val
+        primary_error_phase = "SESSION" if exc_val is not None else None
+        safety_report: Optional[SafetyReport] = None
+
+        try:
+            # Step 1: Safing boundary
+            if self.run_state.is_active:
+                if (
+                    not session._configured
+                    and not session._captured
+                    and (self.run_state == RunState.STOPPING or self._coordinator.is_stop_requested)
+                ):
+                    if self.run_state == RunState.STARTING:
+                        self._transition_to(
+                            RunState.STOPPING, "Stop requested in session before I/O"
+                        )
+                    if self.run_state == RunState.STOPPING:
+                        self._transition_to(
+                            RunState.ABORTED, "Aborted before I/O began"
+                        )
+                    safety_report = SafetyReport(
+                        status=SafetyStatus.NOT_NEEDED,
+                        summary="Stop requested before instrument I/O began",
+                    )
+                    self._coordinator.set_safety_status(safety_report.status)
+                else:
+                    if self.run_state == RunState.STARTING:
+                        self._transition_to(
+                            RunState.CONFIGURING,
+                            "Transient configuration for safing",
+                        )
+                    if self.run_state != RunState.SAFING:
+                        self._transition_to(
+                            RunState.SAFING,
+                            "Session exit safe shutdown",
+                        )
+                    safety_report = self._perform_safe_shutdown()
+
+            if safety_report is None:
+                safety_report = SafetyReport(status=SafetyStatus.NOT_NEEDED)
+
+            # Step 2: Determine outcome
+            target_outcome = RunState.COMPLETED
+            if primary_error is not None:
+                target_outcome = RunState.FAILED
+            elif self._coordinator.is_stop_requested:
+                target_outcome = RunState.ABORTED
+            elif safety_report.status == SafetyStatus.UNSAFE:
+                target_outcome = RunState.FAILED
+
+            # Step 3: Analysis & Saving (Section 4.5 & 4.6)
+            if target_outcome == RunState.COMPLETED:
+                if session._captured:
+                    # After capture, clean session exit safes first and then runs analysis
+                    self._transition_to(
+                        RunState.ANALYZING, "Session analyzing data"
+                    )
+                    raw_to_analyze = (
+                        self._raw_data.copy()
+                        if self._raw_data is not None
+                        else pd.DataFrame()
+                    )
+                    try:
+                        analyzed = self._analyze_data(raw_to_analyze, request)
+                        self._data = (
+                            analyzed.copy()
+                            if analyzed is not None
+                            else pd.DataFrame()
+                        )
+                    except BaseException as exc:
+                        primary_error = exc
+                        primary_error_phase = "ANALYZING"
+                        target_outcome = RunState.FAILED
+
+                    if target_outcome == RunState.COMPLETED:
+                        if request.save:
+                            self._transition_to(
+                                RunState.SAVING, "Publishing completed data"
+                            )
+                            try:
+                                self._filename = self._publish_data(
+                                    self._data, request, is_partial=False
+                                )
+                                self._transition_to(
+                                    RunState.COMPLETED,
+                                    "Completed successfully",
+                                )
+                            except BaseException as exc:
+                                primary_error = exc
+                                primary_error_phase = "SAVING"
+                                self._transition_to(
+                                    RunState.FAILED, "Publication failed"
+                                )
+                                target_outcome = RunState.FAILED
+                        else:
+                            self._transition_to(
+                                RunState.COMPLETED,
+                                "Completed without saving",
+                            )
+                else:
+                    # Configuration-only session has no analysis step
+                    if self.run_state != RunState.COMPLETED:
+                        self._transition_to(
+                            RunState.COMPLETED,
+                            "Configuration-only session completed",
+                        )
+
+            if target_outcome == RunState.ABORTED and self.run_state != RunState.ABORTED:
+                self._data = (
+                    self._raw_data.copy()
+                    if self._raw_data is not None
+                    else pd.DataFrame()
+                )
+                should_save_partial = (
+                    request.save_partial
+                    if request.save_partial is not None
+                    else (
+                        request.save
+                        and self._data is not None
+                        and not self._data.empty
+                    )
+                )
+                if (
+                    should_save_partial
+                    and self._data is not None
+                    and not self._data.empty
+                ):
+                    self._transition_to(
+                        RunState.SAVING, "Publishing partial data"
+                    )
+                    try:
+                        self._partial_filename = self._publish_data(
+                            self._data, request, is_partial=True
+                        )
+                        self._transition_to(
+                            RunState.ABORTED,
+                            "Aborted with partial data saved",
+                        )
+                    except BaseException as exc:
+                        primary_error = exc
+                        primary_error_phase = "SAVING"
+                        self._transition_to(
+                            RunState.FAILED, "Partial save failed after abort"
+                        )
+                        target_outcome = RunState.FAILED
+                else:
+                    self._transition_to(
+                        RunState.ABORTED, "Aborted without saving partial"
+                    )
+
+            if target_outcome == RunState.FAILED and self.run_state != RunState.FAILED:
+                self._data = (
+                    self._raw_data.copy()
+                    if self._raw_data is not None
+                    else pd.DataFrame()
+                )
+                should_save_partial = (
+                    request.save_partial
+                    if request.save_partial is not None
+                    else False
+                )
+                if (
+                    should_save_partial
+                    and self._data is not None
+                    and not self._data.empty
+                ):
+                    try:
+                        if self.run_state in {
+                            RunState.SAFING,
+                            RunState.ANALYZING,
+                        }:
+                            self._transition_to(
+                                RunState.SAVING,
+                                "Publishing partial data on failure",
+                            )
+                            self._partial_filename = self._publish_data(
+                                self._data, request, is_partial=True
+                            )
+                    except Exception:
+                        pass
+                if self.run_state in {
+                    RunState.SAFING,
+                    RunState.ANALYZING,
+                    RunState.SAVING,
+                }:
+                    self._transition_to(RunState.FAILED, "Session failed")
+
+            # Step 4: Finalize RunRecord and emit TerminalEvent
+            end_time = time.time()
+            sec_errors = []
+            if (
+                primary_error_phase != "SAFING"
+                and safety_report.status == SafetyStatus.UNSAFE
+            ):
+                sec_errors.append(
+                    f"Shutdown error: {safety_report.error or safety_report.summary}"
+                )
+
+            record = RunRecord(
+                run_id=token.run_id,
+                generation=token.generation,
+                start_time=start_time,
+                end_time=end_time,
+                state=self.run_state,
+                safety=safety_report,
+                save_requested=request.save,
+                filename=self._filename,
+                partial_filename=self._partial_filename,
+                primary_error_phase=primary_error_phase,
+                primary_error_type=(
+                    type(primary_error).__name__
+                    if primary_error is not None
+                    else None
+                ),
+                primary_error_message=(
+                    str(primary_error) if primary_error is not None else None
+                ),
+                secondary_errors=tuple(sec_errors),
+            )
+            self._record_run(record)
+            self._emit_terminal_event(record, self._data)
+
+        finally:
+            self._active_session = None
+            self._active_owner_thread_id = None
+            self._session_capture_count = 0
+
+        # Step 5: Error handling per Section 5.3
+        if primary_error is not None:
+            if exc_val is not None and primary_error is exc_val:
+                return False  # Let caller exception propagate
+            raise primary_error
+
+        if safety_report.status == SafetyStatus.UNSAFE:
+            raise HardwareSafetyError(
+                f"Hardware safety could not be verified: {safety_report.error or safety_report.summary}",
+                safety_report=safety_report,
+            )
+
+        return False
 
     # ========================================================================
     # Protected Subclass Hooks (Section 3.1 & 4.4)

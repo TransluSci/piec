@@ -1,5 +1,5 @@
 from .adapters import WaveformReader, WaveformRecord
-from .base import BaseMeasurement
+from .base import BaseMeasurement, MeasurementSession
 from .contracts import (
     ConcurrentRunError,
     DuplicateExecutionError,
@@ -22,6 +22,7 @@ __all__ = [
     "WaveformReader",
     "WaveformRecord",
     "BaseMeasurement",
+    "MeasurementSession",
     "RunState",
     "SafetyStatus",
     "ReservationToken",
