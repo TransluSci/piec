@@ -23,12 +23,15 @@ from .contracts import (
     StateChangeEvent,
     TerminalEvent,
 )
+from .runner import CloseCoordinationStatus, MeasurementRunner
 
 __all__ = [
     "WaveformReader",
     "WaveformRecord",
     "BaseMeasurement",
     "MeasurementSession",
+    "MeasurementRunner",
+    "CloseCoordinationStatus",
     "RunState",
     "SafetyStatus",
     "ReservationToken",
