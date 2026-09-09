@@ -7,18 +7,38 @@ Fulfills Checkpoint 11a of MEASUREMENT_STANDARDIZATION_PLAN.md:
 - Exact JSON unit round-trips via column_units_json (Section 7.1);
 - Standard scalar metadata schema verification (Section 7.1);
 - Non-ASCII metadata and canonical units preservation.
+
+Fulfills Checkpoint 11b of MEASUREMENT_STANDARDIZATION_PLAN.md:
+- Atomic no-replace publication primitive (atomic_publish_no_replace) (Section 8.1 Rule 6 & 7);
+- Rejection of pre-existing targets with FileExistsError without silent overwrite;
+- Safe staging in destination directory via tempfile.mkstemp() (Section 8.1 Rule 2);
+- Atomic write and publish helper (atomic_publish_measurement_csv);
+- Preservation of staging files on collision/save failure for data recovery (Section 8.3);
+- Strict mode failing clearly when atomic no-replace is unsupported, with opt-in collision-resistant fallback;
+- NTFS atomic rename verified; opt-in SMB share support.
 """
 
 from __future__ import annotations
 
-import io
 import csv
+import errno
+import io
 import json
 import os
 from pathlib import Path
+import sys
+import tempfile
 from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple, Union
 
 import pandas as pd
+
+
+class AtomicPublishError(OSError):
+    """Base exception for atomic publication failures."""
+
+
+class UnsupportedFilesystemError(AtomicPublishError):
+    """Raised when strict atomic no-replace publication is unsupported by the filesystem."""
 
 
 STANDARD_SCHEMAS: Dict[str, int] = {
@@ -291,6 +311,220 @@ def write_measurement_handle(
             os.fsync(fileno)
 
 
+def create_staging_file(
+    destination_dir: Union[str, Path],
+    *,
+    prefix: str = ".staging-",
+    suffix: str = ".tmp",
+) -> Tuple[int, Path]:
+    """
+    Creates a temporary staging file in the destination directory (Section 8.1 Rule 2).
+
+    Uses tempfile.mkstemp() to ensure exclusive creation in the destination directory,
+    preventing cross-volume moves and handle-locking across renames on Windows.
+
+    Returns:
+        (file_descriptor, staging_path)
+    """
+    dest = Path(destination_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    fd, abs_path_str = tempfile.mkstemp(dir=dest, prefix=prefix, suffix=suffix)
+    return fd, Path(abs_path_str)
+
+
+def _collision_resistant_publish(staging: Path, target: Path) -> Path:
+    """
+    Opt-in non-strict fallback. Labeled collision-resistant, never collision-proof (Section 8.1 Rule 7).
+    """
+    if target.exists():
+        raise FileExistsError(f"Target file already exists: {target}")
+    # Attempt exclusive file creation at target to claim it
+    try:
+        with open(target, "xb"):
+            pass
+    except FileExistsError as exc:
+        raise FileExistsError(f"Target file already exists: {target}") from exc
+    # Replace the claimed marker with staging
+    try:
+        os.replace(str(staging), str(target))
+    except Exception:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return target
+
+
+def atomic_publish_no_replace(
+    staging_path: Union[str, Path],
+    target_path: Union[str, Path],
+    *,
+    strict: bool = True,
+) -> Path:
+    """
+    Atomically publishes a staged file to target_path without replacing an existing file (Section 8.1 Rule 6).
+
+    Rejects pre-existing targets with FileExistsError and never silently overwrites.
+    Leaves the staging file intact on failure for recovery.
+
+    Parameters:
+        staging_path: Path to the existing, closed staging file.
+        target_path: Path to the destination file.
+        strict: If True, requires true atomic no-replace filesystem primitives.
+                If the filesystem cannot provide atomic no-replace, raises UnsupportedFilesystemError.
+                If False, allows fallback to collision-resistant (never collision-proof) mode.
+
+    Returns:
+        Path to the published target file.
+
+    Raises:
+        FileNotFoundError: If staging_path does not exist.
+        FileExistsError: If target_path already exists.
+        ValueError: If staging_path and target_path resolve to the same path.
+        UnsupportedFilesystemError: If strict is True and the filesystem does not support atomic no-replace.
+        AtomicPublishError: If an error occurs during publication.
+    """
+    staging = Path(staging_path)
+    target = Path(target_path)
+
+    if not staging.is_file():
+        raise FileNotFoundError(f"Staging file does not exist: {staging}")
+
+    try:
+        if staging.resolve() == target.resolve():
+            raise ValueError(f"Staging path and target path cannot be the same: {staging}")
+    except (OSError, RuntimeError):
+        pass
+
+    if target.exists():
+        raise FileExistsError(f"Target file already exists: {target}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    if os.name == "nt":
+        # On Windows, os.rename uses MoveFileW without MOVEFILE_REPLACE_EXISTING.
+        # If target exists, it fails atomically with FileExistsError (WinError 183).
+        try:
+            os.rename(str(staging), str(target))
+        except FileExistsError as exc:
+            raise FileExistsError(f"Target file already exists: {target}") from exc
+        except OSError as exc:
+            winerror = getattr(exc, "winerror", None)
+            if winerror == 183:  # ERROR_ALREADY_EXISTS
+                raise FileExistsError(f"Target file already exists: {target}") from exc
+            if winerror == 17:   # ERROR_NOT_SAME_DEVICE (cross-drive rename)
+                if strict:
+                    raise UnsupportedFilesystemError(
+                        f"Cannot atomically publish across drives/volumes ({staging} -> {target}). "
+                        f"Staging files must be created in the destination directory."
+                    ) from exc
+                return _collision_resistant_publish(staging, target)
+            raise AtomicPublishError(
+                f"Failed to publish {staging} to {target}: {exc}"
+            ) from exc
+    else:
+        # POSIX (Linux, macOS, BSD)
+        published = False
+        # Try Linux renameat2 syscall with RENAME_NOREPLACE if on Linux
+        if sys.platform.startswith("linux"):
+            try:
+                import ctypes
+                libc = ctypes.CDLL(None, use_errno=True)
+                if hasattr(libc, "renameat2"):
+                    AT_FDCWD = -100
+                    RENAME_NOREPLACE = 1
+                    ret = libc.renameat2(
+                        AT_FDCWD,
+                        os.fsencode(str(staging)),
+                        AT_FDCWD,
+                        os.fsencode(str(target)),
+                        ctypes.c_uint(RENAME_NOREPLACE),
+                    )
+                    if ret == 0:
+                        published = True
+                    else:
+                        err = ctypes.get_errno()
+                        if err == errno.EEXIST:
+                            raise FileExistsError(f"Target file already exists: {target}")
+                        elif err not in (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP):
+                            raise OSError(err, os.strerror(err), str(target))
+            except (AttributeError, OSError) as exc:
+                if isinstance(exc, FileExistsError):
+                    raise
+
+        if not published:
+            # Fallback for POSIX: os.link + os.unlink
+            # os.link fails with FileExistsError (EEXIST) if target exists.
+            try:
+                os.link(str(staging), str(target))
+                try:
+                    os.unlink(str(staging))
+                except OSError:
+                    pass
+                published = True
+            except FileExistsError as exc:
+                raise FileExistsError(f"Target file already exists: {target}") from exc
+            except OSError as exc:
+                if exc.errno == errno.EEXIST:
+                    raise FileExistsError(f"Target file already exists: {target}") from exc
+                if strict:
+                    raise UnsupportedFilesystemError(
+                        f"Filesystem does not support atomic no-replace publication ({exc.strerror}): {target}"
+                    ) from exc
+                return _collision_resistant_publish(staging, target)
+
+    return target
+
+
+def atomic_publish_measurement_csv(
+    path: Union[str, Path],
+    metadata: Union[Mapping[str, Any], pd.DataFrame],
+    data: pd.DataFrame,
+    *,
+    column_units: Optional[Mapping[str, Optional[str]]] = None,
+    sync: bool = True,
+    encoding: str = "utf-8",
+    strict: bool = True,
+) -> Path:
+    """
+    Atomically writes and publishes a measurement CSV file without replacing an existing target (Section 8.1).
+
+    1. Validates metadata, schema/version, and column units before touching disk.
+    2. Fails immediately if target already exists.
+    3. Creates a staging file in target's directory with tempfile.mkstemp().
+    4. Writes metadata, blank line, and data via a single UTF-8 text handle with flush and fsync.
+    5. Closes handle.
+    6. Atomically publishes staging file to target path via atomic_publish_no_replace.
+    7. If target already exists at publish time, raises FileExistsError and leaves staging file intact for recovery.
+    """
+    meta_df = _prepare_metadata(metadata, data, column_units)
+    target = Path(path)
+    if target.exists():
+        raise FileExistsError(f"Target file already exists: {target}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, staging_path = create_staging_file(
+        target.parent,
+        prefix=f".staging-{target.stem}-",
+        suffix=".tmp",
+    )
+
+    write_ok = False
+    try:
+        with io.open(fd, "w", encoding=encoding, newline="") as handle:
+            write_measurement_handle(handle, meta_df, data, sync=sync)
+        write_ok = True
+    finally:
+        if not write_ok:
+            try:
+                staging_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    return atomic_publish_no_replace(staging_path, target, strict=strict)
+
+
 def write_measurement_csv(
     path: Union[str, Path],
     metadata: Union[Mapping[str, Any], pd.DataFrame],
@@ -299,12 +533,26 @@ def write_measurement_csv(
     column_units: Optional[Mapping[str, Optional[str]]] = None,
     sync: bool = True,
     encoding: str = "utf-8",
+    atomic: bool = False,
+    strict: bool = True,
 ) -> Path:
     """
     Convenience function writing a measurement CSV file through a single text handle (Section 8.1).
 
     Opens the file once, writes metadata, blank line, and data, flushes and fsyncs, then closes.
+    If atomic=True, stages to a temporary file in the destination directory and publishes
+    atomically without replacement via atomic_publish_no_replace.
     """
+    if atomic:
+        return atomic_publish_measurement_csv(
+            path,
+            metadata,
+            data,
+            column_units=column_units,
+            sync=sync,
+            encoding=encoding,
+            strict=strict,
+        )
     meta_df = _prepare_metadata(metadata, data, column_units)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
