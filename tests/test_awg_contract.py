@@ -5,8 +5,9 @@ Stage 0 Checkpoint 3: AWG output_trigger indentation repair and contract verific
 """
 
 import inspect
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+import numpy as np
 import pytest
 
 from piec.drivers.awg.awg import Awg
@@ -31,6 +32,10 @@ class TestAwgOutputTriggerContract:
         assert hasattr(Awg, "output_trigger"), "Awg must have output_trigger method"
         assert callable(getattr(Awg, "output_trigger")), "Awg.output_trigger must be callable"
 
+        # Unwrap AutoCheckMeta decorator to inspect the underlying function
+        unwrapped = inspect.unwrap(Awg.output_trigger)
+        assert unwrapped.__name__ == "output_trigger"
+
         sig = inspect.signature(Awg.output_trigger)
         params = list(sig.parameters.values())
         assert len(params) == 1, f"Expected exactly 1 parameter (self), got {params}"
@@ -38,7 +43,11 @@ class TestAwgOutputTriggerContract:
 
     def test_configure_trigger_does_not_contain_nested_output_trigger(self):
         """configure_trigger must not contain an indented inner function named output_trigger."""
-        consts = Awg.configure_trigger.__code__.co_consts
+        # Unwrap AutoCheckMeta decorator to inspect the underlying configure_trigger method bytecode
+        unwrapped = inspect.unwrap(Awg.configure_trigger)
+        assert unwrapped.__name__ == "configure_trigger"
+
+        consts = unwrapped.__code__.co_consts
         nested_code_objects = [c for c in consts if inspect.iscode(c)]
         nested_names = [c.co_name for c in nested_code_objects]
         assert "output_trigger" not in nested_names, (
@@ -54,13 +63,29 @@ class TestAwgOutputTriggerContract:
         assert result is None
 
     def test_virtual_awg_implements_output_trigger(self):
-        """VirtualAwg provides a working output_trigger implementation."""
-        vawg = VirtualAwg()
+        """VirtualAwg output_trigger executes :TRIG and applies waveform to virtual sample."""
+        vawg = VirtualAwg(simulation_points=100)
         assert hasattr(vawg, "output_trigger")
-        # VirtualAwg tracks command writes in state
-        vawg.output_trigger()
-        # Verify :TRIG command was processed without error
         assert callable(vawg.output_trigger)
+
+        # Clear prior sample simulation state to isolate and observe trigger effect
+        vawg.sample.output_voltage = None
+        vawg.sample.t = None
+        vawg.sample.prep_points = None
+
+        with patch.object(vawg, "write", wraps=vawg.write) as spy_write:
+            vawg.output_trigger()
+            spy_write.assert_called_once_with(":TRIG")
+
+        # Assert physical/simulation effect on virtual sample
+        assert vawg.sample.prep_points == 20
+        assert isinstance(vawg.sample.t, np.ndarray)
+        assert len(vawg.sample.t) == 120  # 100 simulation_points + 20 prep_points
+        assert np.all(np.isfinite(vawg.sample.t))
+        assert isinstance(vawg.sample.output_voltage, np.ndarray)
+        assert len(vawg.sample.output_voltage) == 120
+        assert np.all(np.isfinite(vawg.sample.output_voltage))
+        assert np.any(vawg.sample.output_voltage != 0.0)
 
     def test_keysight_81150a_implements_output_trigger(self):
         """Keysight81150a overrides output_trigger to write SCPI :TRIG."""
