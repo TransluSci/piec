@@ -7,8 +7,9 @@ class Agilent33500(Scpi, Awg):
     Driver for the Agilent 33500 Series Arbitrary Waveform Generators.
     Covering models like 33511B, 33512B, 33521A, 33522A, etc.
 
-    Note: Hardware trigger capabilities (output_trigger, set_trigger_*,
-    configure_trigger) are currently unsupported and remain inherited empty stubs from Awg.
+    Trigger control is currently unsupported by this Python driver: output_trigger
+    and set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
+    This is a software implementation gap, not a statement about hardware capabilities.
     """
     
     # Class attributes for parameter restrictions

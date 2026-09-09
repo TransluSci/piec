@@ -18,8 +18,9 @@ class DaqAsAwg(Awg):
     synthesizing standard waveforms (SIN, SQU, etc.) into data arrays
     that the DAQ can write to its analog outputs.
 
-    Note: Hardware trigger capabilities (output_trigger, set_trigger_*,
-    configure_trigger) are currently unsupported by this adapter and remain inherited empty stubs from Awg.
+    Trigger control is currently unsupported by this adapter: output_trigger and
+    set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
+    The underlying DAQ's hardware capabilities depend on its model and driver.
     """
     
     def __init__(self, daq_instance: Daq, **kwargs):

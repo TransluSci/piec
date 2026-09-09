@@ -7,8 +7,9 @@ class RigolDG1000(Scpi, Awg):
     Driver for the Rigol DG1000 Series Arbitrary Waveform Generators
     and DG1000Z series.
 
-    Note: Hardware trigger capabilities (output_trigger, set_trigger_*,
-    configure_trigger) are currently unsupported and remain inherited empty stubs from Awg.
+    Trigger control is currently unsupported by this Python driver: output_trigger
+    and set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
+    This is a software implementation gap, not a statement about hardware capabilities.
     """
     
     # "RIGOL TECHNOLOGIES,DG1022,..."

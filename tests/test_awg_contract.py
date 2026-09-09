@@ -6,7 +6,9 @@ Stage 0 Checkpoint 4: AWG trigger_source conditional repair and affected-driver 
 Stage 0 Checkpoint 4 follow-up: Comprehensive concrete AWG and adapter trigger audit and verification.
 """
 
+import importlib
 import inspect
+import pkgutil
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -255,18 +257,22 @@ class TestAwgDriverAuditAndSafingContract:
 
     def test_inventory_contains_all_awg_subclasses(self):
         """Every concrete driver and adapter implementing Awg in the codebase must be inventoried."""
-        for cls in ALL_AWG_IMPLEMENTATIONS:
-            assert issubclass(cls, Awg), f"{cls.__name__} must inherit from Awg"
-
-        # Verify that all 7 concrete drivers and 1 adapter are present
-        assert len(CONCRETE_AWG_DRIVERS) == 7
-        assert len(AWG_ADAPTERS) == 1
-        assert len(ALL_AWG_IMPLEMENTATIONS) == 8
+        discovered = set()
+        # Import definitions, without constructing instruments or opening hardware.
+        for package_name in ("piec.drivers.awg", "piec.drivers.emulators"):
+            package = importlib.import_module(package_name)
+            for entry in pkgutil.walk_packages(package.__path__, package_name + "."):
+                module = importlib.import_module(entry.name)
+                for _, cls in inspect.getmembers(module, inspect.isclass):
+                    if cls.__module__ == module.__name__ and cls is not Awg and issubclass(cls, Awg):
+                        discovered.add(cls)
+        assert set(ALL_AWG_IMPLEMENTATIONS) == discovered
+        assert len(ALL_AWG_IMPLEMENTATIONS) == len(set(ALL_AWG_IMPLEMENTATIONS))
 
     def test_implemented_vs_inherited_trigger_methods(self):
         """
         Distinguish explicitly overridden trigger methods from inherited empty stubs on Awg.
-        
+
         A method is considered implemented by a driver only if it is defined in that class's
         own __dict__, overriding the empty base stub in Awg.
         """

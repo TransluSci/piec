@@ -7,8 +7,9 @@ class RigolDG4000(Scpi, Awg):
     Driver for the Rigol DG4000 Series Arbitrary Waveform Generators.
     e.g. DG4062, DG4102, DG4162, DG4202
 
-    Note: Hardware trigger capabilities (output_trigger, set_trigger_*,
-    configure_trigger) are currently unsupported and remain inherited empty stubs from Awg.
+    Trigger control is currently unsupported by this Python driver: output_trigger
+    and set_trigger_* inherit empty Awg methods; configure_trigger delegates to them.
+    This is a software implementation gap, not a statement about hardware capabilities.
     """
     
     # "RIGOL TECHNOLOGIES,DG4162,..."

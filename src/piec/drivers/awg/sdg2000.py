@@ -10,8 +10,9 @@ class SDG2000X(Scpi, Awg):
 
     Supported trigger capabilities: output_trigger (manual trigger via BTWV MTRIG),
     set_trigger_source (BTWV TRSR), set_trigger_slope (BTWV EDGE), and set_trigger_mode (BTWV GATE_NCYC).
-    Unsupported trigger capabilities: set_trigger_level is not supported by the SDG2000X
-    SCPI BTWV subsystem and remains an inherited empty method from Awg.
+    set_trigger_level is unimplemented in this Python driver and inherits an empty
+    Awg method. Hardware/protocol support for an adjustable external trigger threshold
+    has not been established by this code audit.
     """
 
     # --- AUTODETECT IDENTIFIER ---
