@@ -19,6 +19,8 @@ from __future__ import annotations
 import inspect
 import threading
 import time
+from pathlib import Path
+import io
 from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple, Union
 import pandas as pd
 
@@ -151,7 +153,16 @@ class BaseMeasurement:
 
     supports_pause: bool = False
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, output_dir=None, measurement_schema=None, column_units=None,
+        raw_column_units=None, metadata=None,
+    ) -> None:
+        self.output_dir = Path(output_dir) if output_dir is not None else None
+        self.measurement_schema = measurement_schema
+        self.column_units = dict(column_units) if column_units is not None else None
+        self.raw_column_units = dict(raw_column_units) if raw_column_units is not None else None
+        self.measurement_metadata = dict(metadata or {})
+        self.recoverable_staging_paths = ()
         self._coordinator = LifecycleCoordinator()
         self._coordinator._on_state_change = self._on_coordinator_state_change
         self._event_listeners: List[Callable[[TerminalEvent], None]] = []
@@ -606,6 +617,7 @@ class BaseMeasurement:
             self._raw_data = None
             self._data = None
             self._filename = None
+            self.recoverable_staging_paths = ()
             self._partial_filename = None
 
             # Step 2: Stop-before-start check (Section 4.2 & 4.4)
@@ -761,6 +773,7 @@ class BaseMeasurement:
                             RunState.SAVING, "Publishing completed data"
                         )
                         try:
+                            self._publication_outcome = target_outcome
                             self._filename = self._publish_data(
                                 self._data, request, is_partial=False
                             )
@@ -805,6 +818,7 @@ class BaseMeasurement:
                         RunState.SAVING, "Publishing partial data"
                     )
                     try:
+                        self._publication_outcome = target_outcome
                         self._partial_filename = self._publish_data(
                             self._data, request, is_partial=True
                         )
@@ -850,6 +864,7 @@ class BaseMeasurement:
                                 RunState.SAVING,
                                 "Publishing partial data on failure",
                             )
+                            self._publication_outcome = target_outcome
                             self._partial_filename = self._publish_data(
                                 self._data, request, is_partial=True
                             )
@@ -893,6 +908,7 @@ class BaseMeasurement:
                     str(primary_error) if primary_error is not None else None
                 ),
                 secondary_errors=tuple(sec_errors),
+                metadata={"recoverable_staging_paths": self.recoverable_staging_paths},
                 snapshot_count=0,
             )
             try:
@@ -984,6 +1000,7 @@ class BaseMeasurement:
         self._raw_data = None
         self._data = None
         self._filename = None
+        self.recoverable_staging_paths = ()
         self._partial_filename = None
 
         if self._coordinator.is_stop_requested:
@@ -1087,6 +1104,7 @@ class BaseMeasurement:
                     str(primary_error) if primary_error is not None else None
                 ),
                 secondary_errors=tuple(sec_errors),
+                metadata={"recoverable_staging_paths": self.recoverable_staging_paths},
             )
             try:
                 self._record_run(record)
@@ -1156,6 +1174,7 @@ class BaseMeasurement:
         self._raw_data = None
         self._data = None
         self._filename = None
+        self.recoverable_staging_paths = ()
         self._partial_filename = None
 
         if self._coordinator.is_stop_requested:
@@ -1296,6 +1315,7 @@ class BaseMeasurement:
                     str(primary_error) if primary_error is not None else None
                 ),
                 secondary_errors=tuple(sec_errors),
+                metadata={"recoverable_staging_paths": self.recoverable_staging_paths},
             )
             try:
                 self._record_run(record)
@@ -1564,6 +1584,7 @@ class BaseMeasurement:
         self._raw_data = None
         self._data = None
         self._filename = None
+        self.recoverable_staging_paths = ()
         self._partial_filename = None
 
     def _session_configure(
@@ -1786,6 +1807,7 @@ class BaseMeasurement:
                                 RunState.SAVING, "Publishing completed data"
                             )
                             try:
+                                self._publication_outcome = target_outcome
                                 self._filename = self._publish_data(
                                     self._data, request, is_partial=False
                                 )
@@ -1840,6 +1862,7 @@ class BaseMeasurement:
                         RunState.SAVING, "Publishing partial data"
                     )
                     try:
+                        self._publication_outcome = target_outcome
                         self._partial_filename = self._publish_data(
                             self._data, request, is_partial=True
                         )
@@ -1885,6 +1908,7 @@ class BaseMeasurement:
                                 RunState.SAVING,
                                 "Publishing partial data on failure",
                             )
+                            self._publication_outcome = target_outcome
                             self._partial_filename = self._publish_data(
                                 self._data, request, is_partial=True
                             )
@@ -1927,6 +1951,7 @@ class BaseMeasurement:
                     str(primary_error) if primary_error is not None else None
                 ),
                 secondary_errors=tuple(sec_errors),
+                metadata={"recoverable_staging_paths": self.recoverable_staging_paths},
             )
             try:
                 self._record_run(record)
@@ -2021,11 +2046,62 @@ class BaseMeasurement:
         """
         Protected hook to publish completed or partial data artifact.
 
-        Default implementation acts as an in-memory sink returning a virtual path.
-        Checkpoints 11a-11c integrate real filesystem publication.
+        Requires output_dir, measurement_schema and explicit column_units supplied
+        to the constructor. raw_column_units can describe a different partial view.
+        Side-artifact hooks stage files under the shared reserved basename.
         """
-        suffix = ".partial.csv" if is_partial else ".csv"
-        return f"{self._coordinator.active_token.run_id}{suffix}"
+        from .persistence import (
+            STANDARD_SCHEMAS, _prepare_metadata, create_staging_file,
+            reserve_candidate_filename, publish_artifact_bundle,
+            write_measurement_handle, write_partial_csv,
+        )
+        if self.output_dir is None or self.measurement_schema not in STANDARD_SCHEMAS:
+            raise ValueError("Saving requires output_dir and a standard measurement_schema")
+        units = self.raw_column_units if is_partial and self.raw_column_units is not None else self.column_units
+        if units is None:
+            raise ValueError("Saving requires explicit column_units")
+        run_id = self._coordinator.active_token.run_id
+        metadata = dict(self.measurement_metadata)
+        metadata.update(
+            measurement_schema=self.measurement_schema,
+            measurement_schema_version=STANDARD_SCHEMAS[self.measurement_schema],
+            run_id=run_id, outcome=self._publication_outcome.value,
+            partial=is_partial, save_requested=request.save,
+        )
+        prepared = _prepare_metadata(metadata, data, units)
+        self.recoverable_staging_paths = ()
+        with reserve_candidate_filename(self.output_dir, self.measurement_schema, run_id) as reservation:
+            if is_partial:
+                try:
+                    return str(write_partial_csv(
+                        self.output_dir, reservation.candidate_basename, run_id, prepared, data,
+                    ).resolve())
+                except BaseException as exc:
+                    self.recoverable_staging_paths = tuple(
+                        str(path) for path in getattr(exc, "recoverable_staging_paths", ())
+                    )
+                    raise
+            fd, staging = create_staging_file(self.output_dir, prefix=f".{run_id}-csv-")
+            try:
+                with io.open(fd, "w", encoding="utf-8", newline="") as handle:
+                    write_measurement_handle(handle, prepared, data)
+                sides = self._stage_side_artifacts(data, request, reservation)
+                return str(publish_artifact_bundle(reservation, staging, sides).resolve())
+            except BaseException as exc:
+                paths = list(getattr(exc, "recoverable_staging_paths", ()))
+                if staging.exists() and staging not in paths:
+                    paths.append(staging)
+                self.recoverable_staging_paths = tuple(str(path) for path in paths)
+                exc.recoverable_staging_paths = self.recoverable_staging_paths
+                raise
+
+    def _stage_side_artifacts(self, data, request, reservation):
+        """Return (staging, target) pairs using reservation.candidate_basename.
+
+        Families producing plots override this hook. Keep raw data in memory;
+        report any staging paths if staging itself fails.
+        """
+        return ()
 
     # ========================================================================
     # Internal Helpers

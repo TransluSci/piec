@@ -21,6 +21,7 @@ Fulfills Checkpoint 11b of MEASUREMENT_STANDARDIZATION_PLAN.md:
 from __future__ import annotations
 
 import csv
+from contextlib import contextmanager
 import errno
 import io
 import json
@@ -336,10 +337,24 @@ def create_staging_file(
 
 
 def _collision_resistant_publish(
+    staging: Path, target: Path, *, owner_uuid=None, reservation=None,
+) -> Path:
+    if reservation is not None:
+        return _publish_destination_staging(staging, target, owner_uuid=owner_uuid, reservation=reservation)
+    marker = target.parent / f".{target.name}.res"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with _marker_guard(marker) as locked:
+        if not locked:
+            raise FileExistsError(f"Target reservation is currently in use: {target}")
+        return _publish_destination_staging(staging, target, owner_uuid=owner_uuid)
+
+
+def _publish_destination_staging(
     staging: Path,
     target: Path,
     *,
     owner_uuid: Optional[str] = None,
+    reservation: Optional[CandidateReservation] = None,
 ) -> Path:
     """
     Opt-in non-strict fallback. Labeled collision-resistant, never collision-proof (Section 8.1 Rule 7).
@@ -360,11 +375,17 @@ def _collision_resistant_publish(
     marker = target_parent / f".{target.name}.res"
 
     # Claim candidate with exclusively created hidden marker storing full owner UUID
+    owns_marker = reservation is None
     try:
-        with open(marker, "xb") as f:
-            f.write(
-                f"owner_uuid={full_owner_uuid}\npid={os.getpid()}\ntimestamp={time.time()}\n".encode("utf-8")
-            )
+        if reservation is not None:
+            reservation.validate()
+            if reservation.candidate_path.resolve() != target.resolve():
+                raise ValueError("Reservation does not match publication target")
+        else:
+            with open(marker, "xb") as f:
+                f.write(
+                    f"owner_uuid={full_owner_uuid}\npid={os.getpid()}\ntimestamp={time.time()}\n".encode("utf-8")
+                )
     except FileExistsError as exc:
         raise FileExistsError(
             f"Target file is currently reserved or already exists: {target}"
@@ -441,7 +462,8 @@ def _collision_resistant_publish(
     finally:
         # Always release the hidden reservation marker
         try:
-            marker.unlink(missing_ok=True)
+            if owns_marker and _read_marker_info(marker).get("owner_uuid") == full_owner_uuid:
+                marker.unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -454,6 +476,7 @@ def atomic_publish_no_replace(
     *,
     strict: bool = True,
     owner_uuid: Optional[str] = None,
+    reservation: Optional[CandidateReservation] = None,
 ) -> Path:
     """
     Atomically publishes a staged file to target_path without replacing an existing file (Section 8.1 Rule 6).
@@ -513,7 +536,7 @@ def atomic_publish_no_replace(
                         f"Cannot atomically publish across drives/volumes ({staging} -> {target}). "
                         f"Staging files must be created in the destination directory."
                     ) from exc
-                return _collision_resistant_publish(staging, target, owner_uuid=owner_uuid)
+                return _collision_resistant_publish(staging, target, owner_uuid=owner_uuid, reservation=reservation)
             raise AtomicPublishError(
                 f"Failed to publish {staging} to {target}: {exc}"
             ) from exc
@@ -566,7 +589,7 @@ def atomic_publish_no_replace(
                     raise UnsupportedFilesystemError(
                         f"Filesystem does not support atomic no-replace publication ({exc.strerror}): {target}"
                     ) from exc
-                return _collision_resistant_publish(staging, target, owner_uuid=owner_uuid)
+                return _collision_resistant_publish(staging, target, owner_uuid=owner_uuid, reservation=reservation)
 
     return target
 
@@ -779,6 +802,13 @@ class CandidateReservation:
         self.index = index
         self.schema = schema
         self._released = False
+        self._claim = _read_marker_info(self.marker_path)
+
+    def validate(self) -> None:
+        if (self._released or not self._claim
+                or self._claim.get("owner_uuid") != self.run_id
+                or _read_marker_info(self.marker_path) != self._claim):
+            raise FileExistsError("Reservation is released or no longer owned by this run")
 
     @property
     def candidate_basename(self) -> str:
@@ -787,11 +817,16 @@ class CandidateReservation:
     def release(self) -> None:
         """Releases the reservation marker if not already released."""
         if not self._released:
-            try:
-                self.marker_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            self._released = True
+            with _marker_guard(self.marker_path) as locked:
+                if not locked:
+                    return
+                if (self._claim.get("owner_uuid") == self.run_id
+                        and _read_marker_info(self.marker_path) == self._claim):
+                    try:
+                        self.marker_path.unlink(missing_ok=True)
+                    except OSError:
+                        return  # Retain the claim for explicit recovery.
+                self._released = True
 
     def __enter__(self) -> "CandidateReservation":
         return self
@@ -822,6 +857,26 @@ def _read_marker_info(marker_path: Path) -> Dict[str, str]:
     return info
 
 
+@contextmanager
+def _marker_guard(marker: Path):
+    """Serialize cooperating reservation operations; never reclaim an unknown lock.
+
+    A process killed during this short operation can leave a .res.lock file.
+    It blocks reuse of that candidate until explicitly inspected and removed.
+    """
+    lock = marker.with_name(marker.name + ".lock")
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        os.close(fd)
+        lock.unlink(missing_ok=True)
+
+
 def reserve_candidate_filename(
     destination_dir: Union[str, Path],
     measurement_schema: str,
@@ -839,67 +894,45 @@ def reserve_candidate_filename(
     Claims candidate with an exclusively created hidden marker (.candidate.csv.res) storing
     the full owner UUID. Never reserves by creating an empty completed-looking CSV.
     On collision, iterates to the next index.
+    stale_age_seconds permits reuse only for the explicitly named run_id;
+    it does not authorize taking an aged claim owned by a different run.
     """
     dest = Path(destination_dir)
     dest.mkdir(parents=True, exist_ok=True)
     clean_schema = str(measurement_schema).strip().lower()
+    if clean_schema not in STANDARD_SCHEMAS:
+        raise ValueError("Reservation requires a standard measurement schema")
+    if not str(run_id) or any(c in str(run_id) for c in '/\\\r\n'):
+        raise ValueError("Run ID must be a filename component")
 
     for idx in range(index_start, index_start + max_candidates):
         index_str = index_format.format(index=idx)
+        if not index_str.isdigit():
+            raise ValueError("Formatted candidate index must contain only digits")
         candidate_basename = f"{index_str}_{clean_schema}"
         candidate_target = dest / f"{candidate_basename}.csv"
         marker_target = dest / f".{candidate_basename}.csv.res"
 
-        # If candidate target already exists, skip
-        if candidate_target.exists():
-            continue
-
-        # Check if marker exists
-        if marker_target.exists():
-            # Check stale policy if enabled
-            if stale_age_seconds is not None:
-                info = _read_marker_info(marker_target)
-                ts_str = info.get("timestamp")
-                if ts_str:
-                    try:
-                        marker_ts = float(ts_str)
-                        if time.time() - marker_ts > stale_age_seconds:
-                            # Stale marker approved for reuse
-                            try:
-                                marker_target.unlink(missing_ok=True)
-                            except OSError:
-                                continue
-                    except (ValueError, TypeError):
-                        pass
-            if marker_target.exists():
-                # Marker is active or not stale
+        with _marker_guard(marker_target) as locked:
+            if not locked or candidate_target.exists():
                 continue
-
-        # Attempt exclusive creation of marker
-        try:
+            if marker_target.exists():
+                info = _read_marker_info(marker_target)
+                # Age alone never grants permission to take another run's claim.
+                try:
+                    stale = (stale_age_seconds is not None
+                             and info.get("owner_uuid") == str(run_id)
+                             and time.time() - float(info["timestamp"]) > stale_age_seconds)
+                except (KeyError, ValueError, TypeError):
+                    stale = False
+                if not stale:
+                    continue
+                marker_target.unlink()
             with open(marker_target, "xb") as f:
                 f.write(
-                    f"owner_uuid={run_id}\npid={os.getpid()}\ntimestamp={time.time()}\n".encode("utf-8")
+                    f"owner_uuid={run_id}\nclaim_uuid={uuid.uuid4()}\npid={os.getpid()}\ntimestamp={time.time()}\n".encode("utf-8")
                 )
-        except FileExistsError:
-            # Another writer claimed this marker simultaneously
-            continue
-
-        # Double check candidate existence under the marker lock
-        if candidate_target.exists():
-            try:
-                marker_target.unlink(missing_ok=True)
-            except OSError:
-                pass
-            continue
-
-        return CandidateReservation(
-            candidate_path=candidate_target,
-            marker_path=marker_target,
-            run_id=run_id,
-            index=idx,
-            schema=clean_schema,
-        )
+            return CandidateReservation(candidate_target, marker_target, run_id, idx, clean_schema)
 
     raise FileExistsError(
         f"Could not reserve candidate filename in {dest} after checking {max_candidates} indices."
@@ -907,6 +940,28 @@ def reserve_candidate_filename(
 
 
 def publish_artifact_bundle(
+    reservation: CandidateReservation,
+    completed_csv_staging: Union[str, Path],
+    side_artifacts: Optional[Sequence[Tuple[Union[str, Path], Union[str, Path]]]] = None,
+    *,
+    strict: bool = True,
+) -> Path:
+    """Publish sides before CSV, retaining staging on failure and releasing the claim."""
+    try:
+        with _marker_guard(reservation.marker_path) as locked:
+            if not locked:
+                raise FileExistsError("Reservation is currently in use")
+            return _publish_artifact_bundle(reservation, completed_csv_staging, side_artifacts, strict=strict)
+    except BaseException as exc:
+        if not hasattr(exc, "recoverable_staging_paths"):
+            candidates = [Path(completed_csv_staging)] + [Path(src) for src, _ in (side_artifacts or ())]
+            exc.recoverable_staging_paths = tuple(path for path in candidates if path.is_file())
+        raise
+    finally:
+        reservation.release()
+
+
+def _publish_artifact_bundle(
     reservation: CandidateReservation,
     completed_csv_staging: Union[str, Path],
     side_artifacts: Optional[Sequence[Tuple[Union[str, Path], Union[str, Path]]]] = None,
@@ -935,6 +990,7 @@ def publish_artifact_bundle(
     Returns:
         Path to the published completed CSV.
     """
+    reservation.validate()
     csv_staging = Path(completed_csv_staging)
     if not csv_staging.is_file():
         raise FileNotFoundError(f"Completed CSV staging file does not exist: {csv_staging}")
@@ -947,6 +1003,10 @@ def publish_artifact_bundle(
             tgt_p = Path(target)
             if not stg_p.is_file():
                 raise FileNotFoundError(f"Side artifact staging file does not exist: {stg_p}")
+            if (tgt_p.parent.resolve() != reservation.candidate_path.parent.resolve()
+                    or not tgt_p.name.startswith(reservation.candidate_basename + "_")
+                    or tgt_p in [target for _, target in prepared_sides]):
+                raise ValueError("Side artifacts must have distinct targets under the reserved basename")
             if tgt_p.exists():
                 raise FileExistsError(f"Side artifact target already exists: {tgt_p}")
             prepared_sides.append((stg_p, tgt_p))
@@ -956,15 +1016,26 @@ def publish_artifact_bundle(
         raise FileExistsError(f"Target completed CSV already exists: {reservation.candidate_path}")
 
     published_side_artifacts: List[Path] = []
+    published_identity = {}
+    publication_copies = []
     orphan_cleanup_failures: List[str] = []
 
     try:
         # Step 1: Publish side artifacts FIRST
         for stg_side, tgt_side in prepared_sides:
+            fd, copy_path = create_staging_file(
+                tgt_side.parent, prefix=f".{reservation.run_id}-publish-"
+            )
+            publication_copies.append(copy_path)
+            with os.fdopen(fd, "wb") as dst, open(stg_side, "rb") as src:
+                shutil.copyfileobj(src, dst)
+                dst.flush()
+                os.fsync(dst.fileno())
             atomic_publish_no_replace(
-                stg_side, tgt_side, strict=strict, owner_uuid=reservation.run_id
+                copy_path, tgt_side, strict=strict, owner_uuid=reservation.run_id
             )
             published_side_artifacts.append(tgt_side)
+            published_identity[tgt_side] = tgt_side.stat()
 
         # Step 2: Publish completed CSV LAST as completion marker
         published_csv = atomic_publish_no_replace(
@@ -972,17 +1043,32 @@ def publish_artifact_bundle(
             reservation.candidate_path,
             strict=strict,
             owner_uuid=reservation.run_id,
+            reservation=reservation,
         )
 
-        # Success: release reservation marker
-        reservation.release()
+        # The completed CSV is now visible; redundant staging copies can be removed.
+        for staged, _ in prepared_sides:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                pass
         return published_csv
 
     except BaseException as exc:
         # Failure: remove ONLY artifacts proven to belong to current reservation
         for pub_art in published_side_artifacts:
             try:
-                pub_art.unlink(missing_ok=True)
+                current = pub_art.stat()
+                original = published_identity.get(pub_art)
+                if original is None:
+                    orphan_cleanup_failures.append(f"Ownership unavailable; retained {pub_art}")
+                    continue
+                if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
+                    original.st_dev, original.st_ino, original.st_size, original.st_mtime_ns
+                ):
+                    orphan_cleanup_failures.append(f"Ownership changed; retained {pub_art}")
+                    continue
+                pub_art.unlink()
             except OSError as unlink_exc:
                 orphan_cleanup_failures.append(f"Failed to remove {pub_art}: {unlink_exc}")
 
@@ -994,8 +1080,6 @@ def publish_artifact_bundle(
             if stg_side.exists():
                 recoverable_staging.append(stg_side)
 
-        reservation.release()
-
         raise BundlePublishError(
             f"Failed to publish artifact bundle: {exc}",
             primary_error=exc,
@@ -1003,9 +1087,42 @@ def publish_artifact_bundle(
             orphan_cleanup_failures=orphan_cleanup_failures,
             recoverable_staging_paths=recoverable_staging,
         ) from exc
+    finally:
+        for copy_path in publication_copies:
+            try:
+                copy_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def write_partial_csv(
+    destination_dir: Union[str, Path],
+    candidate_basename: str,
+    run_id: str,
+    metadata: Union[Mapping[str, Any], pd.DataFrame],
+    data: pd.DataFrame,
+    *,
+    column_units: Optional[Mapping[str, Optional[str]]] = None,
+    sync: bool = True,
+    encoding: str = "utf-8",
+) -> Path:
+    """Write an owned partial checkpoint; serialize updates against explicit cleanup."""
+    for value in (candidate_basename, run_id):
+        if not value or any(c in str(value) for c in '/\\\r\n'):
+            raise ValueError("Checkpoint basename and run ID must be filename components")
+    dest = Path(destination_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    target = dest / f"{candidate_basename}.{run_id}.partial.csv"
+    with _marker_guard(target) as locked:
+        if not locked:
+            raise FileExistsError("Checkpoint is currently being written or cleaned")
+        return _write_partial_csv(
+            dest, candidate_basename, run_id, metadata, data,
+            column_units=column_units, sync=sync, encoding=encoding,
+        )
+
+
+def _write_partial_csv(
     destination_dir: Union[str, Path],
     candidate_basename: str,
     run_id: str,
@@ -1033,19 +1150,27 @@ def write_partial_csv(
     if isinstance(metadata, Mapping):
         meta_dict = dict(metadata)
     elif isinstance(metadata, pd.DataFrame):
+        if len(metadata) != 1:
+            raise ValueError("Metadata DataFrame must have exactly 1 row")
         meta_dict = metadata.iloc[0].to_dict()
+    else:
+        raise TypeError("metadata must be a Mapping or DataFrame")
     meta_dict["partial"] = True
     meta_dict["run_id"] = str(run_id)
 
     target_partial_path = dest / f"{candidate_basename}.{run_id}.partial.csv"
 
+    meta_df = _prepare_metadata(meta_dict, data, column_units)
+    if target_partial_path.exists():
+        existing, _, _ = read_measurement_csv(target_partial_path)
+        if existing.get("run_id") != str(run_id) or existing.get("partial") is not True:
+            raise FileExistsError("Existing checkpoint is not owned by this run")
     fd, staging_path = create_staging_file(
-        dest, prefix=f".partial-staging-{candidate_basename}-", suffix=".tmp"
+        dest, prefix=f".partial-staging-{run_id}-{candidate_basename}-", suffix=".tmp"
     )
 
     write_ok = False
     try:
-        meta_df = _prepare_metadata(meta_dict, data, column_units)
         with io.open(fd, "w", encoding=encoding, newline="") as handle:
             write_measurement_handle(handle, meta_df, data, sync=sync)
         write_ok = True
@@ -1057,7 +1182,11 @@ def write_partial_csv(
                 pass
 
     # Safe intentional overwrite of own run's checkpoint
-    os.replace(str(staging_path), str(target_partial_path))
+    try:
+        os.replace(str(staging_path), str(target_partial_path))
+    except BaseException as exc:
+        exc.recoverable_staging_paths = (staging_path,)
+        raise
     return target_partial_path
 
 
@@ -1088,9 +1217,10 @@ def cleanup_stale_reservations(
     Explicit, ownership-checked, age-gated reservation cleanup (Section 8.1 Rule 5 & Section 8.3).
 
     Never deletes unknown or non-marker files automatically.
+    An explicit owner_uuid is required; omission performs no cleanup.
     """
     dest = Path(destination_dir)
-    if not dest.is_dir():
+    if not owner_uuid or not dest.is_dir():
         return []
 
     now = time.time()
@@ -1098,24 +1228,23 @@ def cleanup_stale_reservations(
 
     for item in dest.iterdir():
         if item.is_file() and item.name.startswith(".") and item.name.endswith(".res"):
-            info = _read_marker_info(item)
-            ts_str = info.get("timestamp")
-            marker_owner = info.get("owner_uuid")
-            if not ts_str:
+            if (not item.name[1:].split("_", 1)[0].isdigit()
+                    or not any(item.name.endswith(f"_{schema}.csv.res") for schema in STANDARD_SCHEMAS)):
                 continue
-            try:
-                marker_ts = float(ts_str)
-            except (ValueError, TypeError):
-                continue
-
-            if (now - marker_ts) >= max_age_seconds:
-                if owner_uuid is not None and marker_owner != str(owner_uuid):
+            with _marker_guard(item) as locked:
+                if not locked:
                     continue
+                info = _read_marker_info(item)
                 try:
-                    item.unlink(missing_ok=True)
-                    cleaned.append(item)
-                except OSError:
-                    pass
+                    stale = now - float(info["timestamp"]) >= max_age_seconds
+                except (KeyError, ValueError, TypeError):
+                    continue
+                if stale and info.get("owner_uuid") == str(owner_uuid):
+                    try:
+                        item.unlink(missing_ok=True)
+                        cleaned.append(item)
+                    except OSError:
+                        pass
 
     return cleaned
 
@@ -1130,9 +1259,10 @@ def cleanup_stale_partials(
     Explicit, ownership-checked, age-gated partial file cleanup (Section 8.3).
 
     Never deletes completed CSV files or non-partial files.
+    An explicit owner_uuid and matching validated CSV metadata are required.
     """
     dest = Path(destination_dir)
-    if not dest.is_dir():
+    if not owner_uuid or not dest.is_dir():
         return []
 
     now = time.time()
@@ -1140,18 +1270,29 @@ def cleanup_stale_partials(
 
     for item in dest.iterdir():
         if item.is_file() and item.name.endswith(".partial.csv"):
-            try:
-                mtime = item.stat().st_mtime
-            except OSError:
-                continue
-
-            if (now - mtime) >= max_age_seconds:
-                if owner_uuid is not None and f".{owner_uuid}.partial.csv" not in item.name:
+            with _marker_guard(item) as locked:
+                if not locked:
                     continue
                 try:
-                    item.unlink(missing_ok=True)
-                    cleaned.append(item)
+                    mtime = item.stat().st_mtime
                 except OSError:
-                    pass
+                    continue
+
+                if (now - mtime) >= max_age_seconds:
+                    if not item.name.endswith(f".{owner_uuid}.partial.csv"):
+                        continue
+                    try:
+                        metadata, _, _ = read_measurement_csv(item)
+                    except (OSError, ValueError, TypeError, KeyError):
+                        continue
+                    if metadata.get("run_id") != str(owner_uuid) or metadata.get("partial") is not True:
+                        continue
+                    if item.stat().st_mtime != mtime:
+                        continue
+                    try:
+                        item.unlink(missing_ok=True)
+                        cleaned.append(item)
+                    except OSError:
+                        pass
 
     return cleaned

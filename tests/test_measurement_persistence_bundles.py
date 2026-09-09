@@ -146,13 +146,13 @@ class TestCandidateReservation:
         marker.write_text(f"owner_uuid=stale-run\ntimestamp={old_time}\n", encoding="utf-8")
 
         res = reserve_candidate_filename(
-            tmp_path, "iv_sweep", "active-run", stale_age_seconds=600
+            tmp_path, "iv_sweep", "stale-run", stale_age_seconds=600
         )
         # Reclaimed stale candidate 0001
         assert res.index == 1
         assert res.candidate_path.name == "0001_iv_sweep.csv"
         content = res.marker_path.read_text(encoding="utf-8")
-        assert "owner_uuid=active-run" in content
+        assert "owner_uuid=stale-run" in content
         res.release()
 
     def test_reservation_context_manager_releases_marker(self, tmp_path):
@@ -374,7 +374,7 @@ class TestCompletedFileFilterAndCleanup:
         regular_file = tmp_path / "0001_iv_sweep.csv"
         regular_file.write_text("data", encoding="utf-8")
 
-        cleaned = cleanup_stale_reservations(tmp_path, max_age_seconds=3600)
+        cleaned = cleanup_stale_reservations(tmp_path, max_age_seconds=3600, owner_uuid="old-uuid")
         assert stale_marker in cleaned
         assert not stale_marker.exists()
         assert active_marker.exists()
@@ -384,7 +384,7 @@ class TestCompletedFileFilterAndCleanup:
         """Explicit, age-gated partial file cleanup."""
         # Create a partial file
         partial_file = tmp_path / "0001_iv_sweep.old-run.partial.csv"
-        partial_file.write_text("partial data", encoding="utf-8")
+        write_partial_csv(tmp_path, "0001_iv_sweep", "old-run", sample_metadata("old-run"), sample_data())
 
         # Backdate its mtime
         old_time = time.time() - 10000
@@ -394,7 +394,7 @@ class TestCompletedFileFilterAndCleanup:
         recent_partial = tmp_path / "0002_iv_sweep.new-run.partial.csv"
         recent_partial.write_text("recent data", encoding="utf-8")
 
-        cleaned = cleanup_stale_partials(tmp_path, max_age_seconds=3600)
+        cleaned = cleanup_stale_partials(tmp_path, max_age_seconds=3600, owner_uuid="old-run")
         assert partial_file in cleaned
         assert not partial_file.exists()
         assert recent_partial.exists()
