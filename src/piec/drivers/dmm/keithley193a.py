@@ -14,6 +14,9 @@ class Keithley193a(DMM):
     This instrument uses a non-SCPI command set (Device Dependent Commands).
     """
     AUTODETECT_ID = ["Keithley 193A", "NDCV"]
+    # Keithley 193A DDC overflow prefixes and overflow float threshold (Manual 193A_901_01A)
+    DDC_OVERLOAD_PREFIXES = ("OVOL", "OCUR", "OOHM", "OVERFLOW", "OVERLOAD")
+    DDC_OVERLOAD_THRESHOLD = 9.9e30
     
     def __init__(self, address, **kwargs):
         """
@@ -40,6 +43,20 @@ class Keithley193a(DMM):
         except pyvisa.errors.VisaIOError:
             return "Not connected (VisaIOError)"
 
+    def _parse_reading(self, raw_val):
+        raw_str = str(raw_val).strip()
+        upper = raw_str.upper()
+        if any(prefix in upper for prefix in self.DDC_OVERLOAD_PREFIXES):
+            sign = -1.0 if "-" in raw_str else 1.0
+            return float("inf") if sign > 0 else float("-inf")
+        extracted = self._extract_number(raw_str)
+        if extracted is None:
+            raise ValueError(f"Unable to extract numeric reading from {raw_val!r}")
+        val = float(extracted)
+        if abs(val) >= self.DDC_OVERLOAD_THRESHOLD:
+            return float("inf") if val > 0 else float("-inf")
+        return val
+
     def get_voltage(self, ac=False):
         """
         Reads a voltage measurement from the DMM.
@@ -57,7 +74,7 @@ class Keithley193a(DMM):
         cmd = "F1X" if ac else "F0X"
         self.instrument.write(cmd)
         raw_val = self.instrument.read()
-        return float(self._extract_number(raw_val))
+        return self._parse_reading(raw_val)
 
     def _extract_number(self, input_string):
         """Helper to extract numbers from instrument response strings."""
@@ -117,12 +134,8 @@ class Keithley193a(DMM):
         """
         cmd = "F4X" if ac else "F3X"  # F3 = DCA, F4 = ACA
         self.instrument.write(cmd)
-        try:
-            raw_val = self.instrument.read()
-            return float(self._extract_number(raw_val))
-        except Exception:
-            print("[Keithley193A] get_current() failed to read.")
-            return None
+        raw_val = self.instrument.read()
+        return self._parse_reading(raw_val)
 
     def get_resistance(self, four_wire=False):
         """
@@ -140,12 +153,8 @@ class Keithley193a(DMM):
             float: The measured resistance in Ohms.
         """
         self.instrument.write("F2X")  # F2 = Ohms
-        try:
-            raw_val = self.instrument.read()
-            return float(self._extract_number(raw_val))
-        except Exception:
-            print("[Keithley193A] get_resistance() failed to read.")
-            return None
+        raw_val = self.instrument.read()
+        return self._parse_reading(raw_val)
 
     def get_temperature(self, probe_type='RTD'):
         """
@@ -166,26 +175,27 @@ class Keithley193a(DMM):
         if probe_type.upper() != 'RTD':
             print(f"[Keithley193A] probe_type '{probe_type}' not supported — using RTD.")
         self.instrument.write("F6X")  # F6 = Temperature °C (RTD)
-        try:
-            raw_val = self.instrument.read()
-            return float(self._extract_number(raw_val))
-        except Exception:
-            print("[Keithley193A] get_temperature() failed to read.")
-            return None
+        raw_val = self.instrument.read()
+        return self._parse_reading(raw_val)
 
     def set_sense_mode(self, sense_mode):
         """
         Not applicable — the 193A only supports 2-wire measurements.
         """
         if sense_mode.upper() == '4W':
-            print("[Keithley193A] 4-wire mode is not supported — 2-wire only.")
+            raise NotImplementedError(
+                "Keithley 193A does not support software-commanded 4-wire mode; "
+                "4-terminal sensing is hardware-configured via sense leads."
+            )
 
     def set_sense_range(self, range_val=None, auto=True):
         if auto:
             self.instrument.write("R0X")
         else:
-            # Nominal ranges would need mapping
-            pass
+            raise NotImplementedError(
+                "Keithley 193A manual range configuration is not supported in software; "
+                "use auto=True."
+            )
 
     def set_integration_time(self, nplc=1):
         """

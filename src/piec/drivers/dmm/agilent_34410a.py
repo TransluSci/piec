@@ -21,11 +21,22 @@ class Agilent34410A(Scpi, DMM):
     # Range depends on function (100mV to 1000V for DCV)
     sense_range = (None, None) 
     
+    # SCPI standard overload response is ±9.90000000E+37 (Keysight 34410A User's Guide)
+    SCPI_OVERLOAD_THRESHOLD = 9.9e37
 
+    def _initialize_state(self):
+        super()._initialize_state()
+        self._scpi_sense_func = "VOLT:DC"
 
+    def reset(self):
+        """
+        Resets the instrument to factory defaults via ``*RST`` and restores the
+        internal SCPI function cache to ``'VOLT:DC'``.
+        """
+        super().reset()
+        self._scpi_sense_func = "VOLT:DC"
 
-
-    def set_sense_function(self, sense_func, coupling=None, sense_mode=None):
+    def set_sense_function(self, sense_func, coupling="DC", sense_mode="2W"):
         """
         Sets the measurement function.
         Mappings:
@@ -42,8 +53,8 @@ class Agilent34410A(Scpi, DMM):
         """
         cmd = ""
         sense_func = sense_func.upper()
-        coupling = coupling.upper()
-        sense_mode = sense_mode.upper()
+        coupling = (coupling or "DC").upper()
+        sense_mode = (sense_mode or "2W").upper()
         
         if sense_func == "VOLT":
             cmd = f"VOLT:{coupling}"
@@ -58,23 +69,24 @@ class Agilent34410A(Scpi, DMM):
             cmd = sense_func # FREQ, PER, etc.
             
         self.instrument.write(f"CONF:{cmd}")
-        self._current_sense_func = cmd # Store specific SCPI func for other methods
+        self._scpi_sense_func = cmd # Store specific SCPI func for other methods
 
         
     def set_measurement_coupling(self, coupling):
-        # Already handled in set_sense_function usually for 34410A, 
-        # but if we are in VOLT mode, we might switch DC/AC.
-        # This is tricky because 34410A uses CONF:VOLT:DC or CONF:VOLT:AC.
-        # We need to know current primary function.
-        # For now, let's rely on set_sense_function.
-        pass
+        coupling = (coupling or "DC").upper()
+        func = (getattr(self, "_scpi_sense_func", None) or getattr(self, "_current_sense_func", "") or "VOLT:DC").upper()
+        base = "CURR" if "CURR" in func else "VOLT"
+        cmd = f"{base}:{coupling}"
+        self.instrument.write(f"CONF:{cmd}")
+        self._scpi_sense_func = cmd
 
     def set_sense_mode(self, sense_mode):
-        # 2W vs 4W
-        # Only applicable if we are in Resistance mode.
-        # If we are in RES, switch to FRES if 4W.
-        # This requires tracking state which we might not have fully robustly here yet.
-        pass
+        sense_mode = (sense_mode or "2W").upper()
+        func = (getattr(self, "_scpi_sense_func", None) or getattr(self, "_current_sense_func", "") or "").upper()
+        if "RES" in func or "FRES" in func or not func:
+            cmd = "FRES" if sense_mode == "4W" else "RES"
+            self.instrument.write(f"CONF:{cmd}")
+            self._scpi_sense_func = cmd
 
     def set_sense_range(self, range_val=None, auto=True):
         # Uses current function from memory or query?
@@ -91,40 +103,56 @@ class Agilent34410A(Scpi, DMM):
             if range_val is not None:
                 self.instrument.write(f"{func}:RANGe {range_val}")
 
+    def _parse_reading(self, raw):
+        val = float(raw)
+        if abs(val) >= self.SCPI_OVERLOAD_THRESHOLD:
+            return float("inf") if val > 0 else float("-inf")
+        return val
+
     def set_integration_time(self, nplc=1):
         # [SENSe:]<Function>:NPLC <nplc>
         # Valid for DCV, DCI, RES, FRES
-        func = self.instrument.query("FUNC?")
-        func = func.strip().strip('"')
+        func = self.instrument.query("FUNC?").strip().strip('"')
         
         # Check if function supports NPLC (AC usually doesn't, FREQ uses APER)
-        if "DC" in func or "RES" in func or "FRES" in func:
-             self.instrument.write(f"{func}:NPLC {nplc}")
+        if not ("DC" in func or "RES" in func or "FRES" in func):
+            raise NotImplementedError(
+                f"Agilent 34410A does not support NPLC integration time for function '{func}'; "
+                "NPLC is valid only for DCV, DCI, RES, and FRES."
+            )
+        self.instrument.write(f"{func}:NPLC {nplc}")
 
     def quick_read(self):
-        return float(self.instrument.query("READ?"))
+        return self._parse_reading(self.instrument.query("READ?"))
 
     def get_voltage(self, ac=False):
         mode = "AC" if ac else "DC"
-        self.instrument.write(f"CONF:VOLT:{mode}")
-        return float(self.instrument.query("READ?"))
+        func = f"VOLT:{mode}"
+        self.instrument.write(f"CONF:{func}")
+        self._scpi_sense_func = func
+        return self._parse_reading(self.instrument.query("READ?"))
 
     def get_current(self, ac=False):
         mode = "AC" if ac else "DC"
-        self.instrument.write(f"CONF:CURR:{mode}")
-        return float(self.instrument.query("READ?"))
+        func = f"CURR:{mode}"
+        self.instrument.write(f"CONF:{func}")
+        self._scpi_sense_func = func
+        return self._parse_reading(self.instrument.query("READ?"))
 
     def get_resistance(self, four_wire=False):
         func = "FRES" if four_wire else "RES"
         self.instrument.write(f"CONF:{func}")
-        return float(self.instrument.query("READ?"))
+        self._scpi_sense_func = func
+        return self._parse_reading(self.instrument.query("READ?"))
 
     def get_frequency(self):
         """Returns the measured frequency in Hz."""
         self.instrument.write("CONF:FREQ")
-        return float(self.instrument.query("READ?"))
+        self._scpi_sense_func = "FREQ"
+        return self._parse_reading(self.instrument.query("READ?"))
 
     def get_capacitance(self):
         """Returns the measured capacitance in Farads."""
         self.instrument.write("CONF:CAP")
-        return float(self.instrument.query("READ?"))
+        self._scpi_sense_func = "CAP"
+        return self._parse_reading(self.instrument.query("READ?"))

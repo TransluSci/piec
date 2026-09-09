@@ -62,7 +62,7 @@ class TestSourcemeterSurfaceContract:
 
 
 class TestVirtualSourcemeterChannelContract:
-    """Verify VirtualSourcemeter behavior with channel keywords, defaults, and legacy calls."""
+    """Verify VirtualSourcemeter behavior with channel keywords and defaults."""
 
     @pytest.fixture
     def vsm(self):
