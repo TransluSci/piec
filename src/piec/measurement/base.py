@@ -486,7 +486,9 @@ class BaseMeasurement:
                 total_steps = None
                 extra = {}
 
-            if data is not None and not data.empty and "data" not in final_views:
+            # Display views may be truncated or precede analysis. The terminal
+            # data view must always describe the actual result, including empty.
+            if data is not None:
                 final_views["data"] = data.copy()
 
             final_snapshot = MeasurementSnapshot(
