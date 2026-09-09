@@ -47,8 +47,6 @@ def auto_check_params(func):
     """
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        if hasattr(self, '_normalize_arg_compatibility'):
-            args, kwargs = self._normalize_arg_compatibility(func.__name__, args, kwargs)
         sig = inspect.signature(func)
         bound_args = sig.bind(self, *args, **kwargs)
         bound_args.apply_defaults()
@@ -271,10 +269,6 @@ class Instrument(metaclass=AutoCheckMeta):
         self.check_params = check_params
         self.verbose = verbose
         self._initialize_state()
-
-    def _normalize_arg_compatibility(self, method_name, args, kwargs):
-        """Hook for subclasses to normalize legacy arguments before auto_check_params."""
-        return args, kwargs
 
     def __init__(self, address, check_params=False, verbose=False, **kwargs):
         """

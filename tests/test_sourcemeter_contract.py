@@ -177,48 +177,10 @@ class TestVirtualSourcemeterChannelContract:
         vsm.output(on=False)
         assert vsm.state["output_on"] is False
 
-    # --- 3. Old positional calls remain unchanged ---
-
-    def test_legacy_positional_calls_preserved(self, vsm):
-        """Single-argument and legacy positional calls continue to work seamlessly."""
-        # output(bool)
-        vsm.output(True)
-        assert vsm.state["output_on"] is True
-        vsm.output(False)
-        assert vsm.state["output_on"] is False
-
-        # set_source_function(source_func)
-        vsm.set_source_function("CURR")
-        assert vsm.state["source_func"] == "CURR"
-
-        # set_sense_function(sense_func)
-        vsm.set_sense_function("RES")
-        assert vsm.state["sense_func"] == "RES"
-
-        # set_sense_mode(sense_mode)
-        vsm.set_sense_mode("4W")
-        assert vsm.state["sense_mode"] == "4W"
-
-        # set_source_voltage(voltage)
-        vsm.set_source_voltage(4.2)
-        assert vsm.state["source_voltage"] == 4.2
-
-        # set_source_current(current)
-        vsm.set_source_current(0.007)
-        assert vsm.state["source_current"] == 0.007
-
-        # set_voltage_compliance(voltage_compliance)
-        vsm.set_voltage_compliance(30.0)
-        assert vsm.state["voltage_compliance"] == 30.0
-
-        # set_current_compliance(current_compliance)
-        vsm.set_current_compliance(0.4)
-        assert vsm.state["current_compliance"] == 0.4
-
-    # --- 4. Safety-critical output-disable path ---
+    # --- 3. Safety-critical output-disable path ---
 
     def test_safety_critical_output_disable_surface(self, vsm):
-        """Every disable variation safely and unambiguously turns off the output."""
+        """Standard disable variations safely turn off the output; invalid channels raise."""
         # 1. output(on=False)
         vsm.output(on=True)
         vsm.output(on=False)
@@ -229,15 +191,19 @@ class TestVirtualSourcemeterChannelContract:
         vsm.output(channel=1, on=False)
         assert vsm.state["output_on"] is False
 
-        # 3. output(False)
-        vsm.output(True)
-        vsm.output(False)
-        assert vsm.state["output_on"] is False
-
-        # 4. output(1, False)
+        # 3. output(1, False)
         vsm.output(1, True)
         vsm.output(1, False)
         assert vsm.state["output_on"] is False
+
+        # 4. output(1, on=False)
+        vsm.output(channel=1, on=True)
+        vsm.output(1, on=False)
+        assert vsm.state["output_on"] is False
+
+        # 5. Calling output(False) treats False as channel (0), which is invalid and raises
+        with pytest.raises(ValueError):
+            vsm.output(False)
 
     # --- 5. Channel validation and invalid channel rejection ---
 
@@ -298,7 +264,7 @@ class TestKeithley2400Contract:
         return inst
 
     def test_output_disable_commands(self, k2400):
-        """output disable generates :OUTP OFF via all call conventions."""
+        """output disable generates :OUTP OFF via standard calls; positional bool raises."""
         k2400.output(channel=1, on=False)
         k2400.instrument.write.assert_called_with(":OUTP OFF")
 
@@ -308,16 +274,16 @@ class TestKeithley2400Contract:
         k2400.output(1, False)
         k2400.instrument.write.assert_called_with(":OUTP OFF")
 
-        # When check_params is False, legacy boolean output(False) safely writes :OUTP OFF
-        k2400.check_params = False
-        k2400.output(False)
+        k2400.output(1, on=False)
         k2400.instrument.write.assert_called_with(":OUTP OFF")
 
-        # When check_params is True, normalized arguments safely write :OUTP OFF without raising
+        # Calling output(False) treats False as channel (0), which is invalid and raises without transport write
         k2400.instrument.write.reset_mock()
-        k2400.check_params = True
-        k2400.output(False)
-        k2400.instrument.write.assert_called_with(":OUTP OFF")
+        for check in (False, True):
+            k2400.check_params = check
+            with pytest.raises(ValueError):
+                k2400.output(False)
+            k2400.instrument.write.assert_not_called()
 
     def test_output_enable_commands(self, k2400):
         """output enable generates :OUTP ON."""
@@ -409,93 +375,6 @@ class TestProfiledVirtualSourcemeterContract:
             vsm.output(channel=2, on=False)
 
 
-class TestLegacyAndCheckParamsNormalization:
-    """Verify that legacy positional arguments work seamlessly with check_params=True and False."""
-
-    @pytest.mark.parametrize("check_params", [False, True])
-    def test_virtual_sourcemeter_legacy_calls_with_check_params(self, check_params):
-        vsm = VirtualSourcemeter()
-        vsm.check_params = check_params
-
-        # output(False)
-        vsm.output(True)
-        assert vsm.state["output_on"] is True
-        vsm.output(False)
-        assert vsm.state["output_on"] is False
-
-        # set_source_voltage(4.2)
-        vsm.set_source_voltage(4.2)
-        assert vsm.state["source_voltage"] == 4.2
-
-        # set_source_current(0.015)
-        vsm.set_source_current(0.015)
-        assert vsm.state["source_current"] == 0.015
-
-        # set_voltage_compliance(50.0)
-        vsm.set_voltage_compliance(50.0)
-        assert vsm.state["voltage_compliance"] == 50.0
-
-        # set_current_compliance(0.2)
-        vsm.set_current_compliance(0.2)
-        assert vsm.state["current_compliance"] == 0.2
-
-        # set_source_function("VOLT") / ("CURR")
-        vsm.set_source_function("CURR")
-        assert vsm.state["source_func"] == "CURR"
-        vsm.set_source_function("VOLT")
-        assert vsm.state["source_func"] == "VOLT"
-
-        # set_sense_function("CURR") / ("RES")
-        vsm.set_sense_function("CURR")
-        assert vsm.state["sense_func"] == "CURR"
-        vsm.set_sense_function("RES")
-        assert vsm.state["sense_func"] == "RES"
-
-        # set_sense_mode("4W") / ("2W")
-        vsm.set_sense_mode("4W")
-        assert vsm.state["sense_mode"] == "4W"
-        vsm.set_sense_mode("2W")
-        assert vsm.state["sense_mode"] == "2W"
-
-    @pytest.mark.parametrize("check_params", [False, True])
-    def test_keithley2400_legacy_calls_with_check_params(self, check_params):
-        inst = Keithley2400.__new__(Keithley2400)
-        inst.instrument = Mock()
-        inst.check_params = check_params
-
-        # output(False)
-        inst.output(False)
-        inst.instrument.write.assert_called_with(":OUTP OFF")
-
-        # set_source_voltage(4.2)
-        inst.set_source_voltage(4.2)
-        inst.instrument.write.assert_called_with(":SOUR:VOLT:LEV 4.2")
-
-        # set_source_current(0.015)
-        inst.set_source_current(0.015)
-        inst.instrument.write.assert_called_with(":SOUR:CURR:LEV 0.015")
-
-        # set_voltage_compliance(50.0)
-        inst.set_voltage_compliance(50.0)
-        inst.instrument.write.assert_called_with(":SENS:VOLT:PROT 50.0")
-
-        # set_current_compliance(0.2)
-        inst.set_current_compliance(0.2)
-        inst.instrument.write.assert_called_with(":SENS:CURR:PROT 0.2")
-
-        # set_source_function("VOLT")
-        inst.set_source_function("VOLT")
-        inst.instrument.write.assert_called_with(":SOUR:FUNC VOLT")
-
-        # set_sense_function("CURR")
-        inst.set_sense_function("CURR")
-        inst.instrument.write.assert_called_with(':SENS:FUNC "CURRent"')
-
-        # set_sense_mode("4W")
-        inst.set_sense_mode("4W")
-        inst.instrument.write.assert_called_with(":SYST:RSEN ON")
-
-
 class TestMissingValuesAndChannelRejection:
     """Verify that omitted values and invalid channels raise without changing state or writing commands."""
 
@@ -525,12 +404,20 @@ class TestMissingValuesAndChannelRejection:
             vsm.set_source_voltage(channel=1)
         assert vsm.state["source_voltage"] == 5.0
 
+        # Positional float (e.g. 4.2) binds to channel, which is invalid and must raise without state change
+        with pytest.raises(ValueError):
+            vsm.set_source_voltage(4.2)
+        assert vsm.state["source_voltage"] == 5.0
+
         # Current setters
         with pytest.raises(ValueError):
             vsm.set_source_current()
         assert vsm.state["source_current"] == 0.01
         with pytest.raises(ValueError):
             vsm.set_source_current(channel=99)
+        assert vsm.state["source_current"] == 0.01
+        with pytest.raises(ValueError):
+            vsm.set_source_current(0.015)
         assert vsm.state["source_current"] == 0.01
 
         # Compliance setters
@@ -540,12 +427,18 @@ class TestMissingValuesAndChannelRejection:
         with pytest.raises(ValueError):
             vsm.set_voltage_compliance(channel=99)
         assert vsm.state["voltage_compliance"] == 30.0
+        with pytest.raises(ValueError):
+            vsm.set_voltage_compliance(50.0)
+        assert vsm.state["voltage_compliance"] == 30.0
 
         with pytest.raises(ValueError):
             vsm.set_current_compliance()
         assert vsm.state["current_compliance"] == 0.1
         with pytest.raises(ValueError):
             vsm.set_current_compliance(channel=99)
+        assert vsm.state["current_compliance"] == 0.1
+        with pytest.raises(ValueError):
+            vsm.set_current_compliance(0.2)
         assert vsm.state["current_compliance"] == 0.1
 
         # Mode and function setters
@@ -578,19 +471,33 @@ class TestMissingValuesAndChannelRejection:
             inst.set_source_voltage(channel=99)
         inst.instrument.write.assert_not_called()
 
+        # Positional float (e.g. 4.2) binds to channel, which is invalid and must raise without transport write
+        with pytest.raises(ValueError):
+            inst.set_source_voltage(4.2)
+        inst.instrument.write.assert_not_called()
+
         # set_source_current()
         with pytest.raises(ValueError):
             inst.set_source_current()
+        inst.instrument.write.assert_not_called()
+        with pytest.raises(ValueError):
+            inst.set_source_current(0.015)
         inst.instrument.write.assert_not_called()
 
         # set_voltage_compliance()
         with pytest.raises(ValueError):
             inst.set_voltage_compliance()
         inst.instrument.write.assert_not_called()
+        with pytest.raises(ValueError):
+            inst.set_voltage_compliance(50.0)
+        inst.instrument.write.assert_not_called()
 
         # set_current_compliance()
         with pytest.raises(ValueError):
             inst.set_current_compliance()
+        inst.instrument.write.assert_not_called()
+        with pytest.raises(ValueError):
+            inst.set_current_compliance(0.2)
         inst.instrument.write.assert_not_called()
 
         # set_source_function()
@@ -650,44 +557,62 @@ class TestMissingValuesAndChannelRejection:
         inst.instrument.write.assert_not_called()
 
 
-class TestLegacyConfigurationCalls:
-    """Verify that configure_voltage_source and configure_current_source preserve legacy meanings."""
+class TestStandardConfigurationCalls:
+    """Verify that configure_voltage_source and configure_current_source follow standard signatures."""
 
     @pytest.mark.parametrize("check_params", [False, True])
-    def test_configure_voltage_source_legacy_positional(self, check_params):
-        # configure_voltage_source(1.0, 0.05) -> 1.0 V, 0.05 A compliance
+    def test_configure_voltage_source_standard_calls(self, check_params):
         vsm = VirtualSourcemeter()
         vsm.check_params = check_params
-        vsm.configure_voltage_source(1.0, 0.05)
+        vsm.configure_voltage_source(channel=1, voltage=1.0, current_compliance=0.05)
         assert vsm.state["source_func"] == "VOLT"
         assert vsm.state["source_voltage"] == 1.0
         assert vsm.state["current_compliance"] == 0.05
 
+        vsm.configure_voltage_source(1, 2.0, 0.1)
+        assert vsm.state["source_voltage"] == 2.0
+        assert vsm.state["current_compliance"] == 0.1
+
         inst = Keithley2400.__new__(Keithley2400)
         inst.instrument = Mock()
         inst.check_params = check_params
-        inst.configure_voltage_source(1.0, 0.05)
+        inst.configure_voltage_source(channel=1, voltage=1.0, current_compliance=0.05)
         inst.instrument.write.assert_any_call(":SOUR:FUNC VOLT")
         inst.instrument.write.assert_any_call(":SOUR:VOLT:LEV 1.0")
         inst.instrument.write.assert_any_call(":SENS:CURR:PROT 0.05")
 
+        inst.instrument.write.reset_mock()
+        inst.configure_voltage_source(1, 2.0, 0.1)
+        inst.instrument.write.assert_any_call(":SOUR:FUNC VOLT")
+        inst.instrument.write.assert_any_call(":SOUR:VOLT:LEV 2.0")
+        inst.instrument.write.assert_any_call(":SENS:CURR:PROT 0.1")
+
     @pytest.mark.parametrize("check_params", [False, True])
-    def test_configure_current_source_legacy_positional(self, check_params):
-        # configure_current_source(0.01, 20.0) -> 0.01 A, 20.0 V compliance
+    def test_configure_current_source_standard_calls(self, check_params):
         vsm = VirtualSourcemeter()
         vsm.check_params = check_params
-        vsm.configure_current_source(0.01, 20.0)
+        vsm.configure_current_source(channel=1, current=0.01, voltage_compliance=20.0)
         assert vsm.state["source_func"] == "CURR"
         assert vsm.state["source_current"] == 0.01
         assert vsm.state["voltage_compliance"] == 20.0
 
+        vsm.configure_current_source(1, 0.02, 30.0)
+        assert vsm.state["source_current"] == 0.02
+        assert vsm.state["voltage_compliance"] == 30.0
+
         inst = Keithley2400.__new__(Keithley2400)
         inst.instrument = Mock()
         inst.check_params = check_params
-        inst.configure_current_source(0.01, 20.0)
+        inst.configure_current_source(channel=1, current=0.01, voltage_compliance=20.0)
         inst.instrument.write.assert_any_call(":SOUR:FUNC CURR")
         inst.instrument.write.assert_any_call(":SOUR:CURR:LEV 0.01")
         inst.instrument.write.assert_any_call(":SENS:VOLT:PROT 20.0")
+
+        inst.instrument.write.reset_mock()
+        inst.configure_current_source(1, 0.02, 30.0)
+        inst.instrument.write.assert_any_call(":SOUR:FUNC CURR")
+        inst.instrument.write.assert_any_call(":SOUR:CURR:LEV 0.02")
+        inst.instrument.write.assert_any_call(":SENS:VOLT:PROT 30.0")
 
     @pytest.mark.parametrize("check_params", [False, True])
     def test_configure_rejects_invalid_channel_without_side_effects(self, check_params):
@@ -835,8 +760,6 @@ class TestRejectDuplicateArguments:
     """Verify that duplicate arguments raise TypeError before state changes or transport writes."""
 
     duplicate_calls = [
-        lambda dev: dev.output(False, on=True),
-        lambda dev: dev.output(False, channel=1),
         lambda dev: dev.output(1, channel=1),
         lambda dev: dev.output(1, False, channel=1),
         lambda dev: dev.output(1, False, on=False),
@@ -862,14 +785,14 @@ class TestRejectDuplicateArguments:
         lambda dev: dev.set_sense_mode(1, "4W", channel=1),
         lambda dev: dev.set_sense_mode(1, "4W", sense_mode="4W"),
         lambda dev: dev.configure_voltage_source(1, channel=1),
-        lambda dev: dev.configure_voltage_source(1.0, 0.05, channel=1),
-        lambda dev: dev.configure_voltage_source(1.0, 0.05, voltage=1.0),
+        lambda dev: dev.configure_voltage_source(1, 1.0, channel=1),
+        lambda dev: dev.configure_voltage_source(1, 1.0, voltage=1.0),
         lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, channel=1),
         lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, voltage=1.0),
         lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, current_compliance=0.05),
         lambda dev: dev.configure_current_source(1, channel=1),
-        lambda dev: dev.configure_current_source(0.01, 20.0, channel=1),
-        lambda dev: dev.configure_current_source(0.01, 20.0, current=0.01),
+        lambda dev: dev.configure_current_source(1, 0.01, channel=1),
+        lambda dev: dev.configure_current_source(1, 0.01, current=0.01),
         lambda dev: dev.configure_current_source(1, 0.01, 20.0, channel=1),
         lambda dev: dev.configure_current_source(1, 0.01, 20.0, current=0.01),
         lambda dev: dev.configure_current_source(1, 0.01, 20.0, voltage_compliance=20.0),
@@ -951,25 +874,32 @@ class TestRejectUnknownKeywordArguments:
     """Verify that unknown keyword arguments raise TypeError before state changes or transport writes."""
 
     unknown_calls = [
+        lambda dev: dev.output(channel=1, on=False, unknown_arg=1),
+        lambda dev: dev.output(1, False, unknown_arg=1),
         lambda dev: dev.output(on=False, unknown_arg=1),
-        lambda dev: dev.output(False, unknown_arg=1),
-        lambda dev: dev.set_source_voltage(4.2, unknown_arg=1),
+        lambda dev: dev.set_source_voltage(channel=1, voltage=4.2, unknown_arg=1),
         lambda dev: dev.set_source_voltage(1, 4.2, unknown_arg=1),
         lambda dev: dev.set_source_voltage(voltage=4.2, unknown_arg=1),
-        lambda dev: dev.set_source_current(0.01, unknown_arg=1),
-        lambda dev: dev.set_voltage_compliance(10.0, unknown_arg=1),
-        lambda dev: dev.set_current_compliance(0.05, unknown_arg=1),
-        lambda dev: dev.set_source_function("VOLT", unknown_arg=1),
-        lambda dev: dev.set_sense_function("CURR", unknown_arg=1),
-        lambda dev: dev.set_sense_mode("4W", unknown_arg=1),
-        lambda dev: dev.configure_voltage_source(1.0, 0.05, unknown_arg=1),
+        lambda dev: dev.set_source_current(channel=1, current=0.01, unknown_arg=1),
+        lambda dev: dev.set_source_current(1, 0.01, unknown_arg=1),
+        lambda dev: dev.set_voltage_compliance(channel=1, voltage_compliance=10.0, unknown_arg=1),
+        lambda dev: dev.set_voltage_compliance(1, 10.0, unknown_arg=1),
+        lambda dev: dev.set_current_compliance(channel=1, current_compliance=0.05, unknown_arg=1),
+        lambda dev: dev.set_current_compliance(1, 0.05, unknown_arg=1),
+        lambda dev: dev.set_source_function(channel=1, source_func="VOLT", unknown_arg=1),
+        lambda dev: dev.set_source_function(1, "VOLT", unknown_arg=1),
+        lambda dev: dev.set_sense_function(channel=1, sense_func="CURR", unknown_arg=1),
+        lambda dev: dev.set_sense_function(1, "CURR", unknown_arg=1),
+        lambda dev: dev.set_sense_mode(channel=1, sense_mode="4W", unknown_arg=1),
+        lambda dev: dev.set_sense_mode(1, "4W", unknown_arg=1),
+        lambda dev: dev.configure_voltage_source(channel=1, voltage=1.0, current_compliance=0.05, unknown_arg=1),
         lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, unknown_arg=1),
-        lambda dev: dev.configure_current_source(0.01, 20.0, unknown_arg=1),
+        lambda dev: dev.configure_current_source(channel=1, current=0.01, voltage_compliance=20.0, unknown_arg=1),
         lambda dev: dev.configure_current_source(1, 0.01, 20.0, unknown_arg=1),
-        lambda dev: dev.quick_read(unknown_arg=1),
-        lambda dev: dev.get_voltage(unknown_arg=1),
-        lambda dev: dev.get_current(unknown_arg=1),
-        lambda dev: dev.get_resistance(unknown_arg=1),
+        lambda dev: dev.quick_read(channel=1, unknown_arg=1),
+        lambda dev: dev.get_voltage(channel=1, unknown_arg=1),
+        lambda dev: dev.get_current(channel=1, unknown_arg=1),
+        lambda dev: dev.get_resistance(channel=1, unknown_arg=1),
     ]
 
     @pytest.mark.parametrize("check_params", [False, True])

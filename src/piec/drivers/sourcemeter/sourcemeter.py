@@ -17,67 +17,6 @@ class Sourcemeter(Instrument):
     voltage_compliance = (None, None)
     current_compliance = (None, None)
 
-    def _normalize_arg_compatibility(self, method_name, args, kwargs):
-        """
-        Normalize clearly identified legacy positional arguments and channel conventions
-        before parameter binding and validation.
-
-        Preserves valid mixed positional-channel/keyword-value calls and retains normal
-        Python argument-binding errors for excess, duplicate, or unknown arguments.
-        """
-        if method_name == "output":
-            # Legacy form: output(bool) where 'on' was the single positional argument.
-            if len(args) == 1 and isinstance(args[0], bool):
-                if "on" in kwargs:
-                    raise TypeError(f"{method_name}() got multiple values for argument 'on'")
-                if "channel" in kwargs:
-                    raise TypeError(f"{method_name}() got multiple values for argument 'channel'")
-                return (1, args[0]), kwargs
-            return args, kwargs
-
-        elif method_name in ("set_source_voltage", "set_source_current",
-                             "set_voltage_compliance", "set_current_compliance"):
-            val_name = {
-                "set_source_voltage": "voltage",
-                "set_source_current": "current",
-                "set_voltage_compliance": "voltage_compliance",
-                "set_current_compliance": "current_compliance",
-            }[method_name]
-
-            # Legacy form: setter(value) where value was the single positional argument.
-            # When channel is in kwargs (e.g. setter(1, channel=1)) or val_name is in kwargs
-            # (e.g. setter(1, voltage=4.2)), return args untouched so standard Python binding
-            # either accepts the valid mixed call or raises TypeError for duplicate arguments.
-            if len(args) == 1 and "channel" not in kwargs and val_name not in kwargs:
-                return (1, args[0]), kwargs
-            return args, kwargs
-
-        elif method_name in ("set_source_function", "set_sense_function", "set_sense_mode"):
-            val_name = {
-                "set_source_function": "source_func",
-                "set_sense_function": "sense_func",
-                "set_sense_mode": "sense_mode",
-            }[method_name]
-
-            # Legacy form: setter(func_or_mode) where func_or_mode was the single positional argument.
-            if len(args) == 1 and "channel" not in kwargs and val_name not in kwargs:
-                return (1, args[0]), kwargs
-            return args, kwargs
-
-        elif method_name == "configure_voltage_source":
-            # Legacy form: configure_voltage_source(voltage, current_compliance) -> 2 positional arguments.
-            if len(args) == 2 and "channel" not in kwargs and "voltage" not in kwargs and "current_compliance" not in kwargs:
-                return (1, args[0], args[1]), kwargs
-            return args, kwargs
-
-        elif method_name == "configure_current_source":
-            # Legacy form: configure_current_source(current, voltage_compliance) -> 2 positional arguments.
-            if len(args) == 2 and "channel" not in kwargs and "current" not in kwargs and "voltage_compliance" not in kwargs:
-                return (1, args[0], args[1]), kwargs
-            return args, kwargs
-
-        return args, kwargs
-    
     """
     Here we define the MINIMUM required methods for a sourcemeter.
     """
