@@ -19,24 +19,21 @@ class Sourcemeter(Instrument):
 
     def _normalize_arg_compatibility(self, method_name, args, kwargs):
         """
-        Normalize legacy positional arguments and channel conventions
+        Normalize clearly identified legacy positional arguments and channel conventions
         before parameter binding and validation.
-        """
-        kwargs = dict(kwargs)
 
+        Preserves valid mixed positional-channel/keyword-value calls and retains normal
+        Python argument-binding errors for excess, duplicate, or unknown arguments.
+        """
         if method_name == "output":
-            if len(args) == 1 and isinstance(args[0], bool) and "on" not in kwargs:
-                return (), {"channel": kwargs.get("channel", 1), "on": args[0]}
-            if len(args) == 1 and not isinstance(args[0], bool) and "channel" not in kwargs:
-                return (), {"channel": args[0], "on": kwargs.get("on", True)}
-            if len(args) >= 2:
-                return (), {"channel": args[0], "on": args[1]}
-            if len(args) == 0:
-                if "channel" in kwargs and isinstance(kwargs["channel"], bool) and "on" not in kwargs:
-                    return (), {"channel": 1, "on": kwargs["channel"]}
-                if "on" in kwargs and "channel" not in kwargs:
-                    kwargs["channel"] = 1
-                return (), kwargs
+            # Legacy form: output(bool) where 'on' was the single positional argument.
+            if len(args) == 1 and isinstance(args[0], bool):
+                if "on" in kwargs:
+                    raise TypeError(f"{method_name}() got multiple values for argument 'on'")
+                if "channel" in kwargs:
+                    raise TypeError(f"{method_name}() got multiple values for argument 'channel'")
+                return (1, args[0]), kwargs
+            return args, kwargs
 
         elif method_name in ("set_source_voltage", "set_source_current",
                              "set_voltage_compliance", "set_current_compliance"):
@@ -47,14 +44,13 @@ class Sourcemeter(Instrument):
                 "set_current_compliance": "current_compliance",
             }[method_name]
 
-            if len(args) == 1:
-                return (), {"channel": kwargs.get("channel", 1), val_name: args[0]}
-            elif len(args) >= 2:
-                return (), {"channel": args[0], val_name: args[1]}
-            elif len(args) == 0:
-                if val_name in kwargs and "channel" not in kwargs:
-                    kwargs["channel"] = 1
-                return (), kwargs
+            # Legacy form: setter(value) where value was the single positional argument.
+            # When channel is in kwargs (e.g. setter(1, channel=1)) or val_name is in kwargs
+            # (e.g. setter(1, voltage=4.2)), return args untouched so standard Python binding
+            # either accepts the valid mixed call or raises TypeError for duplicate arguments.
+            if len(args) == 1 and "channel" not in kwargs and val_name not in kwargs:
+                return (1, args[0]), kwargs
+            return args, kwargs
 
         elif method_name in ("set_source_function", "set_sense_function", "set_sense_mode"):
             val_name = {
@@ -63,46 +59,22 @@ class Sourcemeter(Instrument):
                 "set_sense_mode": "sense_mode",
             }[method_name]
 
-            if len(args) == 1:
-                return (), {"channel": kwargs.get("channel", 1), val_name: args[0]}
-            elif len(args) >= 2:
-                return (), {"channel": args[0], val_name: args[1]}
-            elif len(args) == 0:
-                if val_name in kwargs and "channel" not in kwargs:
-                    kwargs["channel"] = 1
-                return (), kwargs
+            # Legacy form: setter(func_or_mode) where func_or_mode was the single positional argument.
+            if len(args) == 1 and "channel" not in kwargs and val_name not in kwargs:
+                return (1, args[0]), kwargs
+            return args, kwargs
 
         elif method_name == "configure_voltage_source":
-            if len(args) == 2:
-                return (), {"channel": kwargs.get("channel", 1), "voltage": args[0], "current_compliance": args[1]}
-            elif len(args) == 1:
-                return (), {"channel": kwargs.get("channel", 1), "voltage": args[0], "current_compliance": kwargs.get("current_compliance", 1.05)}
-            elif len(args) >= 3:
-                return (), {"channel": args[0], "voltage": args[1], "current_compliance": args[2]}
-            elif len(args) == 0:
-                if "channel" not in kwargs:
-                    kwargs["channel"] = 1
-                return (), kwargs
+            # Legacy form: configure_voltage_source(voltage, current_compliance) -> 2 positional arguments.
+            if len(args) == 2 and "channel" not in kwargs and "voltage" not in kwargs and "current_compliance" not in kwargs:
+                return (1, args[0], args[1]), kwargs
+            return args, kwargs
 
         elif method_name == "configure_current_source":
-            if len(args) == 2:
-                return (), {"channel": kwargs.get("channel", 1), "current": args[0], "voltage_compliance": args[1]}
-            elif len(args) == 1:
-                return (), {"channel": kwargs.get("channel", 1), "current": args[0], "voltage_compliance": kwargs.get("voltage_compliance", 210)}
-            elif len(args) >= 3:
-                return (), {"channel": args[0], "current": args[1], "voltage_compliance": args[2]}
-            elif len(args) == 0:
-                if "channel" not in kwargs:
-                    kwargs["channel"] = 1
-                return (), kwargs
-
-        elif method_name in ("quick_read", "get_voltage", "get_current", "get_resistance"):
-            if len(args) >= 1:
-                return (), {"channel": args[0]}
-            elif len(args) == 0:
-                if "channel" not in kwargs:
-                    kwargs["channel"] = 1
-                return (), kwargs
+            # Legacy form: configure_current_source(current, voltage_compliance) -> 2 positional arguments.
+            if len(args) == 2 and "channel" not in kwargs and "current" not in kwargs and "voltage_compliance" not in kwargs:
+                return (1, args[0], args[1]), kwargs
+            return args, kwargs
 
         return args, kwargs
     

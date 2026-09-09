@@ -715,3 +715,284 @@ class TestLegacyConfigurationCalls:
             inst.configure_current_source(channel=99, current=0.05, voltage_compliance=50.0)
         inst.instrument.write.assert_not_called()
 
+
+class TestMixedPositionalKeywordCalls:
+    """Verify that valid mixed positional-channel and keyword-value calls succeed."""
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_virtual_sourcemeter_mixed_calls(self, check_params):
+        vsm = VirtualSourcemeter()
+        vsm.check_params = check_params
+
+        # output(1, on=False)
+        vsm.output(1, on=False)
+        assert vsm.state["output_on"] is False
+
+        # output(1, on=True)
+        vsm.output(1, on=True)
+        assert vsm.state["output_on"] is True
+
+        # set_source_voltage(1, voltage=3.5)
+        vsm.set_source_voltage(1, voltage=3.5)
+        assert vsm.state["source_voltage"] == 3.5
+
+        # set_source_current(1, current=0.01)
+        vsm.set_source_current(1, current=0.01)
+        assert vsm.state["source_current"] == 0.01
+
+        # set_voltage_compliance(1, voltage_compliance=10.0)
+        vsm.set_voltage_compliance(1, voltage_compliance=10.0)
+        assert vsm.state["voltage_compliance"] == 10.0
+
+        # set_current_compliance(1, current_compliance=0.05)
+        vsm.set_current_compliance(1, current_compliance=0.05)
+        assert vsm.state["current_compliance"] == 0.05
+
+        # set_source_function(1, source_func="VOLT")
+        vsm.set_source_function(1, source_func="VOLT")
+        assert vsm.state["source_func"] == "VOLT"
+
+        # set_sense_function(1, sense_func="CURR")
+        vsm.set_sense_function(1, sense_func="CURR")
+        assert vsm.state["sense_func"] == "CURR"
+
+        # set_sense_mode(1, sense_mode="4W")
+        vsm.set_sense_mode(1, sense_mode="4W")
+        assert vsm.state["sense_mode"] == "4W"
+
+        # configure_voltage_source(1, voltage=2.0, current_compliance=0.1)
+        vsm.configure_voltage_source(1, voltage=2.0, current_compliance=0.1)
+        assert vsm.state["source_func"] == "VOLT"
+        assert vsm.state["source_voltage"] == 2.0
+        assert vsm.state["current_compliance"] == 0.1
+
+        # configure_voltage_source(1, 4.0, current_compliance=0.2)
+        vsm.configure_voltage_source(1, 4.0, current_compliance=0.2)
+        assert vsm.state["source_voltage"] == 4.0
+        assert vsm.state["current_compliance"] == 0.2
+
+        # configure_current_source(1, current=0.02, voltage_compliance=50.0)
+        vsm.configure_current_source(1, current=0.02, voltage_compliance=50.0)
+        assert vsm.state["source_func"] == "CURR"
+        assert vsm.state["source_current"] == 0.02
+        assert vsm.state["voltage_compliance"] == 50.0
+
+        # configure_current_source(1, 0.03, voltage_compliance=60.0)
+        vsm.configure_current_source(1, 0.03, voltage_compliance=60.0)
+        assert vsm.state["source_current"] == 0.03
+        assert vsm.state["voltage_compliance"] == 60.0
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_keithley2400_mixed_calls(self, check_params):
+        inst = Keithley2400.__new__(Keithley2400)
+        inst.instrument = Mock()
+        inst.check_params = check_params
+
+        inst.output(1, on=False)
+        inst.instrument.write.assert_called_with(":OUTP OFF")
+
+        inst.set_source_voltage(1, voltage=3.5)
+        inst.instrument.write.assert_called_with(":SOUR:VOLT:LEV 3.5")
+
+        inst.set_source_current(1, current=0.01)
+        inst.instrument.write.assert_called_with(":SOUR:CURR:LEV 0.01")
+
+        inst.set_voltage_compliance(1, voltage_compliance=10.0)
+        inst.instrument.write.assert_called_with(":SENS:VOLT:PROT 10.0")
+
+        inst.set_current_compliance(1, current_compliance=0.05)
+        inst.instrument.write.assert_called_with(":SENS:CURR:PROT 0.05")
+
+        inst.set_source_function(1, source_func="VOLT")
+        inst.instrument.write.assert_called_with(":SOUR:FUNC VOLT")
+
+        inst.set_sense_function(1, sense_func="CURR")
+        inst.instrument.write.assert_called_with(':SENS:FUNC "CURRent"')
+
+        inst.set_sense_mode(1, sense_mode="4W")
+        inst.instrument.write.assert_called_with(":SYST:RSEN ON")
+
+        inst.configure_voltage_source(1, voltage=2.0, current_compliance=0.1)
+        inst.instrument.write.assert_any_call(":SOUR:FUNC VOLT")
+        inst.instrument.write.assert_any_call(":SOUR:VOLT:LEV 2.0")
+        inst.instrument.write.assert_any_call(":SENS:CURR:PROT 0.1")
+
+        inst.configure_voltage_source(1, 4.0, current_compliance=0.2)
+        inst.instrument.write.assert_any_call(":SOUR:VOLT:LEV 4.0")
+        inst.instrument.write.assert_any_call(":SENS:CURR:PROT 0.2")
+
+        inst.configure_current_source(1, current=0.02, voltage_compliance=50.0)
+        inst.instrument.write.assert_any_call(":SOUR:FUNC CURR")
+        inst.instrument.write.assert_any_call(":SOUR:CURR:LEV 0.02")
+        inst.instrument.write.assert_any_call(":SENS:VOLT:PROT 50.0")
+
+        inst.configure_current_source(1, 0.03, voltage_compliance=60.0)
+        inst.instrument.write.assert_any_call(":SOUR:CURR:LEV 0.03")
+        inst.instrument.write.assert_any_call(":SENS:VOLT:PROT 60.0")
+
+
+class TestRejectDuplicateArguments:
+    """Verify that duplicate arguments raise TypeError before state changes or transport writes."""
+
+    duplicate_calls = [
+        lambda dev: dev.output(False, on=True),
+        lambda dev: dev.output(False, channel=1),
+        lambda dev: dev.output(1, channel=1),
+        lambda dev: dev.output(1, False, channel=1),
+        lambda dev: dev.output(1, False, on=False),
+        lambda dev: dev.set_source_voltage(1, channel=1),
+        lambda dev: dev.set_source_voltage(1, 4.2, channel=1),
+        lambda dev: dev.set_source_voltage(1, 4.2, voltage=4.2),
+        lambda dev: dev.set_source_current(1, channel=1),
+        lambda dev: dev.set_source_current(1, 0.01, channel=1),
+        lambda dev: dev.set_source_current(1, 0.01, current=0.01),
+        lambda dev: dev.set_voltage_compliance(1, channel=1),
+        lambda dev: dev.set_voltage_compliance(1, 10.0, channel=1),
+        lambda dev: dev.set_voltage_compliance(1, 10.0, voltage_compliance=10.0),
+        lambda dev: dev.set_current_compliance(1, channel=1),
+        lambda dev: dev.set_current_compliance(1, 0.05, channel=1),
+        lambda dev: dev.set_current_compliance(1, 0.05, current_compliance=0.05),
+        lambda dev: dev.set_source_function(1, channel=1),
+        lambda dev: dev.set_source_function(1, "VOLT", channel=1),
+        lambda dev: dev.set_source_function(1, "VOLT", source_func="VOLT"),
+        lambda dev: dev.set_sense_function(1, channel=1),
+        lambda dev: dev.set_sense_function(1, "CURR", channel=1),
+        lambda dev: dev.set_sense_function(1, "CURR", sense_func="CURR"),
+        lambda dev: dev.set_sense_mode(1, channel=1),
+        lambda dev: dev.set_sense_mode(1, "4W", channel=1),
+        lambda dev: dev.set_sense_mode(1, "4W", sense_mode="4W"),
+        lambda dev: dev.configure_voltage_source(1, channel=1),
+        lambda dev: dev.configure_voltage_source(1.0, 0.05, channel=1),
+        lambda dev: dev.configure_voltage_source(1.0, 0.05, voltage=1.0),
+        lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, channel=1),
+        lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, voltage=1.0),
+        lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, current_compliance=0.05),
+        lambda dev: dev.configure_current_source(1, channel=1),
+        lambda dev: dev.configure_current_source(0.01, 20.0, channel=1),
+        lambda dev: dev.configure_current_source(0.01, 20.0, current=0.01),
+        lambda dev: dev.configure_current_source(1, 0.01, 20.0, channel=1),
+        lambda dev: dev.configure_current_source(1, 0.01, 20.0, current=0.01),
+        lambda dev: dev.configure_current_source(1, 0.01, 20.0, voltage_compliance=20.0),
+        lambda dev: dev.quick_read(1, channel=1),
+        lambda dev: dev.get_voltage(1, channel=1),
+        lambda dev: dev.get_current(1, channel=1),
+        lambda dev: dev.get_resistance(1, channel=1),
+    ]
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_virtual_sourcemeter_rejects_duplicate_arguments(self, check_params):
+        vsm = VirtualSourcemeter()
+        vsm.check_params = check_params
+        initial_state = dict(vsm.state)
+
+        for call_fn in self.duplicate_calls:
+            with pytest.raises(TypeError):
+                call_fn(vsm)
+            assert vsm.state == initial_state
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_keithley2400_rejects_duplicate_arguments(self, check_params):
+        for call_fn in self.duplicate_calls:
+            inst = Keithley2400.__new__(Keithley2400)
+            inst.instrument = Mock()
+            inst.check_params = check_params
+
+            with pytest.raises(TypeError):
+                call_fn(inst)
+            inst.instrument.write.assert_not_called()
+            inst.instrument.query.assert_not_called()
+
+
+class TestRejectExcessPositionalArguments:
+    """Verify that excess positional arguments raise TypeError before state changes or transport writes."""
+
+    excess_calls = [
+        lambda dev: dev.output(1, False, "excess"),
+        lambda dev: dev.set_source_voltage(1, 4.2, 5.0),
+        lambda dev: dev.set_source_current(1, 0.01, 0.02),
+        lambda dev: dev.set_voltage_compliance(1, 10.0, 20.0),
+        lambda dev: dev.set_current_compliance(1, 0.05, 0.1),
+        lambda dev: dev.set_source_function(1, "VOLT", "CURR"),
+        lambda dev: dev.set_sense_function(1, "CURR", "VOLT"),
+        lambda dev: dev.set_sense_mode(1, "4W", "2W"),
+        lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, "excess"),
+        lambda dev: dev.configure_current_source(1, 0.01, 20.0, "excess"),
+        lambda dev: dev.quick_read(1, "excess"),
+        lambda dev: dev.get_voltage(1, "excess"),
+        lambda dev: dev.get_current(1, "excess"),
+        lambda dev: dev.get_resistance(1, "excess"),
+    ]
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_virtual_sourcemeter_rejects_excess_arguments(self, check_params):
+        vsm = VirtualSourcemeter()
+        vsm.check_params = check_params
+        initial_state = dict(vsm.state)
+
+        for call_fn in self.excess_calls:
+            with pytest.raises(TypeError):
+                call_fn(vsm)
+            assert vsm.state == initial_state
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_keithley2400_rejects_excess_arguments(self, check_params):
+        for call_fn in self.excess_calls:
+            inst = Keithley2400.__new__(Keithley2400)
+            inst.instrument = Mock()
+            inst.check_params = check_params
+
+            with pytest.raises(TypeError):
+                call_fn(inst)
+            inst.instrument.write.assert_not_called()
+            inst.instrument.query.assert_not_called()
+
+
+class TestRejectUnknownKeywordArguments:
+    """Verify that unknown keyword arguments raise TypeError before state changes or transport writes."""
+
+    unknown_calls = [
+        lambda dev: dev.output(on=False, unknown_arg=1),
+        lambda dev: dev.output(False, unknown_arg=1),
+        lambda dev: dev.set_source_voltage(4.2, unknown_arg=1),
+        lambda dev: dev.set_source_voltage(1, 4.2, unknown_arg=1),
+        lambda dev: dev.set_source_voltage(voltage=4.2, unknown_arg=1),
+        lambda dev: dev.set_source_current(0.01, unknown_arg=1),
+        lambda dev: dev.set_voltage_compliance(10.0, unknown_arg=1),
+        lambda dev: dev.set_current_compliance(0.05, unknown_arg=1),
+        lambda dev: dev.set_source_function("VOLT", unknown_arg=1),
+        lambda dev: dev.set_sense_function("CURR", unknown_arg=1),
+        lambda dev: dev.set_sense_mode("4W", unknown_arg=1),
+        lambda dev: dev.configure_voltage_source(1.0, 0.05, unknown_arg=1),
+        lambda dev: dev.configure_voltage_source(1, 1.0, 0.05, unknown_arg=1),
+        lambda dev: dev.configure_current_source(0.01, 20.0, unknown_arg=1),
+        lambda dev: dev.configure_current_source(1, 0.01, 20.0, unknown_arg=1),
+        lambda dev: dev.quick_read(unknown_arg=1),
+        lambda dev: dev.get_voltage(unknown_arg=1),
+        lambda dev: dev.get_current(unknown_arg=1),
+        lambda dev: dev.get_resistance(unknown_arg=1),
+    ]
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_virtual_sourcemeter_rejects_unknown_arguments(self, check_params):
+        vsm = VirtualSourcemeter()
+        vsm.check_params = check_params
+        initial_state = dict(vsm.state)
+
+        for call_fn in self.unknown_calls:
+            with pytest.raises(TypeError):
+                call_fn(vsm)
+            assert vsm.state == initial_state
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_keithley2400_rejects_unknown_arguments(self, check_params):
+        for call_fn in self.unknown_calls:
+            inst = Keithley2400.__new__(Keithley2400)
+            inst.instrument = Mock()
+            inst.check_params = check_params
+
+            with pytest.raises(TypeError):
+                call_fn(inst)
+            inst.instrument.write.assert_not_called()
+            inst.instrument.query.assert_not_called()
+
+
