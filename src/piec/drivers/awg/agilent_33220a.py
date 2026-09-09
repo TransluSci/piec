@@ -5,6 +5,9 @@ from .awg import Awg
 class Agilent33220A(Scpi, Awg):
     """
     Driver for the Agilent 33220A Arbitrary Waveform Generator.
+
+    Note: Hardware trigger capabilities (output_trigger, set_trigger_*,
+    configure_trigger) are currently unsupported and remain inherited empty stubs from Awg.
     """
     
     # Class attributes for parameter restrictions

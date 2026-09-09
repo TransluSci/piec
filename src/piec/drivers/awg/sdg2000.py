@@ -7,6 +7,11 @@ class SDG2000X(Scpi, Awg):
     """
     Driver for the Siglent SDG2000X Series Arbitrary Waveform Generator.
     Based on the Programming Guide PG02-E03B.
+
+    Supported trigger capabilities: output_trigger (manual trigger via BTWV MTRIG),
+    set_trigger_source (BTWV TRSR), set_trigger_slope (BTWV EDGE), and set_trigger_mode (BTWV GATE_NCYC).
+    Unsupported trigger capabilities: set_trigger_level is not supported by the SDG2000X
+    SCPI BTWV subsystem and remains an inherited empty method from Awg.
     """
 
     # --- AUTODETECT IDENTIFIER ---

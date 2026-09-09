@@ -3,6 +3,7 @@ Contract tests for the Arbitrary Waveform Generator (AWG) base driver and implem
 
 Stage 0 Checkpoint 3: AWG output_trigger indentation repair and contract verification.
 Stage 0 Checkpoint 4: AWG trigger_source conditional repair and affected-driver audit.
+Stage 0 Checkpoint 4 follow-up: Comprehensive concrete AWG and adapter trigger audit and verification.
 """
 
 import inspect
@@ -11,10 +12,47 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 
+from piec.drivers.awg.agilent_33220a import Agilent33220A
+from piec.drivers.awg.agilent_33500 import Agilent33500
 from piec.drivers.awg.awg import Awg
 from piec.drivers.awg.k_81150a import Keysight81150a
+from piec.drivers.awg.rigol_dg1000 import RigolDG1000
+from piec.drivers.awg.rigol_dg4000 import RigolDG4000
 from piec.drivers.awg.sdg2000 import SDG2000X
 from piec.drivers.awg.virtual_awg import VirtualAwg
+from piec.drivers.emulators.daq_to_awg import DaqAsAwg
+
+
+# Inventory of all concrete AWG drivers and adapters in the codebase
+CONCRETE_AWG_DRIVERS = [
+    VirtualAwg,
+    Keysight81150a,
+    SDG2000X,
+    Agilent33220A,
+    Agilent33500,
+    RigolDG1000,
+    RigolDG4000,
+]
+
+AWG_ADAPTERS = [
+    DaqAsAwg,
+]
+
+ALL_AWG_IMPLEMENTATIONS = CONCRETE_AWG_DRIVERS + AWG_ADAPTERS
+
+SUPPORTED_TRIGGER_DRIVERS = [
+    VirtualAwg,
+    Keysight81150a,
+    SDG2000X,
+]
+
+UNSUPPORTED_TRIGGER_CLASSES = [
+    Agilent33220A,
+    Agilent33500,
+    RigolDG1000,
+    RigolDG4000,
+    DaqAsAwg,
+]
 
 
 class _MinimalAwg(Awg):
@@ -207,21 +245,217 @@ class TestAwgTriggerSourceContract:
 
 
 class TestAwgDriverAuditAndSafingContract:
-    """Audit concrete AWGs for manual trigger support and all-channel output disabling."""
+    """
+    Audit all concrete AWGs and adapters:
+    - Distinguish implemented trigger behavior from inherited empty methods.
+    - Verify supported implementations through command and simulation effect assertions.
+    - Verify unsupported implementations produce no hardware commands (no invented commands).
+    - Explicitly document unsupported trigger capabilities.
+    """
+
+    def test_inventory_contains_all_awg_subclasses(self):
+        """Every concrete driver and adapter implementing Awg in the codebase must be inventoried."""
+        for cls in ALL_AWG_IMPLEMENTATIONS:
+            assert issubclass(cls, Awg), f"{cls.__name__} must inherit from Awg"
+
+        # Verify that all 7 concrete drivers and 1 adapter are present
+        assert len(CONCRETE_AWG_DRIVERS) == 7
+        assert len(AWG_ADAPTERS) == 1
+        assert len(ALL_AWG_IMPLEMENTATIONS) == 8
+
+    def test_implemented_vs_inherited_trigger_methods(self):
+        """
+        Distinguish explicitly overridden trigger methods from inherited empty stubs on Awg.
+        
+        A method is considered implemented by a driver only if it is defined in that class's
+        own __dict__, overriding the empty base stub in Awg.
+        """
+        # VirtualAwg overrides all trigger methods
+        for method in ("output_trigger", "set_trigger_source", "set_trigger_level", "set_trigger_slope", "set_trigger_mode"):
+            assert method in VirtualAwg.__dict__, f"VirtualAwg must implement {method}"
+
+        # Keysight81150a overrides all trigger methods
+        for method in ("output_trigger", "set_trigger_source", "set_trigger_level", "set_trigger_slope", "set_trigger_mode"):
+            assert method in Keysight81150a.__dict__, f"Keysight81150a must implement {method}"
+
+        # SDG2000X overrides source, slope, mode, and output_trigger; but set_trigger_level is unsupported
+        assert "output_trigger" in SDG2000X.__dict__
+        assert "set_trigger_source" in SDG2000X.__dict__
+        assert "set_trigger_slope" in SDG2000X.__dict__
+        assert "set_trigger_mode" in SDG2000X.__dict__
+        assert "set_trigger_level" not in SDG2000X.__dict__, "SDG2000X does not support set_trigger_level"
+
+        # Unsupported drivers/adapters must NOT define these methods in their own __dict__;
+        # they must inherit empty stubs from Awg.
+        for cls in UNSUPPORTED_TRIGGER_CLASSES:
+            for method in ("output_trigger", "set_trigger_source", "set_trigger_level", "set_trigger_slope", "set_trigger_mode"):
+                assert method not in cls.__dict__, (
+                    f"{cls.__name__} should not define {method} in __dict__; it is an unsupported inherited stub"
+                )
+
+    def test_keysight_81150a_supported_trigger_commands(self):
+        """Keysight81150a supported trigger methods write exact SCPI commands."""
+        mock_inst = Mock()
+        k_awg = Keysight81150a.__new__(Keysight81150a)
+        k_awg.instrument = mock_inst
+
+        # output_trigger -> :TRIG
+        k_awg.output_trigger()
+        mock_inst.write.assert_called_with(":TRIG")
+
+        # set_trigger_source -> :ARM:SOUR{channel} {source}
+        k_awg.set_trigger_source(1, "MAN")
+        mock_inst.write.assert_called_with(":ARM:SOUR1 MAN")
+
+        # set_trigger_level -> :ARM:LEV {level}
+        k_awg.set_trigger_level(1, 1.5)
+        mock_inst.write.assert_called_with(":ARM:LEV 1.5")
+
+        # set_trigger_slope -> :ARM:SLOP {slope}
+        k_awg.set_trigger_slope(1, "POS")
+        mock_inst.write.assert_called_with(":ARM:SLOP pos")
+
+        # set_trigger_mode -> :ARM:SENS{channel} {mode}
+        k_awg.set_trigger_mode(1, "EDGE")
+        mock_inst.write.assert_called_with(":ARM:SENS1 edge")
+
+        # configure_trigger dispatches to all setters
+        mock_inst.reset_mock()
+        k_awg.configure_trigger(1, trigger_source="EXT", trigger_level=2.0, trigger_slope="NEG", trigger_mode="LEV")
+        mock_inst.write.assert_any_call(":ARM:SOUR1 EXT")
+        mock_inst.write.assert_any_call(":ARM:LEV 2.0")
+        mock_inst.write.assert_any_call(":ARM:SLOP neg")
+        mock_inst.write.assert_any_call(":ARM:SENS1 lev")
+        assert mock_inst.write.call_count == 4
+
+    def test_sdg2000x_supported_and_unsupported_trigger_commands(self):
+        """SDG2000X writes SCPI commands for supported features and no-ops for unsupported trigger_level."""
+        mock_inst = Mock()
+        sdg = SDG2000X.__new__(SDG2000X)
+        sdg.instrument = mock_inst
+
+        # output_trigger -> C1:BTWV MTRIG
+        sdg.output_trigger()
+        mock_inst.write.assert_called_with("C1:BTWV MTRIG")
+
+        # set_trigger_source -> C{channel}:BTWV TRSR,{source}
+        sdg.set_trigger_source(1, "MAN")
+        mock_inst.write.assert_called_with("C1:BTWV TRSR,MAN")
+
+        # set_trigger_slope -> C{channel}:BTWV EDGE,{slope}
+        sdg.set_trigger_slope(1, "POS")
+        mock_inst.write.assert_called_with("C1:BTWV EDGE,RISE")
+
+        # set_trigger_mode -> C{channel}:BTWV GATE_NCYC,{mode}
+        sdg.set_trigger_mode(1, "EDGE")
+        mock_inst.write.assert_called_with("C1:BTWV GATE_NCYC,NCYC")
+
+        # set_trigger_level is unsupported: inherits empty stub from Awg, writes 0 commands
+        mock_inst.reset_mock()
+        sdg.set_trigger_level(1, 1.5)
+        mock_inst.write.assert_not_called()
+
+        # configure_trigger dispatches supported parameters and does not write trigger_level
+        mock_inst.reset_mock()
+        sdg.configure_trigger(1, trigger_source="EXT", trigger_level=2.0, trigger_slope="NEG", trigger_mode="LEV")
+        mock_inst.write.assert_any_call("C1:BTWV TRSR,EXT")
+        mock_inst.write.assert_any_call("C1:BTWV EDGE,FALL")
+        mock_inst.write.assert_any_call("C1:BTWV GATE_NCYC,GATE")
+        assert mock_inst.write.call_count == 3
+
+    def test_virtual_awg_supported_trigger_effects(self):
+        """VirtualAwg trigger methods record internal state and output_trigger generates simulated sample data."""
+        vawg = VirtualAwg(simulation_points=50)
+
+        # set_trigger_* methods update internal state dictionary
+        vawg.set_trigger_source(1, "MAN")
+        assert vawg.state["trigger_source"][1].upper() == "MAN"
+
+        vawg.set_trigger_level(1, 1.8)
+        assert vawg.state["trigger_level"][1] == 1.8
+
+        vawg.set_trigger_slope(1, "NEG")
+        assert vawg.state["trigger_slope"][1].upper() == "NEG"
+
+        vawg.set_trigger_mode(1, "LEV")
+        assert vawg.state["trigger_mode"][1].upper() == "LEV"
+
+        # Clear prior sample simulation state
+        vawg.sample.output_voltage = None
+        vawg.sample.t = None
+        vawg.sample.prep_points = None
+
+        with patch.object(vawg, "write", wraps=vawg.write) as spy_write:
+            vawg.output_trigger()
+            spy_write.assert_called_once_with(":TRIG")
+
+        # Assert physical/simulation effect on virtual sample
+        assert vawg.sample.prep_points == 20
+        assert isinstance(vawg.sample.t, np.ndarray)
+        assert len(vawg.sample.t) == 70  # 50 simulation_points + 20 prep_points
+        assert isinstance(vawg.sample.output_voltage, np.ndarray)
+        assert len(vawg.sample.output_voltage) == 70
+        assert np.any(vawg.sample.output_voltage != 0.0)
 
     @pytest.mark.parametrize(
         "cls",
         [
-            VirtualAwg,
-            Keysight81150a,
-            SDG2000X,
-            Awg,
+            Agilent33220A,
+            Agilent33500,
+            RigolDG1000,
+            RigolDG4000,
         ],
     )
-    def test_awg_manual_trigger_audit(self, cls):
-        """Audit all known AWG drivers for real manual trigger support."""
-        assert hasattr(cls, "output_trigger"), f"{cls.__name__} missing output_trigger"
-        assert callable(getattr(cls, "output_trigger")), f"{cls.__name__}.output_trigger is not callable"
+    def test_unsupported_awg_drivers_produce_no_hardware_commands(self, cls):
+        """Drivers with unsupported trigger features inherit empty methods that emit zero hardware commands."""
+        mock_inst = Mock()
+        inst = cls.__new__(cls)
+        inst.instrument = mock_inst
+
+        # Calling output_trigger does nothing and writes 0 commands
+        result = inst.output_trigger()
+        assert result is None
+        mock_inst.write.assert_not_called()
+
+        # Calling individual trigger setters does nothing and writes 0 commands
+        inst.set_trigger_source(1, "MAN")
+        inst.set_trigger_level(1, 1.0)
+        inst.set_trigger_slope(1, "POS")
+        inst.set_trigger_mode(1, "EDGE")
+        mock_inst.write.assert_not_called()
+
+        # configure_trigger gracefully no-ops without error or writes
+        inst.configure_trigger(1, trigger_source="MAN", trigger_level=1.0, trigger_slope="POS", trigger_mode="EDGE")
+        mock_inst.write.assert_not_called()
+
+    def test_unsupported_daq_adapter_produces_no_hardware_commands(self):
+        """DaqAsAwg adapter inherits empty trigger methods and does not call underlying DAQ methods."""
+        mock_daq = Mock()
+        mock_daq.ao_channel = [0, 1]
+        mock_daq.ao_sample_rate = 10000
+
+        adapter = DaqAsAwg(mock_daq)
+        mock_daq.reset_mock()
+
+        # Calling output_trigger does nothing
+        result = adapter.output_trigger()
+        assert result is None
+        assert mock_daq.method_calls == []
+
+        # Calling configure_trigger does nothing
+        adapter.configure_trigger(1, trigger_source="MAN", trigger_level=1.0)
+        assert mock_daq.method_calls == []
+
+    @pytest.mark.parametrize("cls", UNSUPPORTED_TRIGGER_CLASSES)
+    def test_unsupported_trigger_capabilities_documented_in_docstring(self, cls):
+        """Classes with unsupported trigger capabilities must document this in their docstrings."""
+        doc = inspect.getdoc(cls)
+        assert doc is not None, f"{cls.__name__} missing docstring"
+        doc_lower = doc.lower()
+        assert "trigger" in doc_lower, f"{cls.__name__} docstring must mention trigger capabilities"
+        assert (
+            "unsupported" in doc_lower or "empty stub" in doc_lower
+        ), f"{cls.__name__} docstring must explicitly document trigger capabilities as unsupported"
 
     def test_virtual_awg_all_channel_safing(self):
         """VirtualAwg allows disabling output on every supported channel."""
