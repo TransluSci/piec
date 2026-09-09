@@ -2,7 +2,7 @@ Adding a Measurement
 ====================
 
 This page explains how to add a new experiment type to piec. The complete,
-normative checklist is maintained in
+normative guide and checklist are maintained in
 ``src/piec/measurement/MEASUREMENT_DEVELOPER_GUIDE.md``.
 
 Where to put the file
@@ -15,62 +15,80 @@ experiments), or create a new module for a distinct experiment category:
 .. code-block:: text
 
    src/piec/measurement/
+   ├── base.py                # BaseMeasurement engine and session
+   ├── contracts.py           # Lifecycle states, events, tokens, snapshots
+   ├── runner.py              # Thread-safe MeasurementRunner
+   ├── persistence.py         # Handle CSV writer, atomic publication, bundles
    ├── discrete_waveform.py   # AWG + oscilloscope experiments
    ├── magneto_transport.py   # Magnetotransport experiments
    └── your_category.py       # New module if needed
 
-Choosing the right base class
-------------------------------
+The Base Class
+--------------
 
-* Inherit from ``DiscreteWaveform`` if your experiment uses an AWG to apply a waveform and
-  an oscilloscope to capture the response.
-* Inherit from ``MagnetoTransport`` for experiments involving magnetic fields and transport
-  measurements.
-* Create a standalone class following the measurement lifecycle guide for experiments that
-  do not fit an existing category. There is currently no universal ``Measurement`` base class.
+Every measurement class MUST inherit from ``BaseMeasurement``:
 
-Implementing the required methods
------------------------------------
+.. code-block:: python
 
-Standalone measurement classes should expose the common lifecycle:
+   from piec.measurement import BaseMeasurement
 
-``_update_metadata(self)``
-   Build the standard one-row metadata table, including parameters, instrument identities,
-   timestamp, measurement type, units, and processing state.
+   class MyMeasurement(BaseMeasurement):
+       def __init__(self, instrument, *, output_dir=None, metadata=None):
+           super().__init__(
+               output_dir=output_dir,
+               measurement_schema="my_schema",
+               column_units={"voltage": "V", "current": "A"},
+               metadata=metadata,
+           )
 
-``configure_instruments(self)``
-   Prepare each instrument without starting the stimulus. Existing families may use a more
-   specific method such as ``configure_awg``.
+Implementing Protected Lifecycle Hooks
+--------------------------------------
 
-``capture_data(self)``
-   Acquire the measurement into ``self.data`` as a pandas DataFrame.
+``BaseMeasurement`` owns the public lifecycle methods (``run_experiment()``,
+``session()``, ``configure_instruments()``, ``capture_data()``, ``safe_shutdown()``,
+``request_stop()``, and ``snapshot()``). Subclasses **must not override** these public
+methods; instead, implement the protected hooks:
 
-``analyze(self)``
-   Read the raw captured data, compute physical quantities, and generate / save plots.
-   Call the appropriate function from ``piec.analysis`` if one exists.
+``_validate_options(self, options)``
+   Validate measurement-specific run options before acquiring an execution reservation.
 
-``save_data(self)``
-   Write the standard metadata-plus-data CSV using the helpers in
-   ``piec.analysis.utilities``. Existing waveform classes may use ``save_waveform``.
+``_configure_instruments(self, request)``
+   Prepare each instrument (ranges, modes, triggers) while keeping outputs strictly disabled.
 
-``run_experiment(self)``
-   Coordinate configuration, capture, safe output shutdown, analysis, saving, and history.
+``_capture_data(self, request, on_update=None)``
+   Execute the acquisition loop and return raw tabular data as a ``pandas.DataFrame``.
+   Periodically check ``self._coordinator.is_stop_requested`` to support cooperative cancellation.
 
-Long-running measurements must support cooperative cancellation, and active hardware outputs
-must be disabled in a ``finally`` block. See the full development guide for GUI, streaming,
-virtual-operation, and testing requirements.
+``_safe_shutdown(self, recorder=None)``
+   De-energize hardware outputs and ramp safe states. This hook is guaranteed to execute
+   on every exit path (success, cancellation, error, or interrupt).
 
-Adding analysis functions
---------------------------
+``_analyze_data(self, raw_data, request)``
+   Perform scientific calculations on raw data and return the analyzed ``pandas.DataFrame``.
 
-If your measurement requires new analysis code, add it to the appropriate module in
-``src/piec/analysis/`` (e.g., ``hysteresis.py``, ``pund.py``), or create a new module.
-Document each public function with a docstring that describes arguments, return values, and
-units.
+``_stage_side_artifacts(self, data, request, reservation)``
+   Optional hook for measurements that produce companion files (such as plots or summary logs)
+   published atomically alongside the primary CSV.
 
-Documenting the measurement
------------------------------
+Data Columns and Units
+----------------------
 
-Add a new ``.rst`` file to ``docs/source/measurements/`` following the template of existing
-pages (:doc:`../measurements/ferroelectric`, etc.). Then add it to
-the ``Measurements`` toctree in ``docs/source/index.rst``.
+All measurements enforce plain lowercase column names (e.g., ``voltage``, ``current``, ``time``).
+Units are serialized exclusively in metadata through ``column_units_json``. Never embed unit
+strings in column headers.
+
+Background Execution with MeasurementRunner
+-------------------------------------------
+
+GUI applications and asynchronous tasks use ``MeasurementRunner`` to execute measurements
+in dedicated non-daemon worker threads with bounded display queues and close coordination:
+
+.. code-block:: python
+
+   from piec.measurement import MeasurementRunner
+
+   runner = MeasurementRunner(measurement)
+   token = runner.start()
+
+See ``src/piec/measurement/MEASUREMENT_DEVELOPER_GUIDE.md`` for the complete guide,
+executable examples, safety policies, persistence details, and the developer review checklist.
