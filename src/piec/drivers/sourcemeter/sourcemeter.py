@@ -16,6 +16,95 @@ class Sourcemeter(Instrument):
     current = (None, None)
     voltage_compliance = (None, None)
     current_compliance = (None, None)
+
+    def _normalize_arg_compatibility(self, method_name, args, kwargs):
+        """
+        Normalize legacy positional arguments and channel conventions
+        before parameter binding and validation.
+        """
+        kwargs = dict(kwargs)
+
+        if method_name == "output":
+            if len(args) == 1 and isinstance(args[0], bool) and "on" not in kwargs:
+                return (), {"channel": kwargs.get("channel", 1), "on": args[0]}
+            if len(args) == 1 and not isinstance(args[0], bool) and "channel" not in kwargs:
+                return (), {"channel": args[0], "on": kwargs.get("on", True)}
+            if len(args) >= 2:
+                return (), {"channel": args[0], "on": args[1]}
+            if len(args) == 0:
+                if "channel" in kwargs and isinstance(kwargs["channel"], bool) and "on" not in kwargs:
+                    return (), {"channel": 1, "on": kwargs["channel"]}
+                if "on" in kwargs and "channel" not in kwargs:
+                    kwargs["channel"] = 1
+                return (), kwargs
+
+        elif method_name in ("set_source_voltage", "set_source_current",
+                             "set_voltage_compliance", "set_current_compliance"):
+            val_name = {
+                "set_source_voltage": "voltage",
+                "set_source_current": "current",
+                "set_voltage_compliance": "voltage_compliance",
+                "set_current_compliance": "current_compliance",
+            }[method_name]
+
+            if len(args) == 1:
+                return (), {"channel": kwargs.get("channel", 1), val_name: args[0]}
+            elif len(args) >= 2:
+                return (), {"channel": args[0], val_name: args[1]}
+            elif len(args) == 0:
+                if val_name in kwargs and "channel" not in kwargs:
+                    kwargs["channel"] = 1
+                return (), kwargs
+
+        elif method_name in ("set_source_function", "set_sense_function", "set_sense_mode"):
+            val_name = {
+                "set_source_function": "source_func",
+                "set_sense_function": "sense_func",
+                "set_sense_mode": "sense_mode",
+            }[method_name]
+
+            if len(args) == 1:
+                return (), {"channel": kwargs.get("channel", 1), val_name: args[0]}
+            elif len(args) >= 2:
+                return (), {"channel": args[0], val_name: args[1]}
+            elif len(args) == 0:
+                if val_name in kwargs and "channel" not in kwargs:
+                    kwargs["channel"] = 1
+                return (), kwargs
+
+        elif method_name == "configure_voltage_source":
+            if len(args) == 2:
+                return (), {"channel": kwargs.get("channel", 1), "voltage": args[0], "current_compliance": args[1]}
+            elif len(args) == 1:
+                return (), {"channel": kwargs.get("channel", 1), "voltage": args[0], "current_compliance": kwargs.get("current_compliance", 1.05)}
+            elif len(args) >= 3:
+                return (), {"channel": args[0], "voltage": args[1], "current_compliance": args[2]}
+            elif len(args) == 0:
+                if "channel" not in kwargs:
+                    kwargs["channel"] = 1
+                return (), kwargs
+
+        elif method_name == "configure_current_source":
+            if len(args) == 2:
+                return (), {"channel": kwargs.get("channel", 1), "current": args[0], "voltage_compliance": args[1]}
+            elif len(args) == 1:
+                return (), {"channel": kwargs.get("channel", 1), "current": args[0], "voltage_compliance": kwargs.get("voltage_compliance", 210)}
+            elif len(args) >= 3:
+                return (), {"channel": args[0], "current": args[1], "voltage_compliance": args[2]}
+            elif len(args) == 0:
+                if "channel" not in kwargs:
+                    kwargs["channel"] = 1
+                return (), kwargs
+
+        elif method_name in ("quick_read", "get_voltage", "get_current", "get_resistance"):
+            if len(args) >= 1:
+                return (), {"channel": args[0]}
+            elif len(args) == 0:
+                if "channel" not in kwargs:
+                    kwargs["channel"] = 1
+                return (), kwargs
+
+        return args, kwargs
     
     """
     Here we define the MINIMUM required methods for a sourcemeter.
@@ -236,6 +325,15 @@ class Sourcemeter(Instrument):
             channel (int): The channel to read from. Default is 1.
         returns:
             (float): The measured current in Amps.
+        """
+
+    def get_resistance(self, channel=1):
+        """
+        Convenience function to specifically measure and return the resistance.
+        args:
+            channel (int): The channel to read from. Default is 1.
+        returns:
+            (float): The measured resistance in Ohms.
         """
 
     # --- Optional Features ---
