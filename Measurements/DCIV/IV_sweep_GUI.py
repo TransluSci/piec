@@ -305,8 +305,12 @@ class IVSweepApp(MeasurementApp):
                         elif event.partial_filename:
                             print(f"Partial data saved to: {event.partial_filename}")
 
-                        if getattr(event, "recoverable_staging_paths", None):
-                            print(f"Recoverable data staging paths: {event.recoverable_staging_paths}")
+                        recovery_paths = (
+                            event.record.metadata.get("recoverable_staging_paths", ())
+                            if event.record is not None else ()
+                        )
+                        if recovery_paths:
+                            print(f"Recoverable data staging paths: {recovery_paths}")
 
                         if event.primary_error_message:
                             messagebox.showerror("IV Sweep measurement failed", event.primary_error_message)
@@ -330,6 +334,7 @@ class IVSweepApp(MeasurementApp):
                         self.run_button.config(state="normal")
 
             if getattr(self, "_close_when_safe", False) and self.runner.can_close():
+                self._close_instruments()
                 self._finish_close()
                 return
 
@@ -357,7 +362,7 @@ class IVSweepApp(MeasurementApp):
         self.canvas.draw()
 
     def plot_data(self, event=None):
-        if hasattr(self, "experiment"):
+        if getattr(self, "experiment", None) is not None:
             if self.experiment.data is not None and not self.experiment.data.empty:
                 self._plot_dataframe(self.experiment.data)
             elif self.experiment.filename and os.path.exists(self.experiment.filename):

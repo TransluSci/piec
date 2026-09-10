@@ -320,3 +320,58 @@ def test_gui_handles_sourcemeter_connection_failure(monkeypatch):
     assert "Sourcemeter connection error" in mock_showerror.call_args[0][0]
     assert app.runner is None
     assert len(app._instruments) == 0
+
+
+def test_gui_axis_change_before_first_run_is_noop():
+    app = make_headless_iv_gui()
+    assert app.experiment is None
+    app.plot_data()
+    app.ax.plot.assert_not_called()
+    app.canvas.draw.assert_not_called()
+
+
+def test_gui_deferred_close_releases_connections_after_safety_retry(monkeypatch):
+    import Measurements.DCIV.IV_sweep_GUI as gui_mod
+
+    app = make_headless_iv_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", Mock())
+    with patch.object(IVSweep, "_safe_shutdown", side_effect=RuntimeError("unsafe")):
+        app.run_measurement()
+        assert app.runner.join(timeout=5)
+        source = app._instruments[0]
+        source.close = Mock()
+        app._poll_runner()
+
+    def finish():
+        assert app._instruments == []
+        source.close.assert_called_once_with()
+    app._finish_close = Mock(side_effect=finish)
+    app.on_closing()
+    source.close.assert_not_called()
+    app._finish_close.assert_not_called()
+
+    app.experiment.safe_shutdown()
+    assert app.runner.can_close()
+    app._poll_runner()
+    app._finish_close.assert_called_once_with()
+
+
+def test_gui_reports_recovery_paths_from_failed_save_record(monkeypatch, tmp_path, capsys):
+    import Measurements.DCIV.IV_sweep_GUI as gui_mod
+    from piec.measurement import persistence
+
+    app = make_headless_iv_gui()
+    app.save_dir_entry.get.return_value = str(tmp_path)
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", Mock())
+    monkeypatch.setattr(persistence, "atomic_publish_no_replace",
+                        Mock(side_effect=OSError("publication failed")))
+    app.run_measurement()
+    assert app.runner.join(timeout=5)
+    record = app.experiment.last_run_record
+    paths = record.metadata["recoverable_staging_paths"]
+    assert record.state == RunState.FAILED
+    assert paths and all(Path(path).is_file() for path in paths)
+    app._poll_runner()
+    output = capsys.readouterr().out
+    assert "Recoverable data staging paths:" in output
+    assert all(path in output for path in paths) or str(paths) in output

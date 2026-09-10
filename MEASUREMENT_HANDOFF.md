@@ -4,6 +4,21 @@ Continue on `measuremnt-standarization`. Checkpoint 15 is complete. Next is
 **checkpoint 16 only: MOKE GUI interaction/ownership hardening**, following the
 measurement standardization plan. Validate and commit checkpoint 16 separately.
 
+## Checkpoint 15 review corrections
+
+- Deferred close now releases GUI-owned connections after a successful safety retry,
+  before destroying the window. Unsafe shutdown still retains connections.
+- Recovery paths come from `TerminalEvent.record.metadata["recoverable_staging_paths"]`;
+  `TerminalEvent` has no direct recovery-path field.
+- Plot-axis changes before creating an experiment are harmless no-ops.
+- Added three regressions to `tests/test_measurement_iv_gui.py`, including a real
+  failed publication that retains staging and a failed shutdown followed by retry.
+- Focused IV GUI/review tests: **26 passed**. The default full-suite run hit a host
+  Tk installation failure in the unrelated PUND plot-artifact test (missing
+  `icons.tcl`). Full suite with Matplotlib Agg: **1231 passed, 1 skipped, 2 xfailed**.
+  Command: `.\.venv\Scripts\python.exe -c "import piec.measurement.gui_utils; import matplotlib; matplotlib.use('Agg'); import pytest; raise SystemExit(pytest.main(['-q', '-p', 'no:cacheprovider']))"`.
+  This validates headless logic and artifacts, not a physical Tk window or hardware.
+
 ## Checkpoint 15 IV GUI interaction and ownership hardening
 
 - Single hardware writer rule: callbacks (`run_measurement`, `refresh_instruments`)
