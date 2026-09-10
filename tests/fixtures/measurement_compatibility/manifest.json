@@ -66,10 +66,12 @@
     "moke_feature": "d1bac1ccf37e6578586336278c1ea36cf39b4722"
   },
   "migrated_families": [
-    "IVSweep"
+    "IVSweep",
+    "MokeMeasurement",
+    "MokeSnapshot"
   ],
   "migration_notes": {
-    "MokeMeasurement": "Full migration pending checkpoint 14. Plain-schema work exists separately in the working tree; this checkpoint does not depend on it.",
+    "MokeMeasurement": "Migrated in Checkpoint 14.",
     "IVSweep": "Migrated in Checkpoint 13.",
     "DiscreteWaveform": "Pending vertical slice in Checkpoint 20a.",
     "HysteresisLoop": "Pending vertical slice in Checkpoint 20b.",

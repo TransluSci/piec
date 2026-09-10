@@ -222,8 +222,9 @@ class TestMokeMeasurementCompatibility:
         assert moke.history == []
         assert moke.abort_requested is False
 
-        # Characterize that MOKE constructor does NOT call instrument idn() in __init__
-        assert source.idn.call_count == 1  # only for initial metadata dictionary
+        # Target contract: zero hardware I/O in __init__
+        assert source.idn.call_count == 0
+        assert dmm.idn.call_count == 0
         assert moke.output_column == "source_output"
         assert moke.calibrated_field_column == "field_calibrated"
         assert moke.field_column == "field_calibrated"

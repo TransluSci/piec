@@ -1,10 +1,33 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. The five checkpoint 13 review findings
-are fixed. Next is **checkpoint 14 only: the MOKE vertical slice and its affected
-consumers**, following the measurement standardization plan. Validate and commit
-checkpoint 14 separately. IV GUI interaction/ownership hardening remains in
-checkpoint 15; do not describe it as completed by this patch.
+Continue on `measuremnt-standarization`. Checkpoint 14 is complete. Next is
+**checkpoint 15 only: IV GUI interaction/ownership hardening**, following the
+measurement standardization plan. Validate and commit checkpoint 15 separately.
+
+## Checkpoint 14 MOKE vertical slice migration
+
+- `MokeMeasurement` migrated to `BaseMeasurement`:
+  - Zero hardware I/O in constructor (`sourcemeter.idn` and `dmm.idn` deferred to configuration hook).
+  - Positional instruments `sourcemeter`, `dmm`; all measurement settings keyword-only.
+  - Plain lowercase columns (`time`, `cycle`, `point`, `direction`, `source_output`,
+    `field_calibrated`, `detector_voltage`, and optional `field_measured`, `field_time`)
+    with JSON metadata units.
+  - Dual field modes: calibrated field mode and sequential measured field mode via `field_reader`.
+  - Paced, cancellable ramps for initial setpoint, point transitions, and safing ramp
+    using `max_output_step` and `ramp_delay`. Transitions do not add intermediate measurement rows.
+  - Guaranteed attempt-all software safing: output disable is attempted even if zero-ramp fails,
+    and custom shutdown handler is supported.
+  - Bounded live snapshots (`raw_window_points`, default 1000) returning `MokeSnapshot`.
+  - Cycle averaging excluding partial/aborted cycles. Full raw data preserved in `finally`
+    across read errors, callback crashes, or cooperative stops.
+- Golden CSVs (`moke_calibrated_golden.csv`, `moke_measured_golden.csv`) updated to standard
+  1-row metadata layout with `run_id`, `outcome`, `partial`, and `save_requested`.
+- `manifest.json` updated with `MokeMeasurement` and `MokeSnapshot` in `migrated_families`.
+- Added unit, lifecycle, and fault injection test suite `tests/test_measurement_moke.py` (16 passed).
+- Updated compatibility test suite `tests/test_measurement_iv_moke_compatibility.py` (14 passed).
+- Existing test suites: `tests/test_moke.py` (49 passed), `tests/test_moke_gui.py` (5 passed),
+  `tests/test_dmm_contract.py` (34 passed).
+- Full repository test suite: **1210 passed, 1 skipped, 2 xfailed** in 23.87s on Python 3.13.2.
 
 ## Checkpoint 13 review corrections
 
