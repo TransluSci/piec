@@ -32,7 +32,7 @@ MOKE_MEAS_GOLDEN_PATH = FIXTURES_DIR / "moke_measured_golden.csv"
 
 
 class TestIVSweepCompatibility:
-    """Characterize legacy IVSweep behavior and verify regression goldens."""
+    """Verify standardized IVSweep behavior and regression goldens."""
 
     def _create_mock_sourcemeter(self, resistance: float = 100.0) -> Mock:
         sm = Mock()
@@ -65,7 +65,9 @@ class TestIVSweepCompatibility:
             current_compliance=0.05,
             dwell_time=0.01,
             sense_mode="4W",
-            save_dir=str(tmp_path),
+            ramp_step=0.1,
+            ramp_delay=0.01,
+            output_dir=str(tmp_path),
         )
 
         assert iv.sourcemeter is sm
@@ -75,64 +77,67 @@ class TestIVSweepCompatibility:
         assert iv.current_compliance == 0.05
         assert iv.dwell_time == 0.01
         assert iv.sense_mode == "4W"
-        assert iv.save_dir == str(tmp_path)
+        assert iv.ramp_step == 0.1
+        assert iv.ramp_delay == 0.01
+        assert iv.output_dir == Path(tmp_path)
         assert iv.data is None
         assert iv.filename is None
         assert iv.mtype == "iv_sweep"
+        assert iv.measurement_schema == "iv_sweep"
+        assert iv.column_units == {"voltage": "V", "current": "A"}
 
-        # Characterize legacy behavior: constructor queries instrument identity
-        assert sm.idn.call_count >= 1
-        assert isinstance(iv.metadata, pd.DataFrame)
-        assert len(iv.metadata) == 1
-        assert iv.metadata.loc[0, "sourcemeter"] == "KEITHLEY INSTRUMENTS INC.,MODEL 2400,1234567,1.0"
-        assert iv.metadata.loc[0, "mtype"] == "iv_sweep"
-        assert bool(iv.metadata.loc[0, "processed"]) is False
+        # Target contract: zero hardware I/O in __init__
+        assert sm.idn.call_count == 0
 
-    def test_iv_sweep_configure_sourcemeter(self):
+    def test_iv_sweep_configure_instruments(self):
         sm = self._create_mock_sourcemeter()
         iv = IVSweep(sm, v_start=0.5, current_compliance=0.02, sense_mode="4W")
-        iv.configure_sourcemeter()
+        iv.configure_instruments()
 
-        sm.configure_voltage_source.assert_called_once_with(channel=1, voltage=0.5, current_compliance=0.02)
+        sm.configure_voltage_source.assert_called_once_with(channel=1, voltage=0.0, current_compliance=0.02)
         sm.set_sense_mode.assert_called_once_with(channel=1, sense_mode="4W")
+        # Standalone configure runs a transient configuration scope, safing (disabling output) on exit
+        assert sm.output.call_args == call(channel=1, on=False)
+        assert sm.output.call_count == 2
 
     def test_iv_sweep_sweep_execution(self):
         sm = self._create_mock_sourcemeter(resistance=50.0)
         iv = IVSweep(sm, v_start=0.0, v_stop=2.0, num_steps=5, dwell_time=0.0)
-        iv.sweep()
+        with iv.session(save=False) as sess:
+            sess.configure_instruments()
+            data = sess.capture_data()
 
-        sm.output.assert_called_with(channel=1, on=True)
-        assert iv.data is not None
-        assert_data_columns_match(iv.data, ["voltage (V)", "current (A)"], exact_order=True)
-        assert len(iv.data) == 5
+        sm.output.assert_called_with(channel=1, on=False)
+        assert data is not None
+        assert_data_columns_match(data, ["voltage", "current"], exact_order=True)
+        assert len(data) == 5
 
-        voltages = iv.data["voltage (V)"].tolist()
+        voltages = data["voltage"].tolist()
         assert voltages == pytest.approx([0.0, 0.5, 1.0, 1.5, 2.0])
-        currents = iv.data["current (A)"].tolist()
+        currents = data["current"].tolist()
         assert currents == pytest.approx([0.0, 0.01, 0.02, 0.03, 0.04])
 
     def test_iv_sweep_save_data(self, tmp_path):
         sm = self._create_mock_sourcemeter()
-        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=3, dwell_time=0.0, save_dir=str(tmp_path))
-        iv.sweep()
-        iv.save_data()
+        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=3, dwell_time=0.0, output_dir=str(tmp_path))
+        df = iv.run_experiment(save=True)
 
         assert iv.filename is not None
         assert Path(iv.filename).is_file()
-        assert "iv_sweep_0p0V_to_1p0V" in Path(iv.filename).name
+        assert Path(iv.filename).name.endswith("_iv_sweep.csv")
 
         meta, data = assert_piec_csv_layout(iv.filename)
         assert len(meta) == 1
         assert len(data) == 3
-        assert_data_columns_match(data, ["voltage (V)", "current (A)"], exact_order=True)
+        assert_data_columns_match(data, ["voltage", "current"], exact_order=True)
 
     def test_iv_sweep_run_experiment_lifecycle(self, tmp_path):
         sm = self._create_mock_sourcemeter()
-        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, save_dir=str(tmp_path))
+        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, output_dir=str(tmp_path))
 
         result = iv.run_experiment()
-        # Legacy return value contract: returns None
-        assert result is None
+        # Target contract: full runner returns DataFrame
+        assert isinstance(result, pd.DataFrame)
         assert iv.filename is not None
         assert Path(iv.filename).is_file()
         # Output must be turned off at completion
@@ -141,22 +146,23 @@ class TestIVSweepCompatibility:
     def test_iv_sweep_golden_csv_regression(self, tmp_path):
         """Verify that deterministic execution produces exact match against golden CSV."""
         sm = self._create_mock_sourcemeter(resistance=100.0)
-        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, sense_mode="2W", save_dir=str(tmp_path))
+        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, sense_mode="2W", output_dir=str(tmp_path))
         iv.run_experiment()
 
         assert_golden_csv_matches(
             actual_path=iv.filename,
             golden_path=IV_GOLDEN_PATH,
-            volatile_metadata_keys=["timestamp", "save_dir", "filename"],
+            volatile_metadata_keys=["timestamp", "run_id"],
         )
 
     def test_iv_sweep_numerical_equivalence_with_mapping(self, tmp_path):
         """Verify numerical equivalence using the harness old_to_new_column_mapping."""
+        from piec.measurement.persistence import read_measurement_csv
         sm = self._create_mock_sourcemeter(resistance=100.0)
-        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, sense_mode="2W", save_dir=str(tmp_path))
+        iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, sense_mode="2W", output_dir=str(tmp_path))
         iv.run_experiment()
 
-        _, gold_data = standard_csv_to_metadata_and_data(str(IV_GOLDEN_PATH))
+        _, gold_data, _ = read_measurement_csv(IV_GOLDEN_PATH)
         assert_numerical_data_matches_reference(iv.data, gold_data, "IVSweep")
 
 

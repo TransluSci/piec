@@ -6,9 +6,20 @@
     "required_profile": "DC calibrator + DMM field readback + lock-in X/Y with internal excitation + stepper",
     "readout_configuration_default": "preserve",
     "preserve_rule": "Do not initialize/reset, autorange or overwrite operator-selected sensitivity/reference settings on Run. Explicit configure mode is available; output safing remains a separate setup policy.",
-    "excitation_modes": ["lockin_internal", "external_source"],
-    "field_command_modes": ["calibration_table", "bounded_linear_calibration", "native_field_controller"],
-    "field_readback_modes": ["none", "digital_gaussmeter", "dmm_with_sensor_calibration"],
+    "excitation_modes": [
+      "lockin_internal",
+      "external_source"
+    ],
+    "field_command_modes": [
+      "calibration_table",
+      "bounded_linear_calibration",
+      "native_field_controller"
+    ],
+    "field_readback_modes": [
+      "none",
+      "digital_gaussmeter",
+      "dmm_with_sensor_calibration"
+    ],
     "calibration_rule": "Source-command and sensor-readback calibrations are independent; measured field does not replace the source-control mapping.",
     "rotation_scope": "Motorized controller required initially; manual confirmation workflow deferred.",
     "signal_scope": "Keep truthful X/Y voltages for the current profile. Resistance and voltage/current modes require separate validated adapters; programmed lock-in excitation does not establish sample current."
@@ -54,10 +65,12 @@
     "master": "9d9760242f44a79401626964f0122cc91b149c18",
     "moke_feature": "d1bac1ccf37e6578586336278c1ea36cf39b4722"
   },
-  "migrated_families": [],
+  "migrated_families": [
+    "IVSweep"
+  ],
   "migration_notes": {
     "MokeMeasurement": "Full migration pending checkpoint 14. Plain-schema work exists separately in the working tree; this checkpoint does not depend on it.",
-    "IVSweep": "Pending vertical slice in Checkpoint 13.",
+    "IVSweep": "Migrated in Checkpoint 13.",
     "DiscreteWaveform": "Pending vertical slice in Checkpoint 20a.",
     "HysteresisLoop": "Pending vertical slice in Checkpoint 20b.",
     "ThreePulsePund": "Pending vertical slice in Checkpoint 20c.",
@@ -231,7 +244,9 @@
           "current_compliance",
           "dwell_time",
           "sense_mode",
-          "timestamp"
+          "timestamp",
+          "ramp_step",
+          "ramp_delay"
         ],
         "filename_grammar": "{index}_iv_sweep.csv",
         "public_lifecycle": [

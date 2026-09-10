@@ -118,6 +118,7 @@ class TargetMeasurement:
 
 def test_migration_switch_selects_target_instead_of_old_signature(monkeypatch):
     manifest = copy.deepcopy(h.load_manifest())
+    manifest["migrated_families"] = []
     monkeypatch.setattr(h, "load_manifest", lambda: manifest)
     # No construction or hardware calls; validate the selector structurally.
     with pytest.raises(AssertionError):

@@ -24,45 +24,52 @@ The core instrument is a **Sourcemeter** (e.g., Keithley 2400 or a Virtual repre
 
 ## Software Architecture
 
-The codebase is structured around the `IVSweep` class, which handles the core measurement logic.
+The codebase is structured around the `IVSweep` class, which inherits from `BaseMeasurement` and implements PIEC's standardized measurement lifecycle.
 
 ### `IVSweep` Class
 *   **Location**: `src/piec/measurement/iv_sweep.py`
-*   **Role**: Manages the sourcemeter driver, coordinates the voltage sweep, and handles data collection.
-*   **Key Methods**:
-    *   `configure_sourcemeter()`: Sets up the voltage source mode, applies current compliance, and sets the sensing mode (2W/4W).
-    *   `sweep()`: Executes the voltage ramp. Loops through the target voltages, waits the dwell time, measures both V and I, and stores the results in a pandas DataFrame.
-    *   `save_data()`: Exports the measurement data and metadata to a CSV file.
-    *   `run_experiment()`: The main entry point that configures the instrument, runs the sweep, turns off the output, and saves the data.
+*   **Role**: Coordinates the sourcemeter driver, conducts the voltage sweep, publishes bounded snapshots, and manages safe shutdown and atomic persistence.
+*   **Target Contract**:
+    *   **Zero I/O in `__init__`**: Instrument configuration and queries are deferred to the protected `_configure_instruments` hook.
+    *   **Standard Schema**: Schema `iv_sweep`, version 1.
+    *   **Plain Column Headers**: `voltage` and `current` (no embedded units in column headers).
+    *   **Metadata Units**: JSON-encoded unit mapping `{"voltage": "V", "current": "A"}` stored in `column_units_json`.
+*   **Key Lifecycle Methods & Hooks**:
+    *   `run_experiment(*, on_update=None, save=True, save_partial=None, options=None)`: Main execution entry point running the full canonical lifecycle and returning the resulting `pandas.DataFrame`.
+    *   `_configure_instruments(request)`: Configures the sourcemeter at electrical zero (0.0 V) with output disabled, setting current compliance and sensing mode (2W/4W).
+    *   `_capture_data(request, on_update)`: Executes a paced, cancellable pre-ramp from 0.0 V to `v_start`, followed by the voltage sweep with cancellable dwell times and reads. Publishes mutation-isolated snapshots and preserves raw data in memory on interruption.
+    *   `_safe_shutdown(recorder)`: Executes paced shutdown back to electrical zero (0.0 V), guarantees that output disable is attempted even if voltage ramping encounters an error, and verifies zero voltage.
+    *   `session(*, save=False, save_partial=None, options=None)`: Context manager for interactive scripts and Jupyter notebooks.
 
 ## How to Use the GUI
 
-The GUI (`Measurements/DCIV/IV_sweep_GUI.py`) provides an intuitive interface for configuring and executing IV sweeps.
+The GUI (`Measurements/DCIV/IV_sweep_GUI.py`) provides an interface for configuring and executing IV sweeps using `MeasurementRunner`.
 
 ### 1. Instrument Connection
-*   **Sourcemeter Address**: A dropdown menu allows you to select the VISA address for the connected sourcemeter.
-*   **Virtual Mode**: Select `VIRTUAL` to run a simulation without connected hardware.
+*   **Sourcemeter Address**: Select the VISA address for the connected sourcemeter or choose `VIRTUAL` for simulation.
 *   **Refresh**: Updates the list of available VISA resources.
-*   **Sense Mode**: Select between `2W` and `4W` sensing.
+*   **Sense Mode**: Select between `2W` (standard) and `4W` (Kelvin) sensing.
 
 ### 2. Measurement Parameters
 *   **V Start (V)**: The initial voltage of the sweep.
 *   **V Stop (V)**: The final voltage of the sweep.
 *   **Number of Steps**: How many voltage points to measure between V Start and V Stop.
-*   **Current Compliance (A)**: The maximum allowable current. If the device attempts to draw more current, the sourcemeter will limit it to this value.
-*   **Dwell Time (s)**: The delay at each step before taking a measurement, allowing the system to stabilize.
+*   **Current Compliance (A)**: The maximum allowable current compliance limit.
+*   **Dwell Time (s)**: The settling delay at each step before taking a measurement.
 
 ### 3. Running a Measurement
-1.  **Configure**: Set all parameters and specify a **Save Directory**.
-2.  **Start**: Click **Run Measurement** (or press `Ctrl+Enter`).
-3.  **Monitor**: 
-    *   The plot will update with the data once the sweep is complete.
-    *   Use the plot configuration dropdowns to change the X and Y axes (e.g., plot Current vs. Voltage).
-    *   Console output will display the status of the sweep and confirm when data is saved.
+1.  **Configure**: Set all parameters and specify a **Save Directory** (leave empty or default for in-memory only).
+2.  **Start**: Click **RUN MEASUREMENT** (or press `Ctrl+Enter`). Execution runs in a dedicated background worker via `MeasurementRunner`.
+3.  **Monitor & Control**: 
+    *   Live snapshots are published via `DisplayQueue` and plotted in real time.
+    *   Click **STOP** to request cooperative software stop; the system safely ramps to 0.0 V and disables output.
+    *   Use the plot configuration dropdowns (`voltage`, `current`) to change axes.
+    *   The log console displays lifecycle status, verified hardware safety, and published filenames.
 
 ## Features Summary
 
-*   **Virtual Hardware Support**: Seamlessly switch between real hardware and virtual drivers for testing.
-*   **Safety**: Enforces current compliance limits to protect sensitive devices.
-*   **Data Management**: Automatically saves data and metadata to CSV files.
-*   **Dynamic Plotting**: Easily visualize the collected Current-Voltage characteristics.
+*   **Virtual Hardware Support**: Seamlessly switch between real hardware and virtual sourcemeters.
+*   **Guaranteed Hardware Safing**: Attempts output disable even if ramp-down fails, and coordinates safe application shutdown.
+*   **Atomic Persistence**: Windows/SMB-aware atomic publication prevents partially written files.
+*   **Standardized Schema**: Clean lowercase column headers with canonical unit metadata.
+*   **Live Snapshot Visualization**: Real-time display updates decoupled from acquisition execution.

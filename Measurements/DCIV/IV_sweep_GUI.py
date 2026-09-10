@@ -1,14 +1,24 @@
-import ctypes
-ctypes.windll.shcore.SetProcessDpiAwareness(2)
-
+import os
+import queue
 import tkinter as tk
 from tkinter import ttk
+
+try:
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    pass
+
 import numpy as np
+import pandas as pd
+
 from piec.drivers.sourcemeter.keithley2400 import Keithley2400
 from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
-from piec.measurement.iv_sweep import IVSweep
-from piec.analysis.utilities import standard_csv_to_metadata_and_data
+from piec.measurement.contracts import TerminalEvent
 from piec.measurement.gui_utils import MeasurementApp
+from piec.measurement.iv_sweep import IVSweep
+from piec.measurement.persistence import read_measurement_csv
+from piec.measurement.runner import MeasurementRunner
 
 DEFAULTS = {
     "sm_address": "VIRTUAL",
@@ -85,22 +95,28 @@ class IVSweepApp(MeasurementApp):
         ttk.Label(self.plot_config_frame, text="X-axis:").grid(row=0, column=0, sticky="w")
         self.x_axis = ttk.Combobox(
             self.plot_config_frame,
-            values=["voltage (V)", "current (A)"],
+            values=["voltage", "current"],
             state="readonly",
         )
         self.x_axis.grid(row=0, column=1, padx=5, pady=5)
-        self.x_axis.set("voltage (V)")
+        self.x_axis.set("voltage")
         self.x_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
         ttk.Label(self.plot_config_frame, text="Y-axis:").grid(row=1, column=0, sticky="w")
         self.y_axis = ttk.Combobox(
             self.plot_config_frame,
-            values=["voltage (V)", "current (A)"],
+            values=["voltage", "current"],
             state="readonly",
         )
         self.y_axis.grid(row=1, column=1, padx=5, pady=5)
-        self.y_axis.set("current (A)")
+        self.y_axis.set("current")
         self.y_axis.bind("<<ComboboxSelected>>", self.plot_data)
+
+        # Stop button
+        self.stop_button = ttk.Button(
+            self.right_panel, text="STOP", command=self.stop_measurement, style="TButton"
+        )
+        self.stop_button.grid(row=1, column=1, pady=10, padx=5)
 
     def refresh_instruments(self):
         print("Refreshing VISA instruments...")
@@ -115,11 +131,15 @@ class IVSweepApp(MeasurementApp):
         save_dir = self.save_dir_entry.get()
         sense_mode = self.sense_mode_entry.get()
 
-        v_start = float(self.dynamic_inputs["v_start"].get())
-        v_stop = float(self.dynamic_inputs["v_stop"].get())
-        num_steps = int(self.dynamic_inputs["num_steps"].get())
-        current_compliance = float(self.dynamic_inputs["current_compliance"].get())
-        dwell_time = float(self.dynamic_inputs["dwell_time"].get())
+        try:
+            v_start = float(self.dynamic_inputs["v_start"].get())
+            v_stop = float(self.dynamic_inputs["v_stop"].get())
+            num_steps = int(self.dynamic_inputs["num_steps"].get())
+            current_compliance = float(self.dynamic_inputs["current_compliance"].get())
+            dwell_time = float(self.dynamic_inputs["dwell_time"].get())
+        except ValueError as exc:
+            print(f"ERROR: Invalid numeric input: {exc}")
+            return
 
         # Update defaults to current values
         DEFAULTS["v_start"] = v_start
@@ -134,6 +154,10 @@ class IVSweepApp(MeasurementApp):
         else:
             sourcemeter = Keithley2400(sm_address)
 
+        effective_output_dir = (
+            save_dir if (save_dir and save_dir != r"your\default\save\directory") else None
+        )
+
         self.experiment = IVSweep(
             sourcemeter=sourcemeter,
             v_start=v_start,
@@ -142,21 +166,94 @@ class IVSweepApp(MeasurementApp):
             current_compliance=current_compliance,
             dwell_time=dwell_time,
             sense_mode=sense_mode,
-            save_dir=save_dir,
+            output_dir=effective_output_dir,
         )
-        self.experiment.run_experiment()
-        self.plot_data()
+
+        self.runner = MeasurementRunner(self.experiment)
+        self.run_button.config(state="disabled")
+        try:
+            self.runner.start(save=bool(effective_output_dir is not None))
+            self.root.after(50, self._poll_runner)
+        except Exception as exc:
+            print(f"Failed to start measurement: {exc}")
+            self.run_button.config(state="normal")
+
+    def stop_measurement(self):
+        if hasattr(self, "runner") and self.runner.is_worker_alive:
+            print("Requesting measurement stop...")
+            self.runner.request_stop()
+
+    def _poll_runner(self):
+        if not hasattr(self, "runner"):
+            return
+
+        # 1. Drain display queue for live snapshots
+        latest_snap = None
+        try:
+            while True:
+                latest_snap = self.runner.display_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        if latest_snap is not None:
+            raw_view = latest_snap.get_view("raw")
+            if raw_view is not None and not raw_view.empty:
+                self._plot_dataframe(raw_view)
+
+        # 2. Drain control queue for terminal / lifecycle events
+        is_done = False
+        try:
+            while True:
+                event = self.runner.control_queue.get_nowait()
+                if isinstance(event, TerminalEvent):
+                    is_done = True
+                    if event.final_snapshot is not None:
+                        final_raw = event.final_snapshot.get_view("raw")
+                        if final_raw is not None and not final_raw.empty:
+                            self._plot_dataframe(final_raw)
+                    elif self.experiment.data is not None and not self.experiment.data.empty:
+                        self._plot_dataframe(self.experiment.data)
+                    print(
+                        f"Measurement finished with state {event.state.value}, "
+                        f"safety {event.safety.status.value}"
+                    )
+                    if event.filename:
+                        print(f"Data saved to: {event.filename}")
+                    elif event.partial_filename:
+                        print(f"Partial data saved to: {event.partial_filename}")
+        except queue.Empty:
+            pass
+
+        if is_done or not self.runner.is_worker_alive:
+            self.run_button.config(state="normal")
+        else:
+            self.root.after(50, self._poll_runner)
+
+    def _plot_dataframe(self, df: pd.DataFrame):
+        x_col = self.x_axis.get()
+        y_col = self.y_axis.get()
+        if x_col not in df.columns or y_col not in df.columns:
+            return
+
+        self.ax.clear()
+        units = getattr(self.experiment, "column_units", {})
+        x_unit = units.get(x_col, "")
+        y_unit = units.get(y_col, "")
+        x_label = f"{x_col} ({x_unit})" if x_unit else x_col
+        y_label = f"{y_col} ({y_unit})" if y_unit else y_col
+
+        self.ax.plot(df[x_col], df[y_col], marker=".", color="k", label=f"{y_col} vs {x_col}")
+        self.ax.set_xlabel(x_label)
+        self.ax.set_ylabel(y_label)
+        self.canvas.draw()
 
     def plot_data(self, event=None):
-        self.ax.clear()
-        metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
-        x_data = data[self.x_axis.get()]
-        y_data = data[self.y_axis.get()]
-
-        self.ax.plot(x_data, y_data, marker=".", color="k", label=f"{self.y_axis.get()} vs {self.x_axis.get()}")
-        self.ax.set_xlabel(self.x_axis.get())
-        self.ax.set_ylabel(self.y_axis.get())
-        self.canvas.draw()
+        if hasattr(self, "experiment"):
+            if self.experiment.data is not None and not self.experiment.data.empty:
+                self._plot_dataframe(self.experiment.data)
+            elif self.experiment.filename and os.path.exists(self.experiment.filename):
+                _, data, _ = read_measurement_csv(self.experiment.filename)
+                self._plot_dataframe(data)
 
 
 if __name__ == "__main__":

@@ -380,7 +380,11 @@ def assert_family_interface(cls: type, family_name: str) -> None:
             assert name in fields or hasattr(cls, name), f"Missing snapshot field: {name}"
         return
 
-    assert_public_methods_match(cls, target["method_signatures"])
+    assert_public_methods_match(
+        cls,
+        target["method_signatures"],
+        allowed_keyword_only={"run_experiment": {"token": None}},
+    )
     dependencies = set(target["positional_dependencies"])
     for param in inspect.signature(cls.__init__).parameters.values():
         if param.name == "self":

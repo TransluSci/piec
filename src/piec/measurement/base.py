@@ -106,21 +106,18 @@ class MeasurementSession:
         """Path to published incomplete/aborted data CSV, or None."""
         return self._measurement.partial_filename
 
-    def configure_instruments(
-        self, *, options: Optional[Mapping[str, Any]] = None
-    ) -> None:
+    def configure_instruments(self) -> None:
         """Configures instruments within the active session scope."""
-        self._measurement._session_configure(options=options)
+        self._measurement._session_configure(options=self._options)
 
     def capture_data(
         self,
         *,
         on_update: Optional[Callable[[Any], None]] = None,
-        options: Optional[Mapping[str, Any]] = None,
     ) -> pd.DataFrame:
         """Captures data within the active session scope (at most once)."""
         return self._measurement._session_capture(
-            on_update=on_update, options=options
+            on_update=on_update, options=self._options
         )
 
     def safe_shutdown(self) -> SafetyReport:
@@ -563,11 +560,11 @@ class BaseMeasurement:
     def run_experiment(
         self,
         *,
-        token: Optional[ReservationToken] = None,
         on_update: Optional[Callable[[Any], None]] = None,
         save: bool = True,
         save_partial: Optional[bool] = None,
         options: Optional[Mapping[str, Any]] = None,
+        token: Optional[ReservationToken] = None,
     ) -> pd.DataFrame:
         """
         Public full-run execution wrapper (Section 3.1 & 4.4).
@@ -963,9 +960,7 @@ class BaseMeasurement:
             options=options,
         )
 
-    def configure_instruments(
-        self, *, options: Optional[Mapping[str, Any]] = None
-    ) -> None:
+    def configure_instruments(self) -> None:
         """
         Public instrument configuration wrapper (Section 3.1 & 4.5).
 
@@ -979,7 +974,7 @@ class BaseMeasurement:
                 raise ConcurrentRunError(
                     "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
                 )
-            self._session_configure(options=options)
+            self._session_configure()
             return
 
         if (
@@ -991,8 +986,8 @@ class BaseMeasurement:
             )
 
         # Standalone transient scope
-        self._validate_options(options)
-        request = RunRequest(save=False, save_partial=False, options=options)
+        self._validate_options(None)
+        request = RunRequest(save=False, save_partial=False)
         token = self._reserve(request)
         self._active_owner_thread_id = current_thread
         start_time = time.time()
@@ -1134,7 +1129,6 @@ class BaseMeasurement:
         self,
         *,
         on_update: Optional[Callable[[Any], None]] = None,
-        options: Optional[Mapping[str, Any]] = None,
     ) -> pd.DataFrame:
         """
         Public data capture wrapper (Section 3.1 & 4.5).
@@ -1149,7 +1143,7 @@ class BaseMeasurement:
                 raise ConcurrentRunError(
                     "Cross-thread hardware-bearing calls are rejected while another thread owns execution"
                 )
-            return self._session_capture(on_update=on_update, options=options)
+            return self._session_capture(on_update=on_update)
 
         if (
             self._active_owner_thread_id is not None
@@ -1160,12 +1154,11 @@ class BaseMeasurement:
             )
 
         # Standalone transient scope
-        self._validate_options(options)
+        self._validate_options(None)
         request = RunRequest(
             on_update=on_update,
             save=False,
             save_partial=False,
-            options=options,
         )
         token = self._reserve(request)
         self._active_owner_thread_id = current_thread

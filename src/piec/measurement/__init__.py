@@ -1,5 +1,6 @@
 from .adapters import WaveformReader, WaveformRecord
 from .base import BaseMeasurement, MeasurementSession
+from .iv_sweep import IVSweep
 from .contracts import (
     ConcurrentRunError,
     ControlQueue,
@@ -55,6 +56,7 @@ __all__ = [
     "WaveformRecord",
     "BaseMeasurement",
     "MeasurementSession",
+    "IVSweep",
     "MeasurementRunner",
     "CloseCoordinationStatus",
     "RunState",
