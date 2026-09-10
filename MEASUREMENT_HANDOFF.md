@@ -1,8 +1,32 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 14 is complete. Next is
-**checkpoint 15 only: IV GUI interaction/ownership hardening**, following the
-measurement standardization plan. Validate and commit checkpoint 15 separately.
+Continue on `measuremnt-standarization`. Checkpoint 15 is complete. Next is
+**checkpoint 16 only: MOKE GUI interaction/ownership hardening**, following the
+measurement standardization plan. Validate and commit checkpoint 16 separately.
+
+## Checkpoint 15 IV GUI interaction and ownership hardening
+
+- Single hardware writer rule: callbacks (`run_measurement`, `refresh_instruments`)
+  reject hardware commands/queries while a run is active (`is_measuring`).
+- Connection ownership: GUI-created instruments are tracked in `_instruments` and
+  closed strictly after the worker thread terminates, terminal event is delivered,
+  and hardware safety is verified (`SAFE` or `NOT_NEEDED`).
+- Unsafe shutdown retention: If shutdown fails (`UNSAFE`), instrument connections
+  are retained open for diagnosis/recovery, normal window closing is blocked, and
+  an alert is surfaced to the operator.
+- Window close coordination: `WM_DELETE_WINDOW` requests cooperative stop via
+  `runner.request_close()`, defers window destruction, and polls until the worker
+  has cleanly terminated with confirmed safety.
+- Stop-before-start zero-I/O abort: Immediate stop requests transition cleanly to
+  `ABORTED` with `NOT_NEEDED` safety without executing any hardware commands.
+- Dual event queues and terminal display: Drains bounded display queue for real-time
+  updates and non-droppable control queue for `SafetyAlertEvent` and `TerminalEvent`.
+  Terminal plots use full `TerminalEvent.data` or `experiment.data`.
+- Fault injection and recovery: Comprehensive error reporting for invalid numeric
+  inputs, instrument connection errors, and mid-sweep acquisition timeouts.
+- Added 8 comprehensive regression tests in `tests/test_measurement_iv_gui.py` (10 passed).
+  Focused IV suites: **53 passed**. Full suite: **1228 passed, 1 skipped, 2 xfailed**
+  in 26.38s on Python 3.13.2. Physical hardware and SMB remain unverified.
 
 ## Checkpoint 14 review corrections
 
