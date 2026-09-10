@@ -1,9 +1,33 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. The checkpoint 17 record template and
-review corrections are complete. Physical validation remains **PENDING**.
-Do not start checkpoint 18 until the user requests it. Later offline work is
-permitted by the plan without marking physical validation complete.
+Continue on `measuremnt-standarization`. Checkpoint 18 is complete. Checkpoint 17
+physical validation remains explicitly **PENDING**. Next is
+**checkpoint 19 only: in-memory PUND processing**, following the
+measurement standardization plan. Validate and commit checkpoint 19 separately.
+
+## Checkpoint 18 in-memory hysteresis processing
+
+- In-memory scientific processing: `process_hysteresis` in `piec.analysis.hysteresis`
+  operates purely in-memory on DataFrame or Mapping inputs with explicit metadata.
+- Plain target schema: Output DataFrame columns are strictly `['time', 'voltage', 'current', 'polarization', 'applied_voltage']`
+  with declared units `{'time': 's', 'voltage': 'V', 'current': 'A', 'polarization': 'uC/cm^2', 'applied_voltage': 'V'}`.
+- Flexible parameter extraction & validation: Supports metadata dictionaries, 1-row
+  DataFrames, and explicit kwargs (which override metadata). Validates positivity of
+  frequency, area, r_shunt, n_cycles >= 1, and finiteness of amplitude and time_offset.
+- Result protocol: Returns `HysteresisAnalysisResult(data, metadata, time_offset)`
+  supporting tuple unpacking (`data, metadata = result`), indexing, and immutability.
+- Numerical and trace equivalence: Confirmed exact numerical reproduction of golden
+  data from `hysteresis_loop_golden.csv` with zero regression (residuals <= 9.5e-17).
+- In-memory visualization helpers: Added `plot_hysteresis_pv`, `plot_hysteresis_iv`,
+  and `plot_hysteresis_traces` operating on in-memory DataFrames with optional user axes.
+- Unmigrated consumer bridge: Retained `process_raw_hyst` as a temporary backward-compatible
+  file bridge that delegates to `process_hysteresis` and writes legacy column headers to
+  CSV for unmigrated callers until Checkpoint 20b.
+- Checkpoint 17 physical validation status: Remains explicitly **PENDING**.
+- Tests: Added 15 comprehensive unit, schema, numerical, and fault tests in
+  `tests/test_analysis_hysteresis.py` (15 passed).
+- Test suites: Combined FE/hysteresis suites (70 passed); full test suite with Agg:
+  **1264 passed, 1 skipped, 2 xfailed** in 24.44s on Python 3.13.2.
 
 ## Checkpoint 17 documentation review corrections
 
