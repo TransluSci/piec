@@ -250,10 +250,15 @@ class TestDiscreteWaveformAttemptAllSafing:
         awg.output.side_effect = output_fault
 
         dw = DiscreteWaveform(awg, osc, voltage_channel="1", output_dir=tmp_path)
-        with pytest.raises(HardwareSafetyError, match="Hardware safety could not be verified"):
+        # Initial disable is a configuration failure and remains the primary error,
+        # even when the required shutdown retry fails as well.
+        with pytest.raises(OSError, match="Channel 1 relay failure"):
             dw.run_experiment(save=False)
 
+        assert dw.run_state == RunState.FAILED
         assert dw.safety_status == SafetyStatus.UNSAFE
+        osc.arm.assert_not_called()
+        awg.output_trigger.assert_not_called()
         # Channel 2 disable MUST still have been attempted!
         assert call(channel=2, on=False) in awg.output.call_args_list
         # Zero amplitude MUST still have been attempted!
@@ -304,3 +309,74 @@ class TestDiscreteWaveformRunnerIntegration:
         assert snap is not None
         assert "raw" in snap.views
         assert list(snap.views["raw"].columns) == ["time", "voltage"]
+
+@pytest.mark.parametrize('error_type', [AttributeError, NotImplementedError, OSError])
+def test_waveform_configuration_error_aborts_before_capture(error_type):
+    awg, osc = create_instrument_pair()
+    awg.output = Mock(wraps=awg.output)
+    awg.output_trigger = Mock()
+    osc.arm = Mock()
+    dw = DiscreteWaveform(awg, osc)
+    dw.configure_awg = Mock(side_effect=error_type('setup failed'))
+    with pytest.raises(error_type, match='setup failed'):
+        dw.run_experiment(save=False)
+    assert dw.run_state == RunState.FAILED
+    osc.arm.assert_not_called()
+    awg.output_trigger.assert_not_called()
+    assert not any(c.kwargs.get('on') is True for c in awg.output.call_args_list)
+    assert any(c.kwargs.get('on') is False for c in awg.output.call_args_list)
+
+
+def test_initial_disable_failure_aborts_and_retries_safing():
+    awg, osc = create_instrument_pair()
+    original = awg.output
+    attempts = []
+    def output(**kwargs):
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            raise OSError('initial disable failed')
+        return original(**kwargs)
+    awg.output = output
+    awg.initialize = Mock()
+    osc.arm = Mock()
+    dw = DiscreteWaveform(awg, osc)
+    with pytest.raises(OSError, match='initial disable failed'):
+        dw.run_experiment(save=False)
+    assert dw.run_state == RunState.FAILED
+    assert dw.safety_status == SafetyStatus.SAFE
+    awg.initialize.assert_not_called()
+    osc.arm.assert_not_called()
+    assert len(attempts) >= 3
+    assert all(c['on'] is False for c in attempts)
+
+
+@pytest.mark.parametrize('stop_phase', ['arm', 'enable'])
+def test_stop_between_capture_commands_prevents_trigger(stop_phase):
+    awg, osc = create_instrument_pair()
+    dw = DiscreteWaveform(awg, osc)
+    original = awg.output
+    def output(**kwargs):
+        result = original(**kwargs)
+        if kwargs.get('on') and stop_phase == 'enable':
+            dw.request_stop()
+        return result
+    awg.output = Mock(side_effect=output)
+    awg.output_trigger = Mock()
+    if stop_phase == 'arm':
+        osc.arm = Mock(side_effect=dw.request_stop)
+    dw.run_experiment(save=False)
+    assert dw.run_state == RunState.ABORTED
+    assert dw.safety_status == SafetyStatus.SAFE
+    awg.output_trigger.assert_not_called()
+    if stop_phase == 'arm':
+        assert not any(c.kwargs.get('on') for c in awg.output.call_args_list)
+    assert awg.state['output'][1] is False
+
+
+def test_migrated_base_has_no_legacy_capture_save_or_directory_alias(tmp_path):
+    awg, osc = create_instrument_pair()
+    with pytest.raises(TypeError, match='save_dir'):
+        DiscreteWaveform(awg, osc, save_dir=tmp_path)
+    dw = DiscreteWaveform(awg, osc, output_dir=tmp_path)
+    for name in ('save_dir', 'apply_and_capture_waveform', 'save_waveform', '_legacy_capture', '_legacy_save'):
+        assert not hasattr(dw, name)

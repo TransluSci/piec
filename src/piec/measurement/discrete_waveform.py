@@ -38,7 +38,7 @@ class DiscreteWaveform(BaseMeasurement):
     - Strict trigger ordering: arm scope -> enable AWG output -> fire AWG trigger;
     - WaveformReader adapter standardizes oscilloscope reads;
     - Guaranteed attempt-all safe shutdown disabling all active AWG channels;
-    - Retains backward-compatible execution paths for unmigrated subclasses (HysteresisLoop, ThreePulsePund).
+    - Unmigrated subclasses use a separate private support mixin until 20b/20c.
 
     Attributes:
         awg: Arbitrary Waveform Generator instrument object (positional dependency).
@@ -63,7 +63,6 @@ class DiscreteWaveform(BaseMeasurement):
         length: float = 0.001,
         osc_channel: int = 1,
         output_dir: Optional[Union[str, Path]] = None,
-        save_dir: Optional[Union[str, Path]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """
@@ -77,7 +76,6 @@ class DiscreteWaveform(BaseMeasurement):
             length: Waveform duration in seconds (keyword-only).
             osc_channel: Oscilloscope channel to acquire (keyword-only).
             output_dir: Destination directory for persistent files (keyword-only).
-            save_dir: Legacy alias for output_dir (keyword-only).
             metadata: Optional additional metadata mapping (keyword-only).
         """
         self.awg = awg
@@ -101,8 +99,6 @@ class DiscreteWaveform(BaseMeasurement):
             raise ValueError(f"osc_channel must be a positive integer, got {osc_channel!r}")
         self.osc_channel = int(osc_channel)
 
-        effective_output_dir = output_dir if output_dir is not None else save_dir
-        self.save_dir = str(effective_output_dir) if effective_output_dir is not None else None
         self.notes: Optional[str] = None
         self.history: list[pd.DataFrame] = []
         self._legacy_metadata_df: Optional[pd.DataFrame] = None
@@ -117,7 +113,7 @@ class DiscreteWaveform(BaseMeasurement):
             initial_metadata.update(dict(metadata))
 
         super().__init__(
-            output_dir=effective_output_dir,
+            output_dir=output_dir,
             measurement_schema="discrete_waveform",
             column_units={"time": "s", "voltage": "V"},
             metadata=initial_metadata,
@@ -190,10 +186,7 @@ class DiscreteWaveform(BaseMeasurement):
         Executed during CONFIGURING phase with zero prior hardware queries.
         """
         # Disable potentially active AWG output
-        try:
-            self.awg.output(channel=int(self.voltage_channel), on=False)
-        except Exception:
-            pass
+        self.awg.output(channel=int(self.voltage_channel), on=False)
 
         # Query instrument identities on worker thread
         try:
@@ -251,11 +244,15 @@ class DiscreteWaveform(BaseMeasurement):
 
         # 1. Arm oscilloscope
         self.osc.arm()
+        if self._coordinator.is_stop_requested:
+            return pd.DataFrame(columns=["time", "voltage"])
 
         # 2. Enable AWG output
         self.awg.output(channel=int(self.voltage_channel), on=True)
 
         # 3. Fire AWG trigger
+        if self._coordinator.is_stop_requested:
+            return pd.DataFrame(columns=["time", "voltage"])
         self.awg.output_trigger()
 
         # Wait for waveform playback to complete
@@ -344,11 +341,7 @@ class DiscreteWaveform(BaseMeasurement):
 
     def _configure_waveform(self) -> None:
         """Subclasses override or define configure_awg to setup waveform."""
-        if hasattr(self, "configure_awg"):
-            try:
-                self.configure_awg()
-            except (AttributeError, NotImplementedError):
-                pass
+        self.configure_awg()
 
     def _update_metadata(self) -> None:
         """Update legacy metadata DataFrame for unmigrated callers."""
@@ -423,6 +416,10 @@ class DiscreteWaveform(BaseMeasurement):
         """Placeholder for waveform-specific AWG configuration."""
         pass
 
+
+class _LegacyWaveformSupport:
+    """Private support for unmigrated FE/PUND callers; remove in 20b/20c."""
+
     def apply_and_capture_waveform(self) -> None:
         """Legacy waveform capture method for unmigrated subclasses."""
         print(f"Capturing waveform of type {self.mtype} for {self.length} seconds...")
@@ -462,7 +459,7 @@ class DiscreteWaveform(BaseMeasurement):
 # SPECIFIC WAVEFORM MEASUREMENT CLASSES (UNMIGRATED: Checkpoints 20b & 20c)
 # ============================================================================
 
-class HysteresisLoop(DiscreteWaveform):
+class HysteresisLoop(_LegacyWaveformSupport, DiscreteWaveform):
     """
     Hysteresis loop measurement using triangular excitation waveform.
 
@@ -505,8 +502,9 @@ class HysteresisLoop(DiscreteWaveform):
             v_div=v_div,
             voltage_channel=voltage_channel,
             length=self.length,
-            save_dir=save_dir,
+            output_dir=save_dir,
         )
+        self.save_dir = str(save_dir) if save_dir is not None else None
         self.notes = str(self.amplitude).replace(".", "p") + "V_" + str(int(self.frequency)) + "Hz"
         self._update_metadata()
 
@@ -562,7 +560,7 @@ class HysteresisLoop(DiscreteWaveform):
         return None
 
 
-class ThreePulsePund(DiscreteWaveform):
+class ThreePulsePund(_LegacyWaveformSupport, DiscreteWaveform):
     """
     PUND (Positive-Up-Negative-Down) pulse measurement system.
 
@@ -611,8 +609,9 @@ class ThreePulsePund(DiscreteWaveform):
             v_div=v_div,
             voltage_channel=voltage_channel,
             length=self.length,
-            save_dir=save_dir,
+            output_dir=save_dir,
         )
+        self.save_dir = str(save_dir) if save_dir is not None else None
         self.notes = (
             str(self.reset_amp).replace(".", "p")
             + "Vres_"

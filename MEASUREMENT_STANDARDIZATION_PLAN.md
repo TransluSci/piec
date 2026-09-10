@@ -116,6 +116,13 @@ Remove that bridge at checkpoint 20b. Targeted suites: **99 passed**. Full suite
 with Agg: **1293 passed, 1 skipped, 2 xfailed**. Checkpoint 19 only is next;
 checkpoint 17 physical validation remains PENDING.
 
+Checkpoint 20a review corrections completed: configuration failures now propagate
+without acquisition; cancellation is checked between arm, enable and trigger.
+Removed the migrated base's save_dir alias and isolated old direct capture/save
+methods in private support used only by unmigrated subclasses. Full suite with
+Agg: **1374 passed, 1 skipped, 2 xfailed**. Checkpoint **20b only** is next;
+physical checkpoint 17 remains PENDING. See MEASUREMENT_HANDOFF.md.
+
 ## 1. Purpose and non-negotiable constraints
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.

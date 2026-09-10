@@ -5,6 +5,29 @@ physical validation remains explicitly **PENDING**. Next is
 **checkpoint 20b only: Hysteresis integration and consumers**, following the
 measurement standardization plan. Validate and commit checkpoint 20b separately.
 
+## Checkpoint 20a review corrections
+
+- Initial AWG output-disable failures and waveform-configuration exceptions now
+  propagate into the shared failure lifecycle. Acquisition does not proceed;
+  shutdown still attempts remaining actions. The original configuration error
+  remains primary if cleanup also fails, with UNSAFE recorded separately.
+- Cancellation is checked after scope arming and after output enable, before the
+  next activation/trigger command. Stop during either step prevents firing and
+  enters shared shutdown.
+- DiscreteWaveform accepts output_dir only; removed its public save_dir alias.
+  Direct legacy capture/save/analysis methods are confined to the private
+  _LegacyWaveformSupport mixin used only by unmigrated HysteresisLoop/ThreePulsePund.
+  Their old method names remain operational there until 20b/20c; the migrated
+  base does not expose these bypass paths.
+- Added configuration-failure and cancellation regressions and corrected the old
+  test that expected an initial disable error to be ignored. Full suite with Agg:
+  **1374 passed, 1 skipped, 2 xfailed** in 26.58s. Physical hardware was not tested.
+- Proceed with checkpoint **20b only: Hysteresis integration**. Use the shared
+  lifecycle and in-memory analysis, preserve the corrected failure/cancellation
+  behavior and numerical regressions, and remove Hysteresis's legacy paths as it
+  migrates. Keep only the still-needed PUND bridge until 20c. Validate, commit
+  separately, and stop for review. Physical checkpoint 17 remains PENDING.
+
 ## Checkpoint 20a DiscreteWaveform base acquisition and consumers
 
 - **BaseMeasurement Lifecycle**: `DiscreteWaveform` in `piec.measurement.discrete_waveform` subclasses `BaseMeasurement`, implementing `run_experiment(*, on_update=None, save=True, save_partial=None, options=None) -> pd.DataFrame`, `configure_instruments()`, `capture_data(*, on_update=None)`, `session()`, `safe_shutdown()`, `request_stop()`, `snapshot()`, and `request_pause()`.
