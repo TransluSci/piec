@@ -68,12 +68,13 @@
   "migrated_families": [
     "IVSweep",
     "MokeMeasurement",
-    "MokeSnapshot"
+    "MokeSnapshot",
+    "DiscreteWaveform"
   ],
   "migration_notes": {
+    "DiscreteWaveform": "Migrated in Checkpoint 20a.",
     "MokeMeasurement": "Migrated in Checkpoint 14.",
     "IVSweep": "Migrated in Checkpoint 13.",
-    "DiscreteWaveform": "Pending vertical slice in Checkpoint 20a.",
     "HysteresisLoop": "Pending vertical slice in Checkpoint 20b.",
     "ThreePulsePund": "Pending vertical slice in Checkpoint 20c.",
     "MagnetoTransport": "Pending vertical slice in Checkpoint 24a.",

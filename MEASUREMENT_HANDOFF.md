@@ -1,9 +1,21 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 19 is complete. Checkpoint 17
+Continue on `measuremnt-standarization`. Checkpoint 20a is complete. Checkpoint 17
 physical validation remains explicitly **PENDING**. Next is
-**checkpoint 20a only: DiscreteWaveform base acquisition and consumers**, following the
-measurement standardization plan. Validate and commit checkpoint 20a separately.
+**checkpoint 20b only: Hysteresis integration and consumers**, following the
+measurement standardization plan. Validate and commit checkpoint 20b separately.
+
+## Checkpoint 20a DiscreteWaveform base acquisition and consumers
+
+- **BaseMeasurement Lifecycle**: `DiscreteWaveform` in `piec.measurement.discrete_waveform` subclasses `BaseMeasurement`, implementing `run_experiment(*, on_update=None, save=True, save_partial=None, options=None) -> pd.DataFrame`, `configure_instruments()`, `capture_data(*, on_update=None)`, `session()`, `safe_shutdown()`, `request_stop()`, `snapshot()`, and `request_pause()`.
+- **Target Schema & Units**: Adheres to schema `discrete_waveform` v1 with strictly plain columns `['time', 'voltage']` and canonical declared units `{'time': 's', 'voltage': 'V'}`. Metadata fields include standard provenance, run ID, and instrument identity strings.
+- **Zero Constructor I/O**: Positional dependencies `awg`, `osc`; all settings (`v_div`, `voltage_channel`, `length`, `osc_channel`, `output_dir`, `metadata`) are keyword-only. No hardware communication occurs in `__init__`; identification and parameter writes occur on the worker thread in `_configure_instruments`.
+- **Strict Trigger Sequence**: `_capture_data` enforces hardware trigger order: (1) arm oscilloscope (`osc.arm()`), (2) enable AWG output on configured channel (`awg.output(channel=..., on=True)`), (3) fire AWG trigger (`awg.output_trigger()`).
+- **WaveformReader Adapter**: Uses `WaveformReader` setup adapter to retrieve and validate oscilloscope records into normalized 1D float arrays.
+- **Attempt-All Safe Shutdown**: `_safe_shutdown` guarantees that all known active AWG channels are disabled and amplitude zeroed, reporting actions through `ShutdownAttemptRecorder`.
+- **Unmigrated Subclass Compatibility**: `HysteresisLoop` (Checkpoint 20b) and `ThreePulsePund` (Checkpoint 20c) retain their unmigrated execution paths (`run_experiment`, `save_waveform`, `analyze`, DataFrame metadata, `history`), passing all existing characterization and golden regression suites without alteration.
+- **Validation**: Targeted suites (manifest, harness, waveform reader, discrete waveform lifecycle, FE/PUND compatibility, hysteresis/PUND analysis) **294 passed**; full test suite with Agg **1367 passed, 1 skipped, 2 xfailed** in 23.86s. No physical hardware execution; Checkpoint 17 physical validation remains explicitly **PENDING**.
+- **Next Step**: Proceed with **checkpoint 20b only: Hysteresis integration and consumers**. Validate and commit separately, then stop for review. Checkpoint 17 physical validation remains PENDING.
 
 ## Checkpoint 19 review corrections
 

@@ -1,193 +1,549 @@
-import numpy as np
-import time
-import pandas as pd
-import matplotlib.pyplot as plt
-from piec.analysis.utilities import *
-from piec.analysis.pund import _process_raw_3pp_file
-from piec.analysis.hysteresis import _process_raw_hyst_file
+from __future__ import annotations
 
-class DiscreteWaveform:
+import math
+from pathlib import Path
+import time
+from typing import Any, Callable, Mapping, Optional, Sequence, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from piec.analysis.hysteresis import _process_raw_hyst_file
+from piec.analysis.pund import _process_raw_3pp_file
+from piec.analysis.utilities import (
+    create_measurement_filename,
+    interpolate_sparse_to_dense,
+    metadata_and_data_to_csv,
+)
+
+from .adapters import WaveformReader
+from .base import BaseMeasurement
+from .contracts import (
+    RunRequest,
+    SafetyReport,
+    ShutdownAttemptRecorder,
+)
+
+
+class DiscreteWaveform(BaseMeasurement):
     """
     Parent class for managing discrete waveform generation and measurement experiments.
 
-    Provides core functionality for configuring Arbitrary Waveform Generator (awg)
-    and oscilloscope (osc), capturing waveforms, saving data, and running analysis
-    on captured waveforms. Designed to be subclassed for specific measurement types.
-    Currently implemented subclasses are Hysteresis and ThreePulsePUND.
+    Standardized for Checkpoint 20a:
+    - Target API and schema: schema 'discrete_waveform', version 1;
+    - Plain lowercase columns: ['time', 'voltage'] with canonical units {'time': 's', 'voltage': 'V'};
+    - Inherits BaseMeasurement with shared lifecycle, runner, and session support;
+    - Zero instrument I/O in __init__;
+    - Strict trigger ordering: arm scope -> enable AWG output -> fire AWG trigger;
+    - WaveformReader adapter standardizes oscilloscope reads;
+    - Guaranteed attempt-all safe shutdown disabling all active AWG channels;
+    - Retains backward-compatible execution paths for unmigrated subclasses (HysteresisLoop, ThreePulsePund).
 
     Attributes:
-        :awg (visa.Resource): AWG instrument object (REQUIRED)
-        :osc (visa.Resource): Oscilloscope instrument object (REQUIRED)
-        :v_div (float): Oscilloscope vertical scale in volts/division
-        :voltage_channel (str): AWG channel used for voltage output
-        :save_dir (str): Directory path for data storage
-        :filename (str): Name of saved data file
-        :data (pd.DataFrame): Captured waveform data (time and voltage)
-        :metadata (pd.DataFrame): Measurement parameters and metadata
+        awg: Arbitrary Waveform Generator instrument object (positional dependency).
+        osc: Oscilloscope instrument object (positional dependency).
+        v_div: Oscilloscope vertical sensitivity in volts/division (keyword-only).
+        voltage_channel: AWG channel used for voltage output (keyword-only).
+        length: Waveform duration in seconds (keyword-only).
+        osc_channel: Oscilloscope channel used for reading (keyword-only).
+        output_dir: Target directory for data persistence (keyword-only).
     """
-    mtype = None
-    length = None
-    filename = None
-    data = None
 
-    def __init__(self, awg, osc, v_div=0.01, voltage_channel='1', save_dir=r'\\scratch'):
-        """Initialize core waveform measurement system.
+    mtype = "discrete_waveform"
+    supports_pause = False
+
+    def __init__(
+        self,
+        awg: Any,
+        osc: Any,
+        *,
+        v_div: float = 0.01,
+        voltage_channel: Union[str, int] = "1",
+        length: float = 0.001,
+        osc_channel: int = 1,
+        output_dir: Optional[Union[str, Path]] = None,
+        save_dir: Optional[Union[str, Path]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        """
+        Initialize discrete waveform measurement parameters without performing hardware I/O.
 
         Args:
-            :awg: VISA address or initialized AWG object
-            :osc: VISA address or initialized oscilloscope object
-            :v_div: Oscilloscope vertical sensitivity (volts/division)
-            :voltage_channel: AWG channel number for voltage output (default '1')
-            :save_dir: Data storage directory path (default network scratch)
+            awg: AWG instrument object (positional).
+            osc: Oscilloscope instrument object (positional).
+            v_div: Oscilloscope vertical sensitivity in Volts/division (keyword-only).
+            voltage_channel: AWG output channel, '1' or 1 (keyword-only).
+            length: Waveform duration in seconds (keyword-only).
+            osc_channel: Oscilloscope channel to acquire (keyword-only).
+            output_dir: Destination directory for persistent files (keyword-only).
+            save_dir: Legacy alias for output_dir (keyword-only).
+            metadata: Optional additional metadata mapping (keyword-only).
         """
-
-        self.v_div = v_div
         self.awg = awg
         self.osc = osc
-        self.voltage_channel = voltage_channel
-        self.save_dir = save_dir
-        self.history = []
-        self._update_metadata()
 
-    def _update_metadata(self):
-        """
-        Update metadata DataFrame with current measurement parameters.
-        
-        Captures instrument IDs, measurement type, and timestamp.
-        Should be called after any parameter changes or before saving data.
-        """
-        params = {key: value for key, value in self.__dict__.items() 
-                if not key.startswith('_') and 
-                not callable(value) and
-                key not in ['awg', 'osc', 'data', 'metadata', 'history']}
-        
-        self.metadata = pd.DataFrame(params, index=[0])
+        self.v_div = float(v_div)
+        if not math.isfinite(self.v_div) or self.v_div <= 0:
+            raise ValueError(f"v_div must be a positive finite number, got {v_div}")
 
-        # Other info
-        self.metadata['mtype'] = self.mtype
-        self.metadata['awg'] = self.awg.idn()
-        self.metadata['osc'] = self.osc.idn()
-        if hasattr(self, 'length'):
-            self.metadata['length'] = self.length
-        self.metadata['timestamp'] = time.time()
-        self.metadata['processed'] = False
+        self.voltage_channel = str(voltage_channel)
+        try:
+            int(self.voltage_channel)
+        except (ValueError, TypeError):
+            raise ValueError(f"voltage_channel must be convertible to int, got {voltage_channel!r}")
 
-    def _update_notes(self):
+        self.length = float(length)
+        if not math.isfinite(self.length) or self.length <= 0:
+            raise ValueError(f"length must be a positive finite number, got {length}")
+
+        if not isinstance(osc_channel, int) or isinstance(osc_channel, bool) or osc_channel <= 0:
+            raise ValueError(f"osc_channel must be a positive integer, got {osc_channel!r}")
+        self.osc_channel = int(osc_channel)
+
+        effective_output_dir = output_dir if output_dir is not None else save_dir
+        self.save_dir = str(effective_output_dir) if effective_output_dir is not None else None
+        self.notes: Optional[str] = None
+        self.history: list[pd.DataFrame] = []
+        self._legacy_metadata_df: Optional[pd.DataFrame] = None
+
+        initial_metadata: dict[str, Any] = {
+            "v_div": self.v_div,
+            "voltage_channel": self.voltage_channel,
+            "length": self.length,
+            "osc_channel": self.osc_channel,
+        }
+        if metadata is not None:
+            initial_metadata.update(dict(metadata))
+
+        super().__init__(
+            output_dir=effective_output_dir,
+            measurement_schema="discrete_waveform",
+            column_units={"time": "s", "voltage": "V"},
+            metadata=initial_metadata,
+        )
+
+    # ------------------------------------------------------------------------
+    # Properties for Base / Legacy Compatibility
+    # ------------------------------------------------------------------------
+
+    @property
+    def data(self) -> Optional[pd.DataFrame]:
+        """Analyzed result data, or raw partial data on abort/failure."""
+        return self._data
+
+    @data.setter
+    def data(self, value: Optional[pd.DataFrame]) -> None:
+        self._data = value
+
+    @property
+    def filename(self) -> Optional[str]:
+        """Path to successfully published completed data CSV, or None."""
+        return self._filename
+
+    @filename.setter
+    def filename(self, value: Optional[str]) -> None:
+        self._filename = value
+
+    @property
+    def metadata(self) -> pd.DataFrame:
+        """1-row DataFrame representation of current metadata."""
+        if self._legacy_metadata_df is not None:
+            return self._legacy_metadata_df
+        m = dict(self.measurement_metadata)
+        m.update(
+            measurement_schema=self.measurement_schema,
+            measurement_schema_version=self.measurement_schema_version,
+            column_units_json=self.column_units_json,
+            mtype=self.mtype,
+            timestamp=self.measurement_metadata.get("timestamp", 0.0),
+            processed=self.measurement_metadata.get("processed", False),
+        )
+        if self.notes is not None:
+            m["notes"] = self.notes
+        return pd.DataFrame([m])
+
+    @metadata.setter
+    def metadata(self, value: Any) -> None:
+        if isinstance(value, pd.DataFrame):
+            if len(value) > 0:
+                self.measurement_metadata.update(value.iloc[0].to_dict())
+            self._legacy_metadata_df = value
+        elif isinstance(value, Mapping):
+            self.measurement_metadata.update(dict(value))
+
+    # ------------------------------------------------------------------------
+    # Protected Lifecycle Hooks
+    # ------------------------------------------------------------------------
+
+    def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
+        """Validate run options before reservation or hardware I/O."""
+        super()._validate_options(options)
+        if options is not None:
+            for key in options:
+                raise ValueError(f"Unknown option: {key}")
+
+    def _configure_instruments(self, request: RunRequest) -> None:
         """
-        Does nothing, overwrite in child class if you want to change the name of the saved file with each parameter change.
+        Configure AWG and oscilloscope on the worker thread.
+
+        Executed during CONFIGURING phase with zero prior hardware queries.
         """
+        # Disable potentially active AWG output
+        try:
+            self.awg.output(channel=int(self.voltage_channel), on=False)
+        except Exception:
+            pass
+
+        # Query instrument identities on worker thread
+        try:
+            awg_idn = str(self.awg.idn())
+        except Exception:
+            awg_idn = "UNKNOWN"
+        try:
+            osc_idn = str(self.osc.idn())
+        except Exception:
+            osc_idn = "UNKNOWN"
+
+        self.measurement_metadata["awg"] = awg_idn
+        self.measurement_metadata["osc"] = osc_idn
+        self.measurement_metadata["v_div"] = float(self.v_div)
+        self.measurement_metadata["voltage_channel"] = str(self.voltage_channel)
+        self.measurement_metadata["length"] = float(self.length)
+        self.measurement_metadata["osc_channel"] = int(self.osc_channel)
+        self.measurement_metadata["timestamp"] = time.time()
+
+        # Initialize and configure AWG
+        self.initialize_awg()
+
+        # Initialize and configure Oscilloscope
+        self.configure_oscilloscope(channel=int(self.osc_channel))
+
+        # Waveform-specific AWG configuration hook
+        self._configure_waveform()
+
+    def _cancellable_dwell(self, duration: float) -> None:
+        """Dwell in small time increments checking cooperative cancellation."""
+        if duration <= 0:
+            return
+        end_time = time.monotonic() + duration
+        while time.monotonic() < end_time:
+            if self._coordinator.is_stop_requested:
+                break
+            remaining = end_time - time.monotonic()
+            time.sleep(min(0.01, max(0.0, remaining)))
+
+    def _capture_data(
+        self,
+        request: RunRequest,
+        on_update: Optional[Callable[[Any], None]],
+    ) -> pd.DataFrame:
+        """
+        Execute waveform acquisition with strict trigger ordering.
+
+        Strict trigger ordering:
+        1. Arm oscilloscope (self.osc.arm())
+        2. Enable AWG output (self.awg.output(channel=..., on=True))
+        3. Fire AWG trigger (self.awg.output_trigger())
+        """
+        if self._coordinator.is_stop_requested:
+            return pd.DataFrame(columns=["time", "voltage"])
+
+        # 1. Arm oscilloscope
+        self.osc.arm()
+
+        # 2. Enable AWG output
+        self.awg.output(channel=int(self.voltage_channel), on=True)
+
+        # 3. Fire AWG trigger
+        self.awg.output_trigger()
+
+        # Wait for waveform playback to complete
+        self._cancellable_dwell(self.length * 1.2)
+        if self._coordinator.is_stop_requested:
+            return pd.DataFrame(columns=["time", "voltage"])
+
+        # Acquire standardized waveform via WaveformReader adapter
+        reader = WaveformReader(self.osc, default_channel=int(self.osc_channel))
+        raw_df = reader.read()
+        raw_df = raw_df[["time", "voltage"]].copy()
+
+        self._raw_data = raw_df
+        self._data = raw_df.copy()
+
+        # Publish bounded snapshot
+        view_df = raw_df.iloc[-100:].copy() if len(raw_df) > 100 else raw_df.copy()
+        snap = self.publish_snapshot(
+            views={"raw": view_df},
+            completed_steps=len(raw_df),
+            total_steps=len(raw_df),
+        )
+        if on_update is not None:
+            on_update(snap)
+
+        return raw_df.copy()
+
+    def _safe_shutdown(
+        self, recorder: Optional[ShutdownAttemptRecorder] = None
+    ) -> SafetyReport:
+        """
+        Hardware shutdown attempting all actions on all channels.
+
+        Guarantees that all active AWG channels are disabled and zeroed.
+        """
+        if recorder is None:
+            recorder = ShutdownAttemptRecorder()
+
+        # Action 1: Disable output on configured channel
+        def disable_primary():
+            self.awg.output(channel=int(self.voltage_channel), on=False)
+
+        recorder.record_action(
+            name=f"awg_disable_output_channel_{self.voltage_channel}",
+            action_fn=disable_primary,
+        )
+
+        # Action 2: Disable output on all known/active AWG channels
+        channels_to_disable = set()
+        if hasattr(self.awg, "channel") and isinstance(self.awg.channel, (list, tuple, set)):
+            for ch in self.awg.channel:
+                try:
+                    channels_to_disable.add(int(ch))
+                except (ValueError, TypeError):
+                    pass
+        for ch in sorted(channels_to_disable):
+            if ch != int(self.voltage_channel):
+                recorder.record_action(
+                    name=f"awg_disable_output_channel_{ch}",
+                    action_fn=lambda c=ch: self.awg.output(channel=c, on=False),
+                )
+
+        # Action 3: Zero amplitude on configured channel if supported
+        def zero_amplitude():
+            if hasattr(self.awg, "set_amplitude"):
+                self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=0.0)
+
+        recorder.record_action(
+            name=f"awg_zero_amplitude_channel_{self.voltage_channel}",
+            action_fn=zero_amplitude,
+        )
+
+        return recorder.build_report()
+
+    def _analyze_data(
+        self, raw_data: pd.DataFrame, request: RunRequest
+    ) -> pd.DataFrame:
+        """Standardized analysis for discrete waveform: return time and voltage."""
+        if raw_data.empty:
+            return pd.DataFrame(columns=["time", "voltage"])
+        return raw_data[["time", "voltage"]].copy()
+
+    # ------------------------------------------------------------------------
+    # Waveform Configuration & Legacy Support Methods
+    # ------------------------------------------------------------------------
+
+    def _configure_waveform(self) -> None:
+        """Subclasses override or define configure_awg to setup waveform."""
+        if hasattr(self, "configure_awg"):
+            try:
+                self.configure_awg()
+            except (AttributeError, NotImplementedError):
+                pass
+
+    def _update_metadata(self) -> None:
+        """Update legacy metadata DataFrame for unmigrated callers."""
+        try:
+            awg_idn = str(self.awg.idn())
+        except Exception:
+            awg_idn = "UNKNOWN"
+        try:
+            osc_idn = str(self.osc.idn())
+        except Exception:
+            osc_idn = "UNKNOWN"
+
+        self.measurement_metadata["awg"] = awg_idn
+        self.measurement_metadata["osc"] = osc_idn
+        self.measurement_metadata["v_div"] = self.v_div
+        self.measurement_metadata["voltage_channel"] = self.voltage_channel
+        self.measurement_metadata["length"] = self.length
+        self.measurement_metadata["mtype"] = self.mtype
+        self.measurement_metadata["timestamp"] = time.time()
+        self.measurement_metadata["processed"] = False
+        if self.notes is not None:
+            self.measurement_metadata["notes"] = self.notes
+
+        exclude = {
+            "awg", "osc", "data", "metadata", "history", "recoverable_staging_paths",
+            "column_units", "raw_column_units", "measurement_metadata", "output_dir",
+            "measurement_schema", "snapshot_type", "osc_channel", "notes",
+        }
+        params = {
+            key: value for key, value in self.__dict__.items()
+            if not key.startswith("_")
+            and not callable(value)
+            and key not in exclude
+        }
+        df = pd.DataFrame(params, index=[0])
+        df["mtype"] = self.mtype
+        df["awg"] = awg_idn
+        df["osc"] = osc_idn
+        if hasattr(self, "length"):
+            df["length"] = self.length
+        df["timestamp"] = self.measurement_metadata["timestamp"]
+        df["processed"] = False
+        self._legacy_metadata_df = df
+
+    def _update_notes(self) -> None:
+        """Subclasses override to adjust notes."""
         pass
 
-    def _update_history(self):
-        """
-        Does nothing, overwrite in child class if you want to change the name of the saved file with each parameter change.
-        """
+    def _update_history(self) -> None:
+        """Append metadata snapshot to history for unmigrated callers."""
         self.history.append(self.metadata.copy())
 
-    def initialize_awg(self):
-        """
-        Configure basic AWG settings for waveform generation.
-        
-        Sets up impedance matching (50Ω), and manual triggering.
-        Should be called before any waveform-specific configuration.
-        """
-        self.awg.initialize()
-        self.awg.set_load_impedance(channel=int(self.voltage_channel), load_impedance=50)
-        self.awg.set_trigger_source(channel=int(self.voltage_channel), trigger_source='MAN')
+    def initialize_awg(self) -> None:
+        """Configure basic AWG settings: load impedance (50Ω) and manual trigger."""
+        if hasattr(self.awg, "initialize"):
+            self.awg.initialize()
+        self.awg.set_load_impedance(channel=int(self.voltage_channel), load_impedance=50.0)
+        self.awg.set_trigger_source(channel=int(self.voltage_channel), trigger_source="MAN")
 
-    def configure_oscilloscope(self, channel = 1):
-        """
-        Set up oscilloscope for waveform capture.
-        
-        Configures timebase, triggering, and channel settings optimized for
-        capturing the generated waveform. Uses external triggering.
+    def configure_oscilloscope(self, channel: int = 1) -> None:
+        """Configure oscilloscope: horizontal scale, sensitivity, EXT trigger, 50Ω."""
+        if hasattr(self.osc, "initialize"):
+            self.osc.initialize()
+        self.osc.configure_horizontal(tdiv=self.length / 8.0, x_position=5.0 * (self.length / 10.0))
+        self.osc.set_vertical_scale(channel=int(channel), vdiv=float(self.v_div))
+        self.osc.set_trigger_source(trigger_source="EXT")
+        self.osc.set_trigger_level(trigger_level=0.95)
+        self.osc.set_trigger_sweep(trigger_sweep="NORM")
+        self.osc.set_channel_impedance(int(channel), channel_impedance="50")
 
-        Args:
-            :channel: Oscilloscope channel to configure (default 1)
-        """
-        self.osc.initialize()
-        self.osc.configure_horizontal(tdiv=self.length/8, x_position=5*(self.length/10))
-        self.osc.set_vertical_scale(channel=channel, vdiv=float(self.v_div))
-        self.osc.set_trigger_source(trigger_source='EXT')
-        self.osc.set_trigger_level(trigger_level=0.95) # Using the old high_level value
-        self.osc.set_trigger_sweep(trigger_sweep='NORM')
-        self.osc.set_channel_impedance(channel, channel_impedance='50')
-        # configure_trigger_edge call removed as functionality is now in the calls above.
+    def configure_awg(self) -> None:
+        """Placeholder for waveform-specific AWG configuration."""
+        pass
 
-    def configure_awg(self):
-        """
-        Placeholder for waveform-specific AWG configuration.
-        
-        Raises:
-            :AttributeError: If not implemented in child class
-        """
-        raise AttributeError("configure_awg() must be defined in the child class specific to a waveform")
-
-    def apply_and_capture_waveform(self):
-        """
-        Execute waveform generation and data acquisition sequence.
-        
-        Coordinates instrument triggering, captures time-voltage data from oscilloscope,
-        and stores results in self.data attribute (pandas DataFrame object). Includes instrument synchronization.
-        """
+    def apply_and_capture_waveform(self) -> None:
+        """Legacy waveform capture method for unmigrated subclasses."""
         print(f"Capturing waveform of type {self.mtype} for {self.length} seconds...")
         self.osc.arm()
         self.awg.output(channel=int(self.voltage_channel), on=True)
         self.awg.output_trigger()
-        
-        # New driver lacks a blocking operation complete query.
-        # Wait for a duration slightly longer than the waveform to ensure capture.
         time.sleep(self.length * 1.2)
-        
-        self.osc.set_acquisition_channel(channel=1) # Setup waveform source
-        
-        # New driver returns a structured DataFrame
+        if hasattr(self.osc, "set_acquisition_channel"):
+            self.osc.set_acquisition_channel(channel=int(self.osc_channel))
         df = self.osc.get_data()
-        self.data = pd.DataFrame({"time (s)": df['Time'], "voltage (V)": df['Voltage']}) # Store data
+        time_col = "Time" if "Time" in df else "time"
+        volt_col = "Voltage" if "Voltage" in df else "voltage"
+        self._data = pd.DataFrame({"time (s)": df[time_col], "voltage (V)": df[volt_col]})
         print("Waveform captured.")
 
-    def save_waveform(self):
-        """
-        Save captured waveform data to CSV file.
-        
-        Uses meaurement type and notes to generate filename.
-        Requires successful waveform capture prior to calling (self.data must not be None).
-        """
+    def save_waveform(self) -> None:
+        """Legacy waveform save method for unmigrated subclasses."""
         self._update_metadata()
         self._update_notes()
-
-        if self.data is not None:
-            self.filename = create_measurement_filename(self.save_dir, self.mtype, self.notes)
-            metadata_and_data_to_csv(self.metadata, self.data, self.filename)
+        if self._data is not None:
+            save_dir = self.save_dir or (str(self.output_dir) if self.output_dir else ".")
+            self.filename = create_measurement_filename(save_dir, self.mtype, self.notes)
+            metadata_and_data_to_csv(self.metadata, self._data, self.filename)
             print(f"Waveform data saved to {self.filename}")
         else:
             print("No data to save. Capture the waveform first.")
 
-    def analyze(self):
-        """
-        Placeholder for measurement-specific analysis.
-        
-        Intended for post-processing of captured data. Child classes should
-        implement analysis routines for their specific measurement type.
-        """
-        if self.data is not None:
+    def analyze(self) -> None:
+        """Legacy placeholder for measurement-specific analysis."""
+        if self._data is not None:
             print(f"Analysis method not defined. Not changing {self.filename}")
         else:
             print("No data to analyze. Capture the waveform first.")
-        
-    def run_experiment(self):
-        """
-        Execute complete measurement workflow.
-        
-        Standard sequence:
-        1. Configure oscilloscope
-        2. Initialize AWG
-        3. Apply waveform-specific configuration
-        4. Capture waveform data
-        5. Save results
-        6. Perform analysis
-        7. Update history with metadata
-        """
+
+
+# ============================================================================
+# SPECIFIC WAVEFORM MEASUREMENT CLASSES (UNMIGRATED: Checkpoints 20b & 20c)
+# ============================================================================
+
+class HysteresisLoop(DiscreteWaveform):
+    """
+    Hysteresis loop measurement using triangular excitation waveform.
+
+    Unmigrated subclass pending Checkpoint 20b vertical slice.
+    """
+
+    mtype = "hysteresis"
+
+    def __init__(
+        self,
+        awg=None,
+        osc=None,
+        v_div=0.1,
+        frequency=1000.0,
+        amplitude=1.0,
+        offset=0.0,
+        n_cycles=2,
+        voltage_channel: str = "1",
+        area=1.0e-5,
+        time_offset=1e-8,
+        show_plots=False,
+        save_plots=True,
+        auto_timeshift=False,
+        save_dir=r"\\scratch",
+    ):
+        self.length = 1.0 / frequency
+        self.frequency = frequency
+        self.amplitude = amplitude
+        self.offset = offset
+        self.n_cycles = n_cycles
+        self.area = area
+        self.time_offset = time_offset
+        self.voltage_channel = voltage_channel
+        self.show_plots = show_plots
+        self.save_plots = save_plots
+        self.auto_timeshift = auto_timeshift
+        super().__init__(
+            awg,
+            osc,
+            v_div=v_div,
+            voltage_channel=voltage_channel,
+            length=self.length,
+            save_dir=save_dir,
+        )
+        self.notes = str(self.amplitude).replace(".", "p") + "V_" + str(int(self.frequency)) + "Hz"
+        self._update_metadata()
+
+    def _update_notes(self):
+        self.notes = str(self.amplitude).replace(".", "p") + "V_" + str(int(self.frequency)) + "Hz"
+
+    def analyze(self):
+        if self._data is not None:
+            _process_raw_hyst_file(
+                self.filename,
+                show_plots=self.show_plots,
+                save_plots=self.save_plots,
+                auto_timeshift=self.auto_timeshift,
+            )
+            print(f"Analysis succeeded, updated {self.filename}")
+        else:
+            print("No data to analyze. Capture the waveform first.")
+
+    def configure_awg(self):
+        interp_v_array = [0, 1, 0, -1, 0] + ([1, 0, -1, 0] * ((self.n_cycles) - 1))
+        n_points = self.awg.arb_data_range[1]
+        dense = interpolate_sparse_to_dense(
+            np.linspace(0, len(interp_v_array), len(interp_v_array)),
+            interp_v_array,
+            total_points=n_points,
+        )
+        self.awg.create_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE", data=dense)
+        invert = self.amplitude < 0
+        polarity = "INV" if invert else "NORM"
+        self.awg.set_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE")
+        self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(self.amplitude) * 2)
+        self.awg.set_offset(channel=int(self.voltage_channel), offset=self.offset)
+        self.awg.set_frequency(channel=int(self.voltage_channel), frequency=self.frequency)
+        self.awg.set_polarity(channel=int(self.voltage_channel), polarity=polarity)
+
+    def run_experiment(self, *, on_update=None, save=True, save_partial=None):
+        """Unmigrated legacy execution workflow for HysteresisLoop until Checkpoint 20b."""
         print(f"Running experiment for {self.mtype} measurement...")
         self.configure_oscilloscope()
         print("Oscilloscope configured.")
@@ -203,139 +559,38 @@ class DiscreteWaveform:
         print("Analysis complete.")
         self._update_history()
         print("Experiment complete.")
+        return None
 
-### SPECIFIC WAVEFORM MEASURMENT CLASSES ###
-
-class HysteresisLoop(DiscreteWaveform):
-    """
-    Hysteresis loop measurement using triangular excitation waveform.
-    
-    Specializes DiscreteWaveform for ferroelectric hysteresis measurements.
-    Generates bipolar triangle waves and analyzes polarization-voltage loops.
-
-    Attributes:
-        :type (str): Measurement type identifier ('hysteresis')
-        :frequency (float): Excitation frequency in Hz
-        :amplitude (float): Peak voltage amplitude in volts
-        :n_cycles (int): Number of waveform cycles to capture
-        :area (float): Capacitor area for polarization calculation (m²)
-        :show_plots (bool): Display interactive plots flag
-        :save_plots (bool): Save plot images flag
-    """
-
-    mtype = "hysteresis"
-
-    def __init__(self, awg=None, osc=None, v_div=0.1, frequency=1000.0, amplitude=1.0, offset=0.0,
-                 n_cycles=2, voltage_channel:str='1', area=1.0e-5, time_offset=1e-8,
-                 show_plots=False, save_plots=True, auto_timeshift=False,
-                 save_dir=r'\\scratch'):
-        """
-        Initialize hysteresis measurement parameters.
-
-        Args:
-            :frequency: Triangle wave frequency (1-1000 Hz typical)
-            :amplitude: Peak-to-peak voltage amplitude (V)
-            :offset: DC voltage offset (V)
-            :n_cycles: Number of complete bipolar cycles
-            :area: Device capacitor area for polarization calc (m²)
-            :time_offset: Manual trigger-capture time alignment (s)
-            :show_plots: Show matplotlib plots post analysis?
-            :save_plots: Save analysis plots to disk?
-            :auto_timeshift: Try to automatically determine t0 of captured waveform - t0 of trigger waveform?
-        """
-        self.length = 1/frequency
-        self.frequency = frequency
-        self.amplitude = amplitude
-        self.offset = offset
-        self.n_cycles = n_cycles
-        self.area = area
-        self.time_offset = time_offset
-        self.voltage_channel = voltage_channel
-        self.show_plots = show_plots
-        self.save_plots = save_plots
-        self.auto_timeshift = auto_timeshift
-        super().__init__(awg, osc, v_div, voltage_channel, save_dir)
-
-    def _update_notes(self):
-        self.notes = str(self.amplitude).replace('.', 'p')+'V_'+str(int(self.frequency))+'Hz'
-
-    def analyze(self):
-        """
-        Process hysteresis data and calculate polarization parameters.
-        
-        Performs time alignment, integration for polarization calculation,
-        and generates hysteresis loop plots. Results appended to CSV.
-        """
-        if self.data is not None:
-            _process_raw_hyst_file(self.filename, show_plots=self.show_plots, save_plots=self.save_plots, auto_timeshift=self.auto_timeshift)
-            print(f"Analysis succeeded, updated {self.filename}")
-        else:
-            print("No data to analyze. Capture the waveform first.")
-
-    def configure_awg(self):
-        """
-        Generate AWG triangle waveform for hysteresis measurement.
-        
-        Creates multi-cycle bipolar triangle wave with specified parameters.
-        """
-        interp_v_array = [0,1,0,-1,0]+([1,0,-1,0]*((self.n_cycles)-1))
-
-        n_points = self.awg.arb_data_range[1] # Use attribute for max points
-        dense = interpolate_sparse_to_dense(np.linspace(0,len(interp_v_array),len(interp_v_array)), interp_v_array, total_points=n_points)
-
-        # Create the arbitrary waveform in the AWG's volatile memory
-        self.awg.create_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE", data=dense)
-        
-        # Configure the AWG output using the specific methods
-        invert = self.amplitude < 0
-        polarity = "INV" if invert else "NORM"
-        
-        self.awg.set_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE")
-        # Vpp = amplitude*2
-        self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(self.amplitude) * 2)
-        self.awg.set_offset(channel=int(self.voltage_channel), offset=self.offset)
-        self.awg.set_frequency(channel=int(self.voltage_channel), frequency=self.frequency)
-        self.awg.set_polarity(channel=int(self.voltage_channel), polarity=polarity)
 
 class ThreePulsePund(DiscreteWaveform):
     """
     PUND (Positive-Up-Negative-Down) pulse measurement system.
-    
-    Implements 3-pulse sequence for ferroelectric capacitor characterization:
-    Reset + Positive (P) + Up (U) (arbitrary polarity) pulses with delay intervals.
-    Measures difference in switching currents between P and U pulse responses to
-    calculate remanent polarization.
 
-    Attributes:
-        :type (str): Measurement type identifier ('3pulsepund')
-        :reset_amp (float): Reset pulse amplitude (V)
-        :p_u_amp (float): Measurement pulse amplitude (V)
-        :reset_width (float): Reset pulse duration (s)
-        :p_u_width (float): Measurement pulse duration (s)
+    Unmigrated subclass pending Checkpoint 20c vertical slice.
     """
+
     mtype = "3pulsepund"
 
-    def __init__(self, awg=None, osc=None, v_div=0.1,
-                 reset_amp=1, reset_width=1e-3, reset_delay=1e-3,
-                 p_u_amp=1, p_u_width=1e-3, p_u_delay=1e-3,
-                 offset=0, voltage_channel:str='1', area=1e-5, time_offset=1e-8,
-                 show_plots=False, save_plots=True, auto_timeshift=True,
-                 save_dir=r'\\scratch'):
-        """Initialize PUND pulse parameters.
-
-        Args:
-            :reset_amp: Reset pulse amplitude (V)
-            :reset_width: Reset pulse duration (s)
-            :reset_delay: Post-reset delay (s)
-            :p_u_amp: Measurement pulse amplitude (V)
-            :p_u_width: Measurement pulse duration (s)
-            :p_u_delay: Inter-pulse delay (s)
-            :area: Capacitor area for polarization calc (m²)
-            :time_offset: Manual trigger-capture time alignment (s)
-            :show_plots: Show matplotlib plots post analysis?
-            :save_plots: Save analysis plots to disk?
-            :auto_timeshift: Try to automatically determine t0 of captured waveform - t0 of trigger waveform?
-        """
+    def __init__(
+        self,
+        awg=None,
+        osc=None,
+        v_div=0.1,
+        reset_amp=1,
+        reset_width=1e-3,
+        reset_delay=1e-3,
+        p_u_amp=1,
+        p_u_width=1e-3,
+        p_u_delay=1e-3,
+        offset=0,
+        voltage_channel: str = "1",
+        area=1e-5,
+        time_offset=1e-8,
+        show_plots=False,
+        save_plots=True,
+        auto_timeshift=True,
+        save_dir=r"\\scratch",
+    ):
         self.reset_amp = reset_amp
         self.reset_width = reset_width
         self.reset_delay = reset_delay
@@ -349,62 +604,117 @@ class ThreePulsePund(DiscreteWaveform):
         self.show_plots = show_plots
         self.save_plots = save_plots
         self.auto_timeshift = auto_timeshift
-        self.length = (reset_width+(reset_delay)+(2*p_u_width)+(2*p_u_delay))
-        super().__init__(awg, osc, v_div, voltage_channel, save_dir)
+        self.length = reset_width + reset_delay + (2 * p_u_width) + (2 * p_u_delay)
+        super().__init__(
+            awg,
+            osc,
+            v_div=v_div,
+            voltage_channel=voltage_channel,
+            length=self.length,
+            save_dir=save_dir,
+        )
+        self.notes = (
+            str(self.reset_amp).replace(".", "p")
+            + "Vres_"
+            + str(self.p_u_amp).replace(".", "p")
+            + "Vpu"
+        )
+        self._update_metadata()
 
     def _update_notes(self):
-        self.notes = str(self.reset_amp).replace('.', 'p')+'Vres_'+str(self.p_u_amp).replace('.', 'p')+'Vpu'
+        self.notes = (
+            str(self.reset_amp).replace(".", "p")
+            + "Vres_"
+            + str(self.p_u_amp).replace(".", "p")
+            + "Vpu"
+        )
 
     def analyze(self):
-        """
-        Analyze PUND data to calculate switching polarization.
-        
-        Processes current transients, integrates charge, and calculates
-        switched charge values. Generates time-domain and polarization plots.
-        """
-        if self.data is not None:
-            _process_raw_3pp_file(self.filename, show_plots=self.show_plots, save_plots=self.save_plots, auto_timeshift=self.auto_timeshift)
+        if self._data is not None:
+            _process_raw_3pp_file(
+                self.filename,
+                show_plots=self.show_plots,
+                save_plots=self.save_plots,
+                auto_timeshift=self.auto_timeshift,
+            )
             print(f"Analysis succeeded, updated {self.filename}")
         else:
             print("No data to analyze. Capture the waveform first.")
 
     def configure_awg(self):
-        """
-        Generate PUND pulse waveform for AWG output.
-        
-        Constructs pulse sequence with specified amplitudes and timing.
-        Automatically scales pulses to AWG voltage range.
-        """
-        # calculate time steps for voltage trace
-        times = [0, self.reset_width, self.reset_delay, self.p_u_width, self.p_u_delay, self.p_u_width, self.p_u_delay,]
-        sum_times = [sum(times[:i+1]) for i, t in enumerate(times)]
-        # calculate full amplitude of pulse profile (Vpp)
+        times = [
+            0,
+            self.reset_width,
+            self.reset_delay,
+            self.p_u_width,
+            self.p_u_delay,
+            self.p_u_width,
+            self.p_u_delay,
+        ]
+        sum_times = [sum(times[: i + 1]) for i, t in enumerate(times)]
         amplitude = abs(self.reset_amp) + abs(self.p_u_amp)
-        
         polarity = np.sign(self.p_u_amp)
 
-        # specify sparse t and v coordinates which define PUND pulse train
-        # The fractional amplitudes are calculated within interpolate_sparse_to_dense if needed,
-        # but here we build the final shape before scaling to DAC values.
-        frac_reset_amp = self.reset_amp/amplitude
-        frac_p_u_amp = self.p_u_amp/amplitude
+        frac_reset_amp = self.reset_amp / amplitude
+        frac_p_u_amp = self.p_u_amp / amplitude
 
-        sparse_t = np.array([sum_times[0], sum_times[1], sum_times[1], sum_times[2], sum_times[2], sum_times[3], sum_times[3],
-                                sum_times[4], sum_times[4], sum_times[5], sum_times[5], sum_times[6],])
-        sparse_v = np.array([-abs(frac_reset_amp), -abs(frac_reset_amp), 0, 0, abs(frac_p_u_amp), abs(frac_p_u_amp), 0, 0,
-                             abs(frac_p_u_amp), abs(frac_p_u_amp), 0, 0,]) * polarity
-        
-        n_points = self.awg.arb_data_range[1] # n points to use is max
+        sparse_t = np.array([
+            sum_times[0],
+            sum_times[1],
+            sum_times[1],
+            sum_times[2],
+            sum_times[2],
+            sum_times[3],
+            sum_times[3],
+            sum_times[4],
+            sum_times[4],
+            sum_times[5],
+            sum_times[5],
+            sum_times[6],
+        ])
+        sparse_v = (
+            np.array([
+                -abs(frac_reset_amp),
+                -abs(frac_reset_amp),
+                0,
+                0,
+                abs(frac_p_u_amp),
+                abs(frac_p_u_amp),
+                0,
+                0,
+                abs(frac_p_u_amp),
+                abs(frac_p_u_amp),
+                0,
+                0,
+            ])
+            * polarity
+        )
 
-        # densify the array
+        n_points = self.awg.arb_data_range[1]
         dense_v = interpolate_sparse_to_dense(sparse_t, sparse_v, total_points=n_points)
-        
-        # write to awg
+
         self.awg.create_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE", data=dense_v)
-        
-        # Configure the AWG output using the specific methods
         self.awg.set_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE")
         self.awg.set_offset(channel=int(self.voltage_channel), offset=self.offset)
         self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(amplitude))
-        self.awg.set_frequency(channel=int(self.voltage_channel), frequency=1/self.length)
+        self.awg.set_frequency(channel=int(self.voltage_channel), frequency=1.0 / self.length)
         print("AWG configured for a PUND pulse.")
+
+    def run_experiment(self, *, on_update=None, save=True, save_partial=None):
+        """Unmigrated legacy execution workflow for ThreePulsePund until Checkpoint 20c."""
+        print(f"Running experiment for {self.mtype} measurement...")
+        self.configure_oscilloscope()
+        print("Oscilloscope configured.")
+        self.initialize_awg()
+        print("AWG initialized.")
+        self.configure_awg()
+        print("AWG configured.")
+        self.apply_and_capture_waveform()
+        print("Waveform applied and captured.")
+        self.save_waveform()
+        print("Waveform saved.")
+        self.analyze()
+        print("Analysis complete.")
+        self._update_history()
+        print("Experiment complete.")
+        return None

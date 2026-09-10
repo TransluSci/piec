@@ -36,7 +36,7 @@ THREE_PULSE_PUND_GOLDEN_PATH = FIXTURES_DIR / "three_pulse_pund_golden.csv"
 
 
 class TestDiscreteWaveformCompatibility:
-    """Characterize legacy DiscreteWaveform base behavior and verify regression goldens."""
+    """Verify standardized DiscreteWaveform behavior and regression goldens."""
 
     def test_discrete_waveform_constructor_and_attributes(self, tmp_path):
         awg = VirtualAwg()
@@ -46,28 +46,27 @@ class TestDiscreteWaveformCompatibility:
             osc=osc,
             v_div=0.02,
             voltage_channel="2",
-            save_dir=str(tmp_path),
+            length=0.002,
+            osc_channel=1,
+            output_dir=str(tmp_path),
         )
 
         assert dw.awg is awg
         assert dw.osc is osc
         assert dw.v_div == 0.02
         assert dw.voltage_channel == "2"
-        assert dw.save_dir == str(tmp_path)
+        assert dw.length == 0.002
+        assert dw.osc_channel == 1
+        assert dw.output_dir == Path(tmp_path)
         assert dw.data is None
         assert dw.filename is None
         assert dw.history == []
-        assert dw.mtype is None
-        assert dw.length is None
+        assert dw.mtype == "discrete_waveform"
+        assert dw.measurement_schema == "discrete_waveform"
+        assert dw.column_units == {"time": "s", "voltage": "V"}
 
-        # Metadata DataFrame layout and fields
-        assert isinstance(dw.metadata, pd.DataFrame)
-        assert len(dw.metadata) == 1
-        assert dw.metadata.loc[0, "v_div"] == 0.02
-        assert dw.metadata.loc[0, "voltage_channel"] == "2"
-        assert dw.metadata.loc[0, "awg"] == "Virtual AWG"
-        assert dw.metadata.loc[0, "osc"] == "Virtual Oscilloscope"
-        assert bool(dw.metadata.loc[0, "processed"]) is False
+        # Target contract: zero hardware I/O in __init__
+        assert osc.state["armed"] is False
 
     def test_discrete_waveform_instrument_configuration(self, tmp_path):
         awg = VirtualAwg()
@@ -77,15 +76,14 @@ class TestDiscreteWaveformCompatibility:
             osc=osc,
             v_div=0.05,
             voltage_channel="1",
-            save_dir=str(tmp_path),
+            length=0.001,
+            output_dir=str(tmp_path),
         )
-        dw.length = 0.001
 
-        dw.initialize_awg()
+        dw.configure_instruments()
         assert awg.state["load_impedance"][1] == 50.0
         assert str(awg.state["trigger_source"][1]).upper() == "MAN"
 
-        dw.configure_oscilloscope(channel=1)
         assert osc.state["armed"] is False
         assert osc.state["tdiv"] == pytest.approx(dw.length / 8)
         assert osc.state["vdiv"][1] == pytest.approx(0.05)
@@ -100,28 +98,22 @@ class TestDiscreteWaveformCompatibility:
             osc=osc,
             v_div=0.01,
             voltage_channel="1",
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        dw.mtype = "discrete_waveform"
-        dw.length = 0.001
-        dw.notes = "raw_test"
 
-        dw.initialize_awg()
-        dw.configure_oscilloscope()
-        dw.apply_and_capture_waveform()
+        result = dw.run_experiment(save=True)
 
-        assert dw.data is not None
-        assert_data_columns_match(dw.data, ["time (s)", "voltage (V)"], exact_order=True)
-        assert len(dw.data) == 70  # 50 simulation points + 20 prep points
+        assert isinstance(result, pd.DataFrame)
+        assert_data_columns_match(result, ["time", "voltage"], exact_order=True)
+        assert len(result) == 70  # 50 simulation points + 20 prep points
 
-        dw.save_waveform()
         assert dw.filename is not None
         assert Path(dw.filename).is_file()
 
         meta, data = assert_piec_csv_layout(dw.filename)
         assert len(meta) == 1
         assert len(data) == 70
-        assert_data_columns_match(data, ["time (s)", "voltage (V)"], exact_order=True)
+        assert_data_columns_match(data, ["time", "voltage"], exact_order=True)
 
     def test_discrete_waveform_golden_csv_regression(self, tmp_path):
         """Verify that deterministic raw capture matches golden CSV."""
@@ -132,24 +124,20 @@ class TestDiscreteWaveformCompatibility:
             osc=osc,
             v_div=0.01,
             voltage_channel="1",
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        dw.mtype = "discrete_waveform"
-        dw.length = 0.001
-        dw.notes = "raw"
-        dw.initialize_awg()
-        dw.configure_oscilloscope()
-        dw.apply_and_capture_waveform()
-        dw.save_waveform()
+        dw.run_experiment(save=True)
 
         assert_golden_csv_matches(
             actual_path=dw.filename,
             golden_path=DISCRETE_WAVEFORM_GOLDEN_PATH,
-            volatile_metadata_keys=["timestamp", "save_dir", "filename"],
+            volatile_metadata_keys=["timestamp", "run_id"],
         )
 
     def test_discrete_waveform_numerical_equivalence_with_mapping(self, tmp_path):
         """Verify numerical equivalence using the harness old_to_new_column_mapping with view='raw'."""
+        from piec.measurement.persistence import read_measurement_csv
+
         awg = VirtualAwg(simulation_points=50)
         osc = VirtualScope(simulation_points=50)
         dw = DiscreteWaveform(
@@ -157,17 +145,11 @@ class TestDiscreteWaveformCompatibility:
             osc=osc,
             v_div=0.01,
             voltage_channel="1",
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        dw.mtype = "discrete_waveform"
-        dw.length = 0.001
-        dw.notes = "raw"
-        dw.initialize_awg()
-        dw.configure_oscilloscope()
-        dw.apply_and_capture_waveform()
-        dw.save_waveform()
+        dw.run_experiment(save=True)
 
-        _, gold_data = standard_csv_to_metadata_and_data(str(DISCRETE_WAVEFORM_GOLDEN_PATH))
+        _, gold_data, _ = read_measurement_csv(DISCRETE_WAVEFORM_GOLDEN_PATH)
         assert_numerical_data_matches_reference(dw.data, gold_data, "DiscreteWaveform", view="raw")
 
 
