@@ -18,12 +18,14 @@ from piec.analysis.hysteresis import (
     plot_hysteresis_traces,
     process_hysteresis,
 )
-from piec.analysis.pund import _process_raw_3pp_file
-from piec.analysis.utilities import (
-    create_measurement_filename,
-    interpolate_sparse_to_dense,
-    metadata_and_data_to_csv,
+from piec.analysis.pund import (
+    STANDARD_PUND_COLUMNS,
+    STANDARD_PUND_UNITS,
+    plot_pund_delta_p,
+    plot_pund_traces,
+    process_pund,
 )
+from piec.analysis.utilities import interpolate_sparse_to_dense
 
 from .adapters import WaveformReader
 from .base import BaseMeasurement
@@ -115,9 +117,10 @@ class DiscreteWaveform(BaseMeasurement):
             raise ValueError(f"osc_channel must be a positive integer, got {osc_channel!r}")
         self.osc_channel = int(osc_channel)
 
-        self.notes: Optional[str] = None
+        if not hasattr(self, "notes"):
+            self.notes = None
         self.history: list[pd.DataFrame] = []
-        self._legacy_metadata_df: Optional[pd.DataFrame] = None
+        self._legacy_metadata_df: pd.DataFrame | None = None
 
         initial_metadata: dict[str, Any] = {
             "v_div": self.v_div,
@@ -365,57 +368,6 @@ class DiscreteWaveform(BaseMeasurement):
         """Subclasses override or define configure_awg to setup waveform."""
         self.configure_awg()
 
-    def _update_metadata(self) -> None:
-        """Update legacy metadata DataFrame for unmigrated callers."""
-        try:
-            awg_idn = str(self.awg.idn())
-        except Exception:
-            awg_idn = "UNKNOWN"
-        try:
-            osc_idn = str(self.osc.idn())
-        except Exception:
-            osc_idn = "UNKNOWN"
-
-        self.measurement_metadata["awg"] = awg_idn
-        self.measurement_metadata["osc"] = osc_idn
-        self.measurement_metadata["v_div"] = self.v_div
-        self.measurement_metadata["voltage_channel"] = self.voltage_channel
-        self.measurement_metadata["length"] = self.length
-        self.measurement_metadata["mtype"] = self.mtype
-        self.measurement_metadata["timestamp"] = time.time()
-        self.measurement_metadata["processed"] = False
-        if self.notes is not None:
-            self.measurement_metadata["notes"] = self.notes
-
-        exclude = {
-            "awg", "osc", "data", "metadata", "history", "recoverable_staging_paths",
-            "column_units", "raw_column_units", "measurement_metadata", "output_dir",
-            "measurement_schema", "snapshot_type", "osc_channel", "notes",
-        }
-        params = {
-            key: value for key, value in self.__dict__.items()
-            if not key.startswith("_")
-            and not callable(value)
-            and key not in exclude
-        }
-        df = pd.DataFrame(params, index=[0])
-        df["mtype"] = self.mtype
-        df["awg"] = awg_idn
-        df["osc"] = osc_idn
-        if hasattr(self, "length"):
-            df["length"] = self.length
-        df["timestamp"] = self.measurement_metadata["timestamp"]
-        df["processed"] = False
-        self._legacy_metadata_df = df
-
-    def _update_notes(self) -> None:
-        """Subclasses override to adjust notes."""
-        pass
-
-    def _update_history(self) -> None:
-        """Append metadata snapshot to history for unmigrated callers."""
-        self.history.append(self.metadata.copy())
-
     def initialize_awg(self) -> None:
         """Configure basic AWG settings: load impedance (50Ω) and manual trigger."""
         if hasattr(self.awg, "initialize"):
@@ -437,44 +389,6 @@ class DiscreteWaveform(BaseMeasurement):
     def configure_awg(self) -> None:
         """Placeholder for waveform-specific AWG configuration."""
         pass
-
-
-class _LegacyWaveformSupport:
-    """Private support for unmigrated FE/PUND callers; remove in 20b/20c."""
-
-    def apply_and_capture_waveform(self) -> None:
-        """Legacy waveform capture method for unmigrated subclasses."""
-        print(f"Capturing waveform of type {self.mtype} for {self.length} seconds...")
-        self.osc.arm()
-        self.awg.output(channel=int(self.voltage_channel), on=True)
-        self.awg.output_trigger()
-        time.sleep(self.length * 1.2)
-        if hasattr(self.osc, "set_acquisition_channel"):
-            self.osc.set_acquisition_channel(channel=int(self.osc_channel))
-        df = self.osc.get_data()
-        time_col = "Time" if "Time" in df else "time"
-        volt_col = "Voltage" if "Voltage" in df else "voltage"
-        self._data = pd.DataFrame({"time (s)": df[time_col], "voltage (V)": df[volt_col]})
-        print("Waveform captured.")
-
-    def save_waveform(self) -> None:
-        """Legacy waveform save method for unmigrated subclasses."""
-        self._update_metadata()
-        self._update_notes()
-        if self._data is not None:
-            save_dir = self.save_dir or (str(self.output_dir) if self.output_dir else ".")
-            self.filename = create_measurement_filename(save_dir, self.mtype, self.notes)
-            metadata_and_data_to_csv(self.metadata, self._data, self.filename)
-            print(f"Waveform data saved to {self.filename}")
-        else:
-            print("No data to save. Capture the waveform first.")
-
-    def analyze(self) -> None:
-        """Legacy placeholder for measurement-specific analysis."""
-        if self._data is not None:
-            print(f"Analysis method not defined. Not changing {self.filename}")
-        else:
-            print("No data to analyze. Capture the waveform first.")
 
 
 # ============================================================================
@@ -714,87 +628,157 @@ class HysteresisLoop(DiscreteWaveform):
 
 
 
-class ThreePulsePund(_LegacyWaveformSupport, DiscreteWaveform):
+class ThreePulsePund(DiscreteWaveform):
     """
     PUND (Positive-Up-Negative-Down) pulse measurement system.
 
-    Unmigrated subclass pending Checkpoint 20c vertical slice.
+    Standardized for Checkpoint 20c:
+    - Target API and schema: schema 'three_pulse_pund', version 1;
+    - Target columns: ['time', 'voltage', 'current', 'polarization',
+      'polarization_p_hat', 'polarization_p_star', 'polarization_p_hat_r',
+      'polarization_p_star_r', 'delta_polarization', 'applied_voltage'];
+    - Target units: canonical units matching STANDARD_PUND_UNITS;
+    - Raw columns: ['time', 'voltage'] with units {'time': 's', 'voltage': 'V'};
+    - In-memory analysis via process_pund;
+    - Multi-artifact plot publication: _dPvst.png, _trace.png;
+    - Inherits BaseMeasurement via DiscreteWaveform with shared lifecycle, runner, and session;
+    - Zero instrument I/O in __init__;
+    - Strict trigger ordering and attempt-all safe shutdown.
     """
 
     mtype = "3pulsepund"
+    measurement_schema = "three_pulse_pund"
+    measurement_schema_version = 1
 
     def __init__(
         self,
-        awg=None,
-        osc=None,
-        v_div=0.1,
-        reset_amp=1,
-        reset_width=1e-3,
-        reset_delay=1e-3,
-        p_u_amp=1,
-        p_u_width=1e-3,
-        p_u_delay=1e-3,
-        offset=0,
-        voltage_channel: str = "1",
-        area=1e-5,
-        time_offset=1e-8,
-        show_plots=False,
-        save_plots=True,
-        auto_timeshift=True,
-        save_dir=r"\\scratch",
-    ):
-        self.reset_amp = reset_amp
-        self.reset_width = reset_width
-        self.reset_delay = reset_delay
-        self.p_u_amp = p_u_amp
-        self.p_u_width = p_u_width
-        self.p_u_delay = p_u_delay
-        self.offset = offset
-        self.area = area
-        self.voltage_channel = voltage_channel
-        self.time_offset = time_offset
-        self.show_plots = show_plots
-        self.save_plots = save_plots
+        awg: Any = None,
+        osc: Any = None,
+        *,
+        v_div: float = 0.1,
+        reset_amp: float = 1.0,
+        reset_width: float = 1e-3,
+        reset_delay: float = 1e-3,
+        p_u_amp: float = 1.0,
+        p_u_width: float = 1e-3,
+        p_u_delay: float = 1e-3,
+        offset: float = 0.0,
+        voltage_channel: Union[str, int] = "1",
+        osc_channel: int = 1,
+        area: float = 1e-5,
+        time_offset: float = 1e-8,
+        r_shunt: float = 50.0,
+        auto_timeshift: bool = True,
+        show_plots: bool = False,
+        save_plots: bool = True,
+        output_dir: Optional[Union[str, Path]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        self.reset_amp = float(reset_amp)
+        if not math.isfinite(self.reset_amp):
+            raise ValueError(f"reset_amp must be a finite number, got {reset_amp}")
+
+        self.reset_width = float(reset_width)
+        if not math.isfinite(self.reset_width) or self.reset_width <= 0:
+            raise ValueError(f"reset_width must be a positive finite number, got {reset_width}")
+
+        self.reset_delay = float(reset_delay)
+        if not math.isfinite(self.reset_delay) or self.reset_delay <= 0:
+            raise ValueError(f"reset_delay must be a positive finite number, got {reset_delay}")
+
+        self.p_u_amp = float(p_u_amp)
+        if not math.isfinite(self.p_u_amp):
+            raise ValueError(f"p_u_amp must be a finite number, got {p_u_amp}")
+
+        self.p_u_width = float(p_u_width)
+        if not math.isfinite(self.p_u_width) or self.p_u_width <= 0:
+            raise ValueError(f"p_u_width must be a positive finite number, got {p_u_width}")
+
+        self.p_u_delay = float(p_u_delay)
+        if not math.isfinite(self.p_u_delay) or self.p_u_delay <= 0:
+            raise ValueError(f"p_u_delay must be a positive finite number, got {p_u_delay}")
+
+        self.offset = float(offset)
+        if not math.isfinite(self.offset):
+            raise ValueError(f"offset must be a finite number, got {offset}")
+
+        self.area = float(area)
+        if not math.isfinite(self.area) or self.area <= 0:
+            raise ValueError(f"area must be a positive finite number, got {area}")
+
+        self.time_offset = float(time_offset)
+        if not math.isfinite(self.time_offset) or self.time_offset < 0:
+            raise ValueError(f"time_offset must be a finite non-negative number, got {time_offset}")
+
+        self.r_shunt = float(r_shunt)
+        if not math.isfinite(self.r_shunt) or self.r_shunt <= 0:
+            raise ValueError(f"r_shunt must be a positive finite number, got {r_shunt}")
+
+        if not isinstance(auto_timeshift, bool):
+            raise ValueError(f"auto_timeshift must be a boolean, got {auto_timeshift!r}")
         self.auto_timeshift = auto_timeshift
-        self.length = reset_width + reset_delay + (2 * p_u_width) + (2 * p_u_delay)
+
+        if not isinstance(show_plots, bool):
+            raise ValueError(f"show_plots must be a boolean, got {show_plots!r}")
+        self.show_plots = show_plots
+
+        if not isinstance(save_plots, bool):
+            raise ValueError(f"save_plots must be a boolean, got {save_plots!r}")
+        self.save_plots = save_plots
+
+        self.length = self.reset_width + self.reset_delay + (2 * self.p_u_width) + (2 * self.p_u_delay)
+        self.notes = (
+            str(self.reset_amp).replace(".", "p")
+            + "Vres_"
+            + str(self.p_u_amp).replace(".", "p")
+            + "Vpu"
+        )
+
+        initial_metadata: dict[str, Any] = {
+            "reset_amp": self.reset_amp,
+            "reset_width": self.reset_width,
+            "reset_delay": self.reset_delay,
+            "p_u_amp": self.p_u_amp,
+            "p_u_width": self.p_u_width,
+            "p_u_delay": self.p_u_delay,
+            "offset": self.offset,
+            "area": self.area,
+            "time_offset": self.time_offset,
+            "r_shunt": self.r_shunt,
+            "auto_timeshift": self.auto_timeshift,
+            "show_plots": self.show_plots,
+            "save_plots": self.save_plots,
+            "mtype": self.mtype,
+            "notes": self.notes,
+        }
+        if metadata is not None:
+            initial_metadata.update(dict(metadata))
+
         super().__init__(
-            awg,
-            osc,
+            awg=awg,
+            osc=osc,
             v_div=v_div,
             voltage_channel=voltage_channel,
             length=self.length,
-            output_dir=save_dir,
-        )
-        self.save_dir = str(save_dir) if save_dir is not None else None
-        self.notes = (
-            str(self.reset_amp).replace(".", "p")
-            + "Vres_"
-            + str(self.p_u_amp).replace(".", "p")
-            + "Vpu"
-        )
-        self._update_metadata()
-
-    def _update_notes(self):
-        self.notes = (
-            str(self.reset_amp).replace(".", "p")
-            + "Vres_"
-            + str(self.p_u_amp).replace(".", "p")
-            + "Vpu"
+            osc_channel=osc_channel,
+            output_dir=output_dir,
+            metadata=initial_metadata,
+            measurement_schema="three_pulse_pund",
+            column_units=dict(STANDARD_PUND_UNITS),
+            raw_column_units={"time": "s", "voltage": "V"},
         )
 
-    def analyze(self):
-        if self._data is not None:
-            _process_raw_3pp_file(
-                self.filename,
-                show_plots=self.show_plots,
-                save_plots=self.save_plots,
-                auto_timeshift=self.auto_timeshift,
-            )
-            print(f"Analysis succeeded, updated {self.filename}")
-        else:
-            print("No data to analyze. Capture the waveform first.")
+    def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
+        """Validate run options before reservation or hardware I/O."""
+        super()._validate_options(options)
+        if options is not None:
+            allowed = {"save_plots", "show_plots", "auto_timeshift"}
+            for key in options:
+                if key not in allowed:
+                    raise ValueError(f"Unknown ThreePulsePund option: {key}")
 
-    def configure_awg(self):
+    def configure_awg(self) -> None:
+        """Configure PUND arbitrary waveform on the AWG."""
         times = [
             0,
             self.reset_width,
@@ -806,10 +790,10 @@ class ThreePulsePund(_LegacyWaveformSupport, DiscreteWaveform):
         ]
         sum_times = [sum(times[: i + 1]) for i, t in enumerate(times)]
         amplitude = abs(self.reset_amp) + abs(self.p_u_amp)
-        polarity = np.sign(self.p_u_amp)
+        polarity = np.sign(self.p_u_amp) if self.p_u_amp != 0 else 1.0
 
-        frac_reset_amp = self.reset_amp / amplitude
-        frac_p_u_amp = self.p_u_amp / amplitude
+        frac_reset_amp = self.reset_amp / amplitude if amplitude != 0 else 0.0
+        frac_p_u_amp = self.p_u_amp / amplitude if amplitude != 0 else 0.0
 
         sparse_t = np.array([
             sum_times[0],
@@ -851,23 +835,89 @@ class ThreePulsePund(_LegacyWaveformSupport, DiscreteWaveform):
         self.awg.set_offset(channel=int(self.voltage_channel), offset=self.offset)
         self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(amplitude))
         self.awg.set_frequency(channel=int(self.voltage_channel), frequency=1.0 / self.length)
-        print("AWG configured for a PUND pulse.")
 
-    def run_experiment(self, *, on_update=None, save=True, save_partial=None):
-        """Unmigrated legacy execution workflow for ThreePulsePund until Checkpoint 20c."""
-        print(f"Running experiment for {self.mtype} measurement...")
-        self.configure_oscilloscope()
-        print("Oscilloscope configured.")
-        self.initialize_awg()
-        print("AWG initialized.")
-        self.configure_awg()
-        print("AWG configured.")
-        self.apply_and_capture_waveform()
-        print("Waveform applied and captured.")
-        self.save_waveform()
-        print("Waveform saved.")
-        self.analyze()
-        print("Analysis complete.")
-        self._update_history()
-        print("Experiment complete.")
-        return None
+    def _analyze_data(
+        self, raw_data: pd.DataFrame, request: RunRequest
+    ) -> pd.DataFrame:
+        """In-memory scientific PUND processing."""
+        if raw_data.empty:
+            return pd.DataFrame(columns=list(STANDARD_PUND_COLUMNS))
+
+        eff_auto_timeshift = self.auto_timeshift
+        if request.options and "auto_timeshift" in request.options:
+            eff_auto_timeshift = bool(request.options["auto_timeshift"])
+
+        result = process_pund(
+            data=raw_data,
+            metadata=self.measurement_metadata,
+            reset_amp=self.reset_amp,
+            reset_width=self.reset_width,
+            reset_delay=self.reset_delay,
+            p_u_amp=self.p_u_amp,
+            p_u_width=self.p_u_width,
+            p_u_delay=self.p_u_delay,
+            area=self.area,
+            length=self.length,
+            offset=self.offset,
+            time_offset=self.time_offset,
+            auto_timeshift=eff_auto_timeshift,
+            r_shunt=self.r_shunt,
+        )
+
+        self.measurement_metadata.update(result.metadata)
+        self.time_offset = result.time_offset
+        return result.data
+
+    def _stage_side_artifacts(
+        self,
+        data: pd.DataFrame,
+        request: RunRequest,
+        reservation: CandidateReservation,
+    ) -> Sequence[Tuple[Path, Path]]:
+        """Stage companion plot artifacts (_dPvst.png, _trace.png) for publication."""
+        if not request.save:
+            return ()
+
+        eff_save_plots = self.save_plots
+        if request.options and "save_plots" in request.options:
+            eff_save_plots = bool(request.options["save_plots"])
+
+        if not eff_save_plots or data.empty:
+            return ()
+
+        dest_dir = reservation.candidate_path.parent
+        base_basename = reservation.candidate_basename
+        staging_pairs: list[Tuple[Path, Path]] = []
+
+        try:
+            for suffix, plotter in (("dPvst", plot_pund_delta_p),
+                                    ("trace", plot_pund_traces)):
+                target = dest_dir / f"{base_basename}_{suffix}.png"
+                fd, staging = create_staging_file(
+                    dest_dir, prefix=f".{reservation.run_id}-{suffix}-", suffix=".png"
+                )
+                staging_pairs.append((staging, target))
+                # An explicit Agg canvas avoids Tk creation on the runner thread.
+                from matplotlib.figure import Figure
+                from matplotlib.backends.backend_agg import FigureCanvasAgg
+                fig = None
+                try:
+                    with io.open(fd, "wb") as handle:
+                        fig = Figure(tight_layout=True)
+                        FigureCanvasAgg(fig)
+                        plotter(data, ax=fig.subplots())
+                        fig.savefig(handle, format="png")
+                finally:
+                    if fig is not None:
+                        fig.clear()
+                        plt.close(fig)
+            return staging_pairs
+        except BaseException as exc:
+            remaining = []
+            for staging, _ in staging_pairs:
+                try:
+                    staging.unlink(missing_ok=True)
+                except OSError:
+                    remaining.append(str(staging))
+            exc.recoverable_staging_paths = tuple(remaining)
+            raise

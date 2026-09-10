@@ -1,7 +1,7 @@
 from .adapters import WaveformReader, WaveformRecord
 from .base import BaseMeasurement, MeasurementSession
 from .iv_sweep import IVSweep
-from .discrete_waveform import DiscreteWaveform, HysteresisLoop
+from .discrete_waveform import DiscreteWaveform, HysteresisLoop, ThreePulsePund
 from .moke import MokeMeasurement, MokeSnapshot
 from .contracts import (
     ConcurrentRunError,
@@ -61,6 +61,7 @@ __all__ = [
     "IVSweep",
     "DiscreteWaveform",
     "HysteresisLoop",
+    "ThreePulsePund",
     "MokeMeasurement",
     "MokeSnapshot",
     "MeasurementRunner",

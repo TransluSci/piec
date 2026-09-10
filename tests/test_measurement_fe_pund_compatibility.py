@@ -19,6 +19,10 @@ from piec.analysis.hysteresis import (
     STANDARD_HYSTERESIS_COLUMNS,
     STANDARD_HYSTERESIS_UNITS,
 )
+from piec.analysis.pund import (
+    STANDARD_PUND_COLUMNS,
+    STANDARD_PUND_UNITS,
+)
 from piec.measurement.discrete_waveform import (
     DiscreteWaveform,
     HysteresisLoop,
@@ -417,7 +421,7 @@ class TestHysteresisLoopCompatibility:
 
 
 class TestThreePulsePundCompatibility:
-    """Characterize legacy ThreePulsePund behavior and verify regression goldens."""
+    """Verify standardized ThreePulsePund behavior and regression goldens."""
 
     def test_pund_constructor_and_attributes(self, tmp_path):
         awg = VirtualAwg()
@@ -439,10 +443,13 @@ class TestThreePulsePundCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=True,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
 
         assert pund.mtype == "3pulsepund"
+        assert pund.measurement_schema == "three_pulse_pund"
+        assert pund.column_units == STANDARD_PUND_UNITS
+        assert pund.raw_column_units == {"time": "s", "voltage": "V"}
         assert pund.reset_amp == 2.0
         assert pund.reset_width == 2e-3
         assert pund.reset_delay == 1e-3
@@ -458,18 +465,17 @@ class TestThreePulsePundCompatibility:
         assert pund.auto_timeshift is True
         expected_length = 2e-3 + 1e-3 + 2 * 1e-3 + 2 * 2e-3
         assert pund.length == pytest.approx(expected_length)
-        assert pund.save_dir == str(tmp_path)
+        assert pund.output_dir == Path(tmp_path)
         assert pund.data is None
         assert pund.filename is None
-        assert pund.history == []
-
-        pund._update_notes()
         assert pund.notes == "2p0Vres_1p5Vpu"
 
-        assert isinstance(pund.metadata, pd.DataFrame)
-        assert len(pund.metadata) == 1
-        assert pund.metadata.loc[0, "mtype"] == "3pulsepund"
-        assert bool(pund.metadata.loc[0, "processed"]) is False
+        # Target contract: zero hardware I/O in __init__
+        assert osc.state["armed"] is False
+
+        # Must reject legacy save_dir
+        with pytest.raises(TypeError):
+            ThreePulsePund(awg=awg, osc=osc, save_dir=str(tmp_path))
 
     def test_pund_configure_awg(self):
         awg = VirtualAwg()
@@ -495,33 +501,20 @@ class TestThreePulsePundCompatibility:
             osc=osc,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
 
-        result = pund.run_experiment()
-        # Legacy contract: returns None
-        assert result is None
+        result = pund.run_experiment(save=True)
+        assert isinstance(result, pd.DataFrame)
         assert pund.filename is not None
         assert Path(pund.filename).is_file()
 
         # Metadata in CSV must be marked processed
         meta, data = assert_piec_csv_layout(pund.filename)
         assert bool(meta.loc[0, "processed"]) is True
-        assert len(pund.history) == 1
+        assert len(pund.run_records) == 1
 
-        expected_columns = [
-            "time (s)",
-            "voltage (V)",
-            "current (A)",
-            "polarization (uC/cm^2)",
-            "P^ (uC/cm^2)",
-            "P* (uC/cm^2)",
-            "P^r (uC/cm^2)",
-            "P*r (uC/cm^2)",
-            "dP (uC/cm^2)",
-            "applied voltage (V)",
-        ]
-        assert_data_columns_match(data, expected_columns, exact_order=True)
+        assert_data_columns_match(data, list(STANDARD_PUND_COLUMNS), exact_order=True)
 
     def test_pund_golden_csv_regression(self, tmp_path):
         """Verify deterministic PUND run matches golden CSV."""
@@ -542,18 +535,18 @@ class TestThreePulsePundCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=True,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        pund.run_experiment()
+        pund.run_experiment(save=True)
 
         assert_golden_csv_matches(
             actual_path=pund.filename,
             golden_path=THREE_PULSE_PUND_GOLDEN_PATH,
-            volatile_metadata_keys=["timestamp", "save_dir", "filename"],
+            volatile_metadata_keys=["timestamp", "run_id"],
         )
 
-    def test_pund_numerical_equivalence_with_mapping(self, tmp_path):
-        """Verify numerical equivalence using the harness old_to_new_column_mapping."""
+    def test_pund_numerical_equivalence(self, tmp_path):
+        """Verify numerical equivalence against golden CSV."""
         awg = VirtualAwg(simulation_points=50)
         osc = VirtualScope(simulation_points=50)
         pund = ThreePulsePund(
@@ -571,13 +564,12 @@ class TestThreePulsePundCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=True,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        pund.run_experiment()
+        pund.run_experiment(save=True)
 
-        _, actual_data = standard_csv_to_metadata_and_data(pund.filename)
-        _, gold_data = standard_csv_to_metadata_and_data(str(THREE_PULSE_PUND_GOLDEN_PATH))
-        assert_numerical_data_matches_reference(actual_data, gold_data, "ThreePulsePund")
+        _, gold_data, _ = read_measurement_csv(THREE_PULSE_PUND_GOLDEN_PATH)
+        assert_numerical_data_matches_reference(pund.data, gold_data, "ThreePulsePund")
 
     def test_pund_polarization_calculations(self, tmp_path):
         """Verify PUND polarization calculations and array zeroing."""
@@ -588,20 +580,20 @@ class TestThreePulsePundCompatibility:
             osc=osc,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        pund.run_experiment()
+        pund.run_experiment(save=True)
 
-        _, df = standard_csv_to_metadata_and_data(pund.filename)
-        # P^ and P* initial values must be zeroed
-        assert df["P^ (uC/cm^2)"].iloc[0] == pytest.approx(0.0)
-        assert df["P* (uC/cm^2)"].iloc[0] == pytest.approx(0.0)
-        assert df["P^r (uC/cm^2)"].iloc[0] == pytest.approx(0.0)
-        assert df["P*r (uC/cm^2)"].iloc[0] == pytest.approx(0.0)
-        assert df["dP (uC/cm^2)"].iloc[0] == pytest.approx(0.0)
+        _, df, _ = read_measurement_csv(pund.filename)
+        # polarization_p_hat and polarization_p_star initial values must be zeroed
+        assert df["polarization_p_hat"].iloc[0] == pytest.approx(0.0)
+        assert df["polarization_p_star"].iloc[0] == pytest.approx(0.0)
+        assert df["polarization_p_hat_r"].iloc[0] == pytest.approx(0.0)
+        assert df["polarization_p_star_r"].iloc[0] == pytest.approx(0.0)
+        assert df["delta_polarization"].iloc[0] == pytest.approx(0.0)
 
-        # dP must have a non-zero maximum representing switched polarization
-        dp_max = df["dP (uC/cm^2)"].max()
+        # delta_polarization must have a non-zero maximum representing switched polarization
+        dp_max = df["delta_polarization"].max()
         assert dp_max > 0.0
 
     def test_pund_auto_timeshift(self, tmp_path):
@@ -616,11 +608,11 @@ class TestThreePulsePundCompatibility:
             auto_timeshift=True,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path / "auto"),
         )
-        pund_auto.run_experiment()
-        meta_auto, _ = standard_csv_to_metadata_and_data(pund_auto.filename)
-        assert meta_auto["time_offset"].values[0] > 1e-8
+        pund_auto.run_experiment(save=True)
+        meta_auto, _, _ = read_measurement_csv(pund_auto.filename)
+        assert float(meta_auto["time_offset"]) > 1e-8
 
         pund_manual = ThreePulsePund(
             awg=awg,
@@ -629,25 +621,26 @@ class TestThreePulsePundCompatibility:
             auto_timeshift=False,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path / "manual"),
         )
-        pund_manual.run_experiment()
-        meta_man, _ = standard_csv_to_metadata_and_data(pund_manual.filename)
-        assert meta_man["time_offset"].values[0] == pytest.approx(1e-8)
+        pund_manual.run_experiment(save=True)
+        meta_man, _, _ = read_measurement_csv(pund_manual.filename)
+        assert float(meta_man["time_offset"]) == pytest.approx(1e-8)
 
     def test_pund_plot_artifacts(self, tmp_path):
         """Verify that save_plots=True creates _dPvst.png and _trace.png."""
         awg = VirtualAwg(simulation_points=50)
         osc = VirtualScope(simulation_points=50)
 
+        # Run with save_plots=True
         pund_save = ThreePulsePund(
             awg=awg,
             osc=osc,
             show_plots=False,
             save_plots=True,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        pund_save.run_experiment()
+        pund_save.run_experiment(save=True)
 
         base_stem = Path(pund_save.filename).stem
         dp_file = Path(tmp_path) / f"{base_stem}_dPvst.png"
@@ -666,9 +659,22 @@ class TestThreePulsePundCompatibility:
             osc=osc,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_no_plots),
+            output_dir=str(tmp_no_plots),
         )
-        pund_nosave.run_experiment()
+        pund_nosave.run_experiment(save=True)
 
         png_files = list(tmp_no_plots.glob("*.png"))
         assert len(png_files) == 0, f"Expected no PNG plots, found {png_files}"
+
+        # Run with save=False
+        tmp_nosave_run = tmp_path / "nosave_run"
+        tmp_nosave_run.mkdir()
+        pund_nosave_run = ThreePulsePund(
+            awg=awg,
+            osc=osc,
+            show_plots=False,
+            save_plots=True,
+            output_dir=str(tmp_nosave_run),
+        )
+        pund_nosave_run.run_experiment(save=False)
+        assert len(list(tmp_nosave_run.glob("*"))) == 0

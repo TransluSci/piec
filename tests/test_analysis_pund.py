@@ -9,7 +9,7 @@ import tempfile
 import json
 
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -23,7 +23,6 @@ from piec.analysis.pund import (
     plot_pund_delta_p,
     plot_pund_traces,
     process_pund,
-    _process_raw_3pp_file,
 )
 from piec.analysis.utilities import standard_csv_to_metadata_and_data, metadata_and_data_to_csv
 from tests.fixtures.measurement_compatibility import assert_piec_csv_layout
@@ -41,9 +40,11 @@ GOLDEN_PATH = (
 def sample_pund_data():
     """Create deterministic in-memory synthetic PUND raw data from golden time/voltage."""
     _, data_gold = standard_csv_to_metadata_and_data(str(GOLDEN_PATH))
+    t_col = "time" if "time" in data_gold.columns else "time (s)"
+    v_col = "voltage" if "voltage" in data_gold.columns else "voltage (V)"
     return pd.DataFrame({
-        "time": data_gold["time (s)"].values,
-        "voltage": data_gold["voltage (V)"].values,
+        "time": data_gold[t_col].values,
+        "voltage": data_gold[v_col].values,
     })
 
 
@@ -129,23 +130,23 @@ class TestPundProcessing:
         meta_gold, data_gold = standard_csv_to_metadata_and_data(str(GOLDEN_PATH))
 
         raw_df = pd.DataFrame({
-            "time": data_gold["time (s)"].values,
-            "voltage": data_gold["voltage (V)"].values,
+            "time": data_gold["time"].values,
+            "voltage": data_gold["voltage"].values,
         })
 
         result = process_pund(raw_df, meta_gold)
 
         # Numerical comparison against golden data across all quantities
-        np.testing.assert_allclose(result.data["time"], data_gold["time (s)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["voltage"], data_gold["voltage (V)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["current"], data_gold["current (A)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["polarization"], data_gold["polarization (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["polarization_p_hat"], data_gold["P^ (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["polarization_p_star"], data_gold["P* (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["polarization_p_hat_r"], data_gold["P^r (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["polarization_p_star_r"], data_gold["P*r (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["delta_polarization"], data_gold["dP (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["applied_voltage"], data_gold["applied voltage (V)"], atol=1e-12)
+        np.testing.assert_allclose(result.data["time"], data_gold["time"], atol=1e-12)
+        np.testing.assert_allclose(result.data["voltage"], data_gold["voltage"], atol=1e-12)
+        np.testing.assert_allclose(result.data["current"], data_gold["current"], atol=1e-12)
+        np.testing.assert_allclose(result.data["polarization"], data_gold["polarization"], atol=1e-12)
+        np.testing.assert_allclose(result.data["polarization_p_hat"], data_gold["polarization_p_hat"], atol=1e-12)
+        np.testing.assert_allclose(result.data["polarization_p_star"], data_gold["polarization_p_star"], atol=1e-12)
+        np.testing.assert_allclose(result.data["polarization_p_hat_r"], data_gold["polarization_p_hat_r"], atol=1e-12)
+        np.testing.assert_allclose(result.data["polarization_p_star_r"], data_gold["polarization_p_star_r"], atol=1e-12)
+        np.testing.assert_allclose(result.data["delta_polarization"], data_gold["delta_polarization"], atol=1e-12)
+        np.testing.assert_allclose(result.data["applied_voltage"], data_gold["applied_voltage"], atol=1e-12)
         assert result.time_offset == pytest.approx(float(meta_gold["time_offset"].values[0]), abs=1e-12)
 
     def test_result_tuple_unpacking_and_protocol(self, sample_pund_data, sample_metadata):
@@ -258,6 +259,11 @@ class TestPundProcessing:
 class TestPundPlotting:
     """Tests for in-memory plotting functions."""
 
+    @pytest.fixture(autouse=True)
+    def _force_agg(self):
+        matplotlib.use("Agg", force=True)
+        yield
+
     def test_plot_pund_delta_p(self, sample_pund_data, sample_metadata):
         res = process_pund(sample_pund_data, sample_metadata)
         fig, ax = plt.subplots()
@@ -289,35 +295,11 @@ class TestPundPlotting:
         plt.close(fig)
 
 
-class TestProcessRaw3ppBridge:
-    """Verify legacy _process_raw_3pp_file file bridge behavior."""
-
-    def test__process_raw_3pp_file_updates_and_plots(self, tmp_path):
-        meta_gold, data_gold = standard_csv_to_metadata_and_data(str(GOLDEN_PATH))
-        test_csv = tmp_path / "test_raw_pund.csv"
-        raw_df = pd.DataFrame({
-            "time (s)": data_gold["time (s)"].values,
-            "voltage (V)": data_gold["voltage (V)"].values,
-        })
-        metadata_and_data_to_csv(meta_gold, raw_df, str(test_csv))
-
-        # Run bridge with save_plots=True
-        res = _process_raw_3pp_file(str(test_csv), show_plots=False, save_plots=True)
-        assert isinstance(res, PundAnalysisResult)
-
-        # Verify updated CSV on disk
-        updated_meta, updated_data = assert_piec_csv_layout(str(test_csv))
-        assert bool(updated_meta.loc[0, "processed"]) is True
-        for col in (
-            "time (s)", "voltage (V)", "current (A)", "polarization (uC/cm^2)",
-            "P^ (uC/cm^2)", "P* (uC/cm^2)", "P^r (uC/cm^2)", "P*r (uC/cm^2)",
-            "dP (uC/cm^2)", "applied voltage (V)",
-        ):
-            assert col in updated_data.columns
-
-        # Verify plot files generated
-        assert (tmp_path / "test_raw_pund_dPvst.png").is_file()
-        assert (tmp_path / "test_raw_pund_trace.png").is_file()
+def test_legacy_file_bridge_retired():
+    """Verify legacy _process_raw_3pp_file file bridge is fully retired."""
+    import piec.analysis.pund as module
+    assert not hasattr(module, "_process_raw_3pp_file")
+    assert not hasattr(module, "process_raw_3pp")
 
 
 @pytest.mark.parametrize("name", ["reset_width", "reset_delay", "p_u_width", "p_u_delay", "area", "r_shunt", "length"])
@@ -365,11 +347,6 @@ def test_metadata_shape_and_type_rejected(sample_pund_data, metadata):
     with pytest.raises((ValueError, TypeError), match="Metadata"):
         process_pund(sample_pund_data, metadata)
 
-
-def test_file_bridge_is_private():
-    import piec.analysis.pund as module
-    assert "_process_raw_3pp_file" not in module.__all__
-    assert not hasattr(module, "process_raw_3pp")
 
 @pytest.mark.parametrize('value', ['False', 'True', 0, 1, [], float('nan')])
 def test_auto_timeshift_requires_boolean(sample_pund_data, sample_metadata, value):

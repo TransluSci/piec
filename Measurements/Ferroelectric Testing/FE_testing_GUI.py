@@ -293,6 +293,8 @@ class FEMeasurementApp(MeasurementApp):
 
     def update_dynamic_defaults(self):
         # Update defaults to currently selected values
+        if not hasattr(self, "dynamic_inputs") or not self.dynamic_inputs:
+            return
         for key in self.dynamic_inputs:
             DEFAULTS[key] = self.dynamic_inputs[key].get()
 
@@ -376,7 +378,7 @@ class FEMeasurementApp(MeasurementApp):
             self._create_experiment()
             if not self.measurement_type.get():
                 return
-            if isinstance(self.experiment, HysteresisLoop):
+            if isinstance(self.experiment, (HysteresisLoop, ThreePulsePund)):
                 self._plot_frame = None
                 self._plot_units = dict(self.experiment.column_units)
                 self._terminal_event = None
@@ -386,11 +388,6 @@ class FEMeasurementApp(MeasurementApp):
                 self.status_label.config(text="Running")
                 self._awaiting_terminal = True
                 self.runner.start(save=True)
-            else:
-                # PUND remains on its existing path until checkpoint 20c.
-                self.experiment.run_experiment()
-                self.update_dynamic_defaults()
-                self.plot_data()
         except Exception as error:
             messagebox.showerror("FE measurement error", str(error))
             if self.runner is None or self.runner.can_close():
@@ -455,19 +452,15 @@ class FEMeasurementApp(MeasurementApp):
             self.experiment = ThreePulsePund(awg=awg, osc=osc,
                                              reset_amp=reset_amp, reset_width=reset_width, reset_delay=reset_delay,
                                              p_u_amp=p_u_amp, p_u_width=p_u_width, p_u_delay=p_u_delay,
-                                             save_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area, offset=offset,
+                                             output_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area, offset=offset,
                                              save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
 
     def plot_data(self, event=None):
         if getattr(self, "experiment", None) is None:
             return
-        if isinstance(self.experiment, HysteresisLoop):
-            data = self._plot_frame
-            if data is None or data.empty:
-                return
-            metadata = None
-        else:
-            metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
+        data = self._plot_frame
+        if data is None or data.empty:
+            return
         x_col = self.x_axis.get()
         y_col = self.y_axis.get()
         plain_map = {
@@ -475,6 +468,11 @@ class FEMeasurementApp(MeasurementApp):
             "applied voltage (V)": "applied_voltage",
             "current (A)": "current",
             "polarization (uC/cm^2)": "polarization",
+            "P^ (uC/cm^2)": "polarization_p_hat",
+            "P* (uC/cm^2)": "polarization_p_star",
+            "P^r (uC/cm^2)": "polarization_p_hat_r",
+            "P*r (uC/cm^2)": "polarization_p_star_r",
+            "dP (uC/cm^2)": "delta_polarization",
         }
         if x_col not in data.columns and x_col in plain_map and plain_map[x_col] in data.columns:
             x_col = plain_map[x_col]
@@ -483,18 +481,14 @@ class FEMeasurementApp(MeasurementApp):
 
         if x_col not in data.columns or y_col not in data.columns:
             # During acquisition only raw time/voltage are available.
-            if isinstance(self.experiment, HysteresisLoop):
-                x_col, y_col = "time", "voltage"
-            else:
+            x_col, y_col = "time", "voltage"
+            if x_col not in data.columns or y_col not in data.columns:
                 return
         self.ax.clear()
         x_data = data[x_col]
         y_data = data[y_col]
-        if metadata is not None:
-            self.timeshift_entry.delete(0, tk.END)
-            self.timeshift_entry.insert(0, metadata["time_offset"].values[0]*1e9)
 
-        self.ax.plot(x_data, y_data, marker='.',color='k', label=f"{self.y_axis.get()} vs {self.x_axis.get()}")
+        self.ax.plot(x_data, y_data, marker='.', color='k', label=f"{self.y_axis.get()} vs {self.x_axis.get()}")
         def label(column):
             unit = self._plot_units.get(column)
             return f"{column} ({unit})" if unit else column
@@ -548,6 +542,7 @@ class FEMeasurementApp(MeasurementApp):
                 self.stop_button.config(state="disabled")
                 self.timeshift_entry.delete(0, tk.END)
                 self.timeshift_entry.insert(0, self.experiment.time_offset * 1e9)
+                self.update_dynamic_defaults()
                 if self.runner.can_close():
                     self._close_instruments()
                     self.run_button.config(state="normal")

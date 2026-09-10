@@ -1,9 +1,22 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 20b is complete. Checkpoint 17
+Continue on `measuremnt-standarization`. Checkpoint 20c is complete. Checkpoint 17
 physical validation remains explicitly **PENDING**. Next is
-**checkpoint 20c only: PUND integration and consumers**, following the
-measurement standardization plan. Validate and commit checkpoint 20c separately.
+**checkpoint 21 only: AMR driver and field angle contract**, following the
+measurement standardization plan. Validate and commit checkpoint 21 separately.
+
+## Checkpoint 20c PUND integration and consumers
+
+- **BaseMeasurement Lifecycle**: `ThreePulsePund` in `piec.measurement.discrete_waveform` subclasses `DiscreteWaveform` and `BaseMeasurement`, implementing the shared lifecycle hooks: `_validate_options`, `configure_awg` (arbitrary waveform generation), `_analyze_data` (in-memory `process_pund`), and `_stage_side_artifacts`.
+- **Target Schema & Units**: Adheres to schema `three_pulse_pund` v1 with plain lowercase columns `['time', 'voltage', 'current', 'polarization', 'polarization_p_hat', 'polarization_p_star', 'polarization_p_hat_r', 'polarization_p_star_r', 'delta_polarization', 'applied_voltage']` and canonical JSON metadata units `{'time': 's', 'voltage': 'V', 'current': 'A', 'polarization': 'uC/cm^2', 'polarization_p_hat': 'uC/cm^2', 'polarization_p_star': 'uC/cm^2', 'polarization_p_hat_r': 'uC/cm^2', 'polarization_p_star_r': 'uC/cm^2', 'delta_polarization': 'uC/cm^2', 'applied_voltage': 'V'}`.
+- **In-Memory Scientific Processing**: Replaced file-based post-processing with in-memory execution via `process_pund(raw_df, metadata, ...)`. Returns enriched DataFrame and schema v1 metadata directly.
+- **Multi-Artifact Publication**: Staged side artifacts (`_dPvst.png`, `_trace.png`) are generated via `create_staging_file` and published atomically alongside the CSV when `save=True` and `save_plots=True`. Plots are strictly suppressed when `save=False` or `save_plots=False`. Explicit Agg canvas and figure lifecycle avoid GUI dependencies in worker threads.
+- **Legacy Paths Removed**: Fully removed `_LegacyWaveformSupport` mixin and retired private file bridge `_process_raw_3pp_file` from `piec.analysis.pund`. Removed legacy methods (`apply_and_capture_waveform`, `save_waveform`, `analyze`, `save_dir`, `_update_notes`, `_update_history`, `_update_metadata`).
+- **GUI Migration**: Migrated `FE_testing_GUI.py` onto `MeasurementRunner` across all measurement types (Hysteresis and PUND), supporting live polling, in-memory plotting from `_plot_frame`, Stop, deferred close, and connection ownership retention on unsafe shutdown.
+- **Consumer Updates**: Updated `Measurements/Ferroelectric Testing/FE_testing.ipynb` cells 21, 26, 29, 30 to use `output_dir` and plain column lookups (`delta_polarization`, `time`).
+- **Validation**: Dedicated test suites `tests/test_measurement_pund.py` (13 passed) and `tests/test_pund_review.py` (6 passed) covering lifecycle, zero constructor I/O, parameter validation, plot artifact generation and suppression, cooperative cancellation, safe shutdown, runner integration, and GUI connection retention. Full test suite: **1411 passed, 1 skipped, 2 xfailed** in 28.18s on Python 3.13.2.
+- **Physical Validation**: Hardware testing was not performed; Checkpoint 17 physical validation remains explicitly **PENDING**.
+- **Next Step**: Stop after checkpoint 20c. Proceed with **checkpoint 21 only: AMR driver and field angle contract** once authorized.
 
 ## Checkpoint 20b review corrections
 

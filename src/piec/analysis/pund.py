@@ -16,11 +16,7 @@ import pandas as pd
 from scipy.integrate import cumulative_trapezoid
 from scipy.signal import find_peaks
 
-from piec.analysis.utilities import (
-    interpolate_sparse_to_dense,
-    metadata_and_data_to_csv,
-    standard_csv_to_metadata_and_data,
-)
+from piec.analysis.utilities import interpolate_sparse_to_dense
 
 STANDARD_PUND_COLUMNS: Tuple[str, ...] = (
     "time",
@@ -494,70 +490,6 @@ def plot_pund_components(
     return ax
 
 
-def _process_raw_3pp_file(
-    path: str,
-    show_plots: bool = False,
-    save_plots: bool = False,
-    auto_timeshift: bool = True,
-) -> PundAnalysisResult:
-    """Private file bridge for the unmigrated ThreePulsePund caller.
-
-    Maintained as a temporary bridge for unmigrated callers until Checkpoint 20c.
-    Reads the CSV at `path`, performs analysis via `process_pund`, generates
-    optional plots, and updates the CSV on disk with processed columns.
-    """
-    metadata, raw_df = standard_csv_to_metadata_and_data(path)
-    raw_df = raw_df.rename(columns={"time (s)": "time", "voltage (V)": "voltage"})
-    result = process_pund(raw_df, metadata, auto_timeshift=auto_timeshift)
-
-    # Map back to legacy column headers for backward compatibility with unmigrated CSV consumers
-    legacy_df = pd.DataFrame({
-        "time (s)": result.data["time"],
-        "voltage (V)": result.data["voltage"],
-        "current (A)": result.data["current"],
-        "polarization (uC/cm^2)": result.data["polarization"],
-        "P^ (uC/cm^2)": result.data["polarization_p_hat"],
-        "P* (uC/cm^2)": result.data["polarization_p_star"],
-        "P^r (uC/cm^2)": result.data["polarization_p_hat_r"],
-        "P*r (uC/cm^2)": result.data["polarization_p_star_r"],
-        "dP (uC/cm^2)": result.data["delta_polarization"],
-        "applied voltage (V)": result.data["applied_voltage"],
-    })
-
-    if show_plots or save_plots:
-        base_path = path[:-4] if path.lower().endswith(".csv") else path
-
-        # dP vs time plot
-        fig, ax = plt.subplots(tight_layout=True)
-        ax.plot(result.data["time"], result.data["delta_polarization"], color="k")
-        ax.set_xlabel("time (s)")
-        ax.set_ylabel("dP (uC/cm^2)")
-        if save_plots:
-            fig.savefig(f"{base_path}_dPvst.png")
-        if show_plots:
-            plt.show()
-        plt.close(fig)
-
-        # Current response and applied voltage trace plot
-        fig, ax = plt.subplots(tight_layout=True)
-        ax.plot(result.data["time"], result.data["current"], color="k")
-        ax.set_xlabel("time (s)")
-        ax.set_ylabel("current (A)")
-        ax1 = ax.twinx()
-        ax1.plot(result.data["time"], result.data["applied_voltage"], color="r")
-        ax1.set_ylabel("applied voltage (V)")
-        if save_plots:
-            fig.savefig(f"{base_path}_trace.png")
-        if show_plots:
-            plt.show()
-        plt.close(fig)
-
-    updated_metadata = metadata.copy()
-    updated_metadata["time_offset"] = result.time_offset
-    updated_metadata["processed"] = True
-
-    metadata_and_data_to_csv(updated_metadata, legacy_df, path)
-    return result
 
 
 __all__ = (
