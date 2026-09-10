@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import time
 import pandas as pd
@@ -79,18 +80,18 @@ class MagnetoTransport:
     def set_field(self):
         """
         Set the magnetic field using the calibrator.
-
         """
-        voltage = self.field/self.voltage_callibration #e.g. want 1000 Oe so 1000/10000 = 0.1V
+        voltage = convert_field_to_voltage(self.field, self.voltage_callibration)
         # Set the field using the calibrator
         self.calibrator.set_output(voltage)
         # Check field is correct by reading the DMM
         time.sleep(3)  # Allow time for the field to stabilize
         # Read the actual voltage from the DMM
         actual_voltage = self.dmm.get_voltage()
-        actual_field = actual_voltage * self.voltage_callibration #e.g. 0.1V * 10000 = 1000 Oe
-        # Check if the field is within a reasonable range
-        if abs(actual_field - self.field) > 0.1 * self.field:  # Allow 10% tolerance
+        actual_field = convert_voltage_to_field(actual_voltage, self.voltage_callibration)
+        # Check if the field is within a reasonable range (valid at zero and negative field)
+        tolerance = 1.0 + 0.1 * abs(self.field)
+        if abs(actual_field - self.field) > tolerance:
             print(f"Warning: Field set to {self.field} Oe, but actual field is {actual_field} Oe")
         else:
             print(f"Set field to {self.field} Oe and checked it is at {actual_field} Oe")
@@ -118,6 +119,12 @@ class MagnetoTransport:
         Turns off the field by setting the calibrator to zero volts.
         """
         self.calibrator.set_output(0)  # Set the calibrator output to 0V
+        output_fn = getattr(self.calibrator, "output", None)
+        if callable(output_fn):
+            try:
+                output_fn(on=False)
+            except Exception:
+                pass
         print("Field turned off.")
 
     def analyze(self):
@@ -412,38 +419,81 @@ Helper Functions Below
 
 def convert_steps_to_angle(steps, steps_per_revolution=200) -> float:
     """
-    Helper function to convert the steps to an angle
+    Helper function to convert steps to an angle in degrees.
 
-    ars:
-        steps (int) number of steps to be converted
-        steps_per_revolution (int) Number of steps for one complete revolution
+    Args:
+        steps (int): Number of steps to be converted.
+        steps_per_revolution (int): Number of steps for one complete revolution.
+
+    Returns:
+        float: Angle in degrees.
     """
-    angle = float(steps*360/steps_per_revolution)
-    return angle
+    if not isinstance(steps_per_revolution, (int, np.integer)) or steps_per_revolution <= 0:
+        raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
+    return float(steps) * 360.0 / float(steps_per_revolution)
+
 
 def convert_angle_to_steps(angle, steps_per_revolution=200) -> int:
     """
-    Helper function to convert an angle to steps
+    Helper function to convert an angle in degrees to steps.
 
-    args:
-        angle (float) Desired angle
-        steps_per_revolution (int) Number of steps for one complete revolution
-    """
-    steps = int(angle*steps_per_revolution/360)
-    return steps
+    Args:
+        angle (float): Desired angle in degrees.
+        steps_per_revolution (int): Number of steps for one complete revolution.
 
-def convert_field_to_voltage(field):
+    Returns:
+        int: Number of steps.
     """
-    Convert the field to voltage using the calibrator. This is a psuedo code function and needs to be implemented
-    with the correct conversion factor.
-    Currently 1V == 10000 Oe, but depends on hardware settings
+    if not isinstance(steps_per_revolution, (int, np.integer)) or steps_per_revolution <= 0:
+        raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
+    angle_f = float(angle)
+    if not math.isfinite(angle_f):
+        raise ValueError(f"angle must be a finite number, got {angle!r}")
+    return int(round(angle_f * steps_per_revolution / 360.0))
 
-    args:
-        field (float) Desired field in Oe
+
+def convert_field_to_voltage(field, voltage_calibration=10000.0) -> float:
     """
-    # This is a placeholder for the actual conversion logic
-    voltage = field * 0.1  # Example conversion factor, replace with actual logic
-    return voltage
+    Convert magnetic field in Oe to calibrator control voltage in V.
+
+    Default calibration is 10000.0 Oe/V (0.01 V for 100 Oe).
+
+    Args:
+        field (float): Desired field in Oe.
+        voltage_calibration (float): Calibration factor in Oe/V (default: 10000.0).
+
+    Returns:
+        float: Output voltage in Volts.
+    """
+    field_f = float(field)
+    if not math.isfinite(field_f):
+        raise ValueError(f"field must be a finite number, got {field!r}")
+    cal_f = float(voltage_calibration)
+    if not math.isfinite(cal_f) or cal_f <= 0:
+        raise ValueError(f"voltage_calibration must be a positive finite number, got {voltage_calibration!r}")
+    return field_f / cal_f
+
+
+def convert_voltage_to_field(voltage, voltage_calibration=10000.0) -> float:
+    """
+    Convert sensor / calibrator voltage in V to magnetic field in Oe.
+
+    Default calibration is 10000.0 Oe/V (100 Oe for 0.01 V).
+
+    Args:
+        voltage (float): Voltage in Volts.
+        voltage_calibration (float): Calibration factor in Oe/V (default: 10000.0).
+
+    Returns:
+        float: Magnetic field in Oe.
+    """
+    v_f = float(voltage)
+    if not math.isfinite(v_f):
+        raise ValueError(f"voltage must be a finite number, got {voltage!r}")
+    cal_f = float(voltage_calibration)
+    if not math.isfinite(cal_f) or cal_f <= 0:
+        raise ValueError(f"voltage_calibration must be a positive finite number, got {voltage_calibration!r}")
+    return v_f * cal_f
 
 """
 Psuedo Code to convert into correct format

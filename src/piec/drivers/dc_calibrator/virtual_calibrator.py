@@ -21,3 +21,10 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
             self.mag_sample.current_field = value * self.voltage_callibration
         
         return super().set_output(value, mode=mode, **kwargs)
+
+    def output(self, on=True):
+        """Enable or disable calibrator main output."""
+        self._output_enabled = bool(on)
+        if not self._output_enabled and hasattr(self, 'mag_sample') and self.mag_sample:
+            self.mag_sample.current_field = 0.0
+

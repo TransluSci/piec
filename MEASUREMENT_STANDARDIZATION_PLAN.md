@@ -70,6 +70,7 @@ Suggested implementation prompt:
 | 20a | Completed | Standardized `DiscreteWaveform` base acquisition onto `BaseMeasurement` shared lifecycle with zero constructor I/O, WaveformReader oscilloscope adapter, strict trigger order, and attempt-all safing. Targeted suites: 294 passed; full suite with Agg: 1367 passed, 1 skipped, 2 xfailed. Checkpoint 17 physical validation remains PENDING. |
 | 20b | Completed | Standardized `HysteresisLoop` onto `DiscreteWaveform` and `BaseMeasurement` with in-memory scientific processing (`process_hysteresis`), plain schema `hysteresis` v1 columns/units, multi-artifact plot staging (`_PV.png`, `_IV.png`, `_trace.png`), and runner-based GUI with in-memory plotting and safe close coordination. Retired private file bridge `_process_raw_hyst_file`. Full suite with Agg: 1393 passed, 1 skipped, 2 xfailed. Checkpoint 17 physical validation remains PENDING. |
 | 20c | Completed | Standardized `ThreePulsePund` onto `DiscreteWaveform` and `BaseMeasurement` with in-memory scientific processing (`process_pund`), plain schema `three_pulse_pund` v1 columns/units, multi-artifact plot staging (`_dPvst.png`, `_trace.png`), and runner-based GUI with in-memory plotting and safe close coordination. Retired private file bridge `_process_raw_3pp_file` and removed `_LegacyWaveformSupport`. Full suite: 1411 passed, 1 skipped, 2 xfailed in 28.18s. Checkpoint 17 physical validation remains PENDING. Checkpoint 21 is next. |
+| 21 | Completed | Implemented AMR setup-role adapters (`FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, `AMRSetupProfile`) with default preservation of manual lock-in settings (`readout_configuration="preserve"`), internal/external excitation, linear/table/native field modes, tolerance verification across zero/negative fields, and attempt-all safing. Repaired `AMR-FIELD-001` in `convert_field_to_voltage` and added `convert_voltage_to_field`. Added 37 comprehensive contract and virtual driver tests in `tests/test_amr_contract.py`. Full suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2. Checkpoint 17 physical validation remains PENDING. |
 
 
 Checkpoint 16 review completed: geometry choices now restore independent session-local
@@ -148,6 +149,16 @@ AWG generation for signed amplitudes; FE run options require actual booleans bef
 reservation/I/O. Targeted suites: **109 passed**; full suite with Agg:
 **1440 passed, 1 skipped, 2 xfailed**. Checkpoint **21 only** is next;
 physical checkpoint 17 remains PENDING. See MEASUREMENT_HANDOFF.md.
+
+Checkpoint 21 completed: implemented AMR setup-role adapters (`FieldSource`, `FieldReader`,
+`TransportReadout`, `OrientationController`, `AMRSetupProfile`) per Section 9.5. Preserved
+the confirmed lab workflow with manual lock-in setting preservation by default
+(`readout_configuration="preserve"`). Repaired `AMR-FIELD-001` in `convert_field_to_voltage`
+(100 Oe gives 0.01 V with 10000 Oe/V default calibration) and added `convert_voltage_to_field`.
+Standardized `convert_angle_to_steps` and `convert_steps_to_angle`. Added 37 comprehensive contract
+and virtual driver integration tests in `tests/test_amr_contract.py`. `AMR-ANGLE-001` remains marked
+`xfail` until Checkpoint 24b. Full test suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s
+on Python 3.13.2. Checkpoint 17 physical validation remains explicitly **PENDING**.
 
 ## 1. Purpose and non-negotiable constraints
 

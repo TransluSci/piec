@@ -264,10 +264,6 @@ class TestMagnetoTransportCompatibility:
         assert convert_angle_to_steps(90.0, steps_per_revolution=400) == 100
         assert convert_steps_to_angle(100, steps_per_revolution=400) == pytest.approx(90.0)
 
-    @pytest.mark.xfail(
-        strict=True, raises=AssertionError,
-        reason="AMR-FIELD-001: placeholder multiplies by 0.1 instead of dividing by 10000 Oe/V; repair checkpoint 23a",
-    )
     def test_convert_field_to_voltage_matches_documented_calibration(self):
         assert convert_field_to_voltage(100.0) == pytest.approx(0.01)
         assert convert_field_to_voltage(0.0) == pytest.approx(0.0)

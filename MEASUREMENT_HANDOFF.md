@@ -1,27 +1,22 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 20c is complete. Checkpoint 17
+Continue on `measuremnt-standarization`. Checkpoint 21 is complete. Checkpoint 17
 physical validation remains explicitly **PENDING**. Next is
-**checkpoint 21 only: AMR driver and field angle contract**, following the
-measurement standardization plan. Validate and commit checkpoint 21 separately.
+**checkpoint 22: FE physical record (PENDING)** or subsequent AMR lifecycle checkpoints,
+following the measurement standardization plan. Validate and commit checkpoints separately.
 
-## Checkpoint 20c review corrections
+## Checkpoint 21 AMR driver and field angle contract
 
-- Nominal PUND voltage now uses pulse magnitudes and applies sequence polarity
-  exactly once, matching configure_awg. The sign of p_u_amp sets polarity; reset
-  opposes it. Zero P/U amplitude uses positive polarity, matching acquisition.
-- Both ThreePulsePund and HysteresisLoop validate save_plots, show_plots and
-  auto_timeshift run options as booleans before reservation or hardware I/O.
-  Removed truthiness conversion in the consuming hooks; string "False" is rejected.
-- Added comparisons of reconstructed voltage to programmed AWG plateaus for
-  positive, negative and zero amplitude combinations, plus pre-reservation option
-  rejection and actual False-option execution tests.
-- Validation: targeted suites **109 passed**; full suite with Agg **1440 passed,
-  1 skipped, 2 xfailed** in 27.27s. No physical hardware execution.
-- Proceed with **checkpoint 21 only: AMR driver and field angle contract**.
-  Follow the recorded AMR capability decisions, preserve manual lock-in setup
-  and existing four-instrument operation, run relevant regressions, commit
-  separately, and stop for review. Physical checkpoint 17 remains PENDING.
+- **AMR Setup Roles & Profile**: Implemented `FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, and composite `AMRSetupProfile` in `piec.measurement.adapters.amr` and re-exported in `piec.measurement.adapters` and `piec.measurement.amr`.
+- **Manual Lock-In Setting Preservation**: Default profile policy is strictly `readout_configuration="preserve"`, sending no `initialize()`, `reset()`, clear, autorange, or parameter writes to the lock-in, preserving manual front-panel operator settings per agreed lab workflow. Automated configuration is only triggered when `readout_configuration="configure"`.
+- **Internal & External Excitation**: Automated mode configures oscillator reference when `excitation_source="internal"`, and suppresses oscillator writes when `excitation_source="external"`.
+- **Field Calibration & Command Modes**: `FieldSource` supports linear scaling (`calibration=10000.0` Oe/V default, $V = H / \text{cal}$), lookup tables via `FieldCalibration` (`output_at_field`), and native field controllers (`calibration="native"`), bounded by optional `field_range` and `output_range`. Safe shutdown de-energizes output to 0.0 V, disables output, and retains open connection.
+- **Sensor Readback & Tolerance**: `FieldReader` supports linear sensor factors, `FieldCalibration.field_at_output`, and native fields. Field verification checks `abs(actual - target) <= absolute_tolerance + relative_tolerance * abs(target)`, valid across positive, zero, and negative fields, with configurable `"warn"` or `"raise"` policy.
+- **Orientation Control**: `OrientationController` converts commanded angles to steps via `convert_angle_to_steps`, manages CW (`1`) and CCW (`0`) directions, tracks cumulative position with residual-step awareness, respects `angle_limits`, and observes `settling_time`.
+- **Attempt-All Safe Shutdown**: `AMRSetupProfile` orchestrates the four roles (`dmm`, `calibrator`, `arduino`, `lockin`), deduplicates unique physical instruments, and executes attempt-all safing without closing open connections.
+- **Defect Repair**: Repaired `AMR-FIELD-001` in `convert_field_to_voltage` (divides by `voltage_calibration` instead of multiplying by 0.1; 100 Oe gives 0.01 V). Added `convert_voltage_to_field`. Standardized `convert_angle_to_steps` and `convert_steps_to_angle`. Removed `xfail` from `test_convert_field_to_voltage_matches_documented_calibration` in `tests/test_measurement_amr_compatibility.py`. `AMR-ANGLE-001` remains tracked and xfailed until Checkpoint 24b.
+- **Validation**: Dedicated contract test suite `tests/test_amr_contract.py` (37 passed) verifying conversion math, input validation, setup roles, profiles, and integration with virtual drivers (`VirtualCalibrator`, `VirtualDMM`, `VirtualStepper`, `VirtualLockin`). Full test suite with Agg backend: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2.
+- **Physical Validation**: Checkpoint 17 physical validation remains explicitly **PENDING**.
 
 ## Checkpoint 20c PUND integration and consumers
 
