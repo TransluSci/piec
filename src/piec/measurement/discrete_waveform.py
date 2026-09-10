@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import math
 from pathlib import Path
 import time
@@ -9,7 +10,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from piec.analysis.hysteresis import _process_raw_hyst_file
+from piec.analysis.hysteresis import (
+    STANDARD_HYSTERESIS_COLUMNS,
+    STANDARD_HYSTERESIS_UNITS,
+    plot_hysteresis_iv,
+    plot_hysteresis_pv,
+    plot_hysteresis_traces,
+    process_hysteresis,
+)
 from piec.analysis.pund import _process_raw_3pp_file
 from piec.analysis.utilities import (
     create_measurement_filename,
@@ -23,6 +31,11 @@ from .contracts import (
     RunRequest,
     SafetyReport,
     ShutdownAttemptRecorder,
+)
+from .persistence import (
+    CandidateReservation,
+    create_staging_file,
+    serialize_column_units,
 )
 
 
@@ -64,6 +77,9 @@ class DiscreteWaveform(BaseMeasurement):
         osc_channel: int = 1,
         output_dir: Optional[Union[str, Path]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
+        measurement_schema: str = "discrete_waveform",
+        column_units: Optional[Mapping[str, str]] = None,
+        raw_column_units: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         Initialize discrete waveform measurement parameters without performing hardware I/O.
@@ -114,8 +130,9 @@ class DiscreteWaveform(BaseMeasurement):
 
         super().__init__(
             output_dir=output_dir,
-            measurement_schema="discrete_waveform",
-            column_units={"time": "s", "voltage": "V"},
+            measurement_schema=measurement_schema,
+            column_units=dict(column_units) if column_units is not None else {"time": "s", "voltage": "V"},
+            raw_column_units=dict(raw_column_units) if raw_column_units is not None else {"time": "s", "voltage": "V"},
             metadata=initial_metadata,
         )
 
@@ -140,6 +157,11 @@ class DiscreteWaveform(BaseMeasurement):
     @filename.setter
     def filename(self, value: Optional[str]) -> None:
         self._filename = value
+
+    @property
+    def column_units_json(self) -> str:
+        """JSON-serialized mapping of column units."""
+        return serialize_column_units(self.column_units)
 
     @property
     def metadata(self) -> pd.DataFrame:
@@ -175,7 +197,7 @@ class DiscreteWaveform(BaseMeasurement):
     def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
         """Validate run options before reservation or hardware I/O."""
         super()._validate_options(options)
-        if options is not None:
+        if options is not None and type(self) is DiscreteWaveform:
             for key in options:
                 raise ValueError(f"Unknown option: {key}")
 
@@ -459,72 +481,138 @@ class _LegacyWaveformSupport:
 # SPECIFIC WAVEFORM MEASUREMENT CLASSES (UNMIGRATED: Checkpoints 20b & 20c)
 # ============================================================================
 
-class HysteresisLoop(_LegacyWaveformSupport, DiscreteWaveform):
+class HysteresisLoop(DiscreteWaveform):
     """
     Hysteresis loop measurement using triangular excitation waveform.
 
-    Unmigrated subclass pending Checkpoint 20b vertical slice.
+    Standardized for Checkpoint 20b:
+    - Target API and schema: schema 'hysteresis', version 1;
+    - Target columns: ['time', 'voltage', 'current', 'polarization', 'applied_voltage'];
+    - Target units: {'time': 's', 'voltage': 'V', 'current': 'A', 'polarization': 'uC/cm^2', 'applied_voltage': 'V'};
+    - Raw columns: ['time', 'voltage'] with units {'time': 's', 'voltage': 'V'};
+    - In-memory analysis via process_hysteresis;
+    - Multi-artifact plot publication: _PV.png, _IV.png, _trace.png;
+    - Inherits BaseMeasurement via DiscreteWaveform with shared lifecycle, runner, and session;
+    - Zero instrument I/O in __init__;
+    - Strict trigger ordering and attempt-all safe shutdown.
     """
 
     mtype = "hysteresis"
+    measurement_schema = "hysteresis"
+    measurement_schema_version = 1
 
     def __init__(
         self,
-        awg=None,
-        osc=None,
-        v_div=0.1,
-        frequency=1000.0,
-        amplitude=1.0,
-        offset=0.0,
-        n_cycles=2,
-        voltage_channel: str = "1",
-        area=1.0e-5,
-        time_offset=1e-8,
-        show_plots=False,
-        save_plots=True,
-        auto_timeshift=False,
-        save_dir=r"\\scratch",
-    ):
-        self.length = 1.0 / frequency
-        self.frequency = frequency
-        self.amplitude = amplitude
-        self.offset = offset
-        self.n_cycles = n_cycles
-        self.area = area
-        self.time_offset = time_offset
-        self.voltage_channel = voltage_channel
-        self.show_plots = show_plots
-        self.save_plots = save_plots
-        self.auto_timeshift = auto_timeshift
+        awg: Any = None,
+        osc: Any = None,
+        *,
+        v_div: float = 0.1,
+        frequency: float = 1000.0,
+        amplitude: float = 1.0,
+        offset: float = 0.0,
+        n_cycles: int = 2,
+        voltage_channel: Union[str, int] = "1",
+        osc_channel: int = 1,
+        area: float = 1.0e-5,
+        time_offset: float = 1e-8,
+        r_shunt: float = 50.0,
+        baseline_points: int = 20,
+        auto_timeshift: bool = False,
+        show_plots: bool = False,
+        save_plots: bool = True,
+        output_dir: Optional[Union[str, Path]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+
+        self.frequency = float(frequency)
+        if not math.isfinite(self.frequency) or self.frequency <= 0:
+            raise ValueError(f"frequency must be a positive finite number, got {frequency}")
+
+        self.amplitude = float(amplitude)
+        if not math.isfinite(self.amplitude):
+            raise ValueError(f"amplitude must be a finite number, got {amplitude}")
+
+        self.offset = float(offset)
+        if not math.isfinite(self.offset):
+            raise ValueError(f"offset must be a finite number, got {offset}")
+
+        if isinstance(n_cycles, bool) or not isinstance(n_cycles, int) or n_cycles < 1:
+            raise ValueError(f"n_cycles must be an integer >= 1, got {n_cycles!r}")
+        self.n_cycles = int(n_cycles)
+
+        self.area = float(area)
+        if not math.isfinite(self.area) or self.area <= 0:
+            raise ValueError(f"area must be a positive finite number, got {area}")
+
+        self.time_offset = float(time_offset)
+        if not math.isfinite(self.time_offset) or self.time_offset < 0:
+            raise ValueError(f"time_offset must be a finite non-negative number, got {time_offset}")
+
+        self.r_shunt = float(r_shunt)
+        if not math.isfinite(self.r_shunt) or self.r_shunt <= 0:
+            raise ValueError(f"r_shunt must be a positive finite number, got {r_shunt}")
+
+        if isinstance(baseline_points, bool) or not isinstance(baseline_points, int) or baseline_points < 1:
+            raise ValueError(f"baseline_points must be a positive integer, got {baseline_points!r}")
+        self.baseline_points = int(baseline_points)
+
+        self.auto_timeshift = bool(auto_timeshift)
+        self.show_plots = bool(show_plots)
+        self.save_plots = bool(save_plots)
+
+        length = 1.0 / self.frequency
+        self.notes = str(self.amplitude).replace(".", "p") + "V_" + str(int(self.frequency)) + "Hz"
+
+        initial_metadata: dict[str, Any] = {
+            "frequency": self.frequency,
+            "amplitude": self.amplitude,
+            "offset": self.offset,
+            "n_cycles": self.n_cycles,
+            "area": self.area,
+            "time_offset": self.time_offset,
+            "r_shunt": self.r_shunt,
+            "baseline_points": self.baseline_points,
+            "auto_timeshift": self.auto_timeshift,
+            "show_plots": self.show_plots,
+            "save_plots": self.save_plots,
+            "mtype": self.mtype,
+            "notes": self.notes,
+        }
+        if metadata is not None:
+            initial_metadata.update(dict(metadata))
+
         super().__init__(
-            awg,
-            osc,
+            awg=awg,
+            osc=osc,
             v_div=v_div,
             voltage_channel=voltage_channel,
-            length=self.length,
-            output_dir=save_dir,
+            length=length,
+            osc_channel=osc_channel,
+            output_dir=output_dir,
+            metadata=initial_metadata,
+            measurement_schema="hysteresis",
+            column_units={
+                "time": "s",
+                "voltage": "V",
+                "current": "A",
+                "polarization": "uC/cm^2",
+                "applied_voltage": "V",
+            },
+            raw_column_units={"time": "s", "voltage": "V"},
         )
-        self.save_dir = str(save_dir) if save_dir is not None else None
-        self.notes = str(self.amplitude).replace(".", "p") + "V_" + str(int(self.frequency)) + "Hz"
-        self._update_metadata()
 
-    def _update_notes(self):
-        self.notes = str(self.amplitude).replace(".", "p") + "V_" + str(int(self.frequency)) + "Hz"
+    def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
+        """Validate run options before reservation or hardware I/O."""
+        super()._validate_options(options)
+        if options is not None:
+            allowed = {"save_plots", "show_plots", "auto_timeshift"}
+            for key in options:
+                if key not in allowed:
+                    raise ValueError(f"Unknown Hysteresis option: {key}")
 
-    def analyze(self):
-        if self._data is not None:
-            _process_raw_hyst_file(
-                self.filename,
-                show_plots=self.show_plots,
-                save_plots=self.save_plots,
-                auto_timeshift=self.auto_timeshift,
-            )
-            print(f"Analysis succeeded, updated {self.filename}")
-        else:
-            print("No data to analyze. Capture the waveform first.")
-
-    def configure_awg(self):
-        interp_v_array = [0, 1, 0, -1, 0] + ([1, 0, -1, 0] * ((self.n_cycles) - 1))
+    def configure_awg(self) -> None:
+        """Configure arbitrary triangular excitation waveform on the AWG."""
+        interp_v_array = [0, 1, 0, -1, 0] + ([1, 0, -1, 0] * (self.n_cycles - 1))
         n_points = self.awg.arb_data_range[1]
         dense = interpolate_sparse_to_dense(
             np.linspace(0, len(interp_v_array), len(interp_v_array)),
@@ -540,24 +628,100 @@ class HysteresisLoop(_LegacyWaveformSupport, DiscreteWaveform):
         self.awg.set_frequency(channel=int(self.voltage_channel), frequency=self.frequency)
         self.awg.set_polarity(channel=int(self.voltage_channel), polarity=polarity)
 
-    def run_experiment(self, *, on_update=None, save=True, save_partial=None):
-        """Unmigrated legacy execution workflow for HysteresisLoop until Checkpoint 20b."""
-        print(f"Running experiment for {self.mtype} measurement...")
-        self.configure_oscilloscope()
-        print("Oscilloscope configured.")
-        self.initialize_awg()
-        print("AWG initialized.")
-        self.configure_awg()
-        print("AWG configured.")
-        self.apply_and_capture_waveform()
-        print("Waveform applied and captured.")
-        self.save_waveform()
-        print("Waveform saved.")
-        self.analyze()
-        print("Analysis complete.")
-        self._update_history()
-        print("Experiment complete.")
-        return None
+    def _analyze_data(
+        self, raw_data: pd.DataFrame, request: RunRequest
+    ) -> pd.DataFrame:
+        """In-memory scientific hysteresis processing."""
+        if raw_data.empty:
+            return pd.DataFrame(columns=list(STANDARD_HYSTERESIS_COLUMNS))
+
+        eff_auto_timeshift = self.auto_timeshift
+        if request.options and "auto_timeshift" in request.options:
+            eff_auto_timeshift = bool(request.options["auto_timeshift"])
+
+        result = process_hysteresis(
+            data=raw_data,
+            metadata=self.measurement_metadata,
+            frequency=self.frequency,
+            amplitude=self.amplitude,
+            area=self.area,
+            n_cycles=self.n_cycles,
+            time_offset=self.time_offset,
+            auto_timeshift=eff_auto_timeshift,
+            r_shunt=self.r_shunt,
+            baseline_points=self.baseline_points,
+        )
+
+        self.measurement_metadata.update(result.metadata)
+        self.time_offset = result.time_offset
+        return result.data
+
+    def _stage_side_artifacts(
+        self,
+        data: pd.DataFrame,
+        request: RunRequest,
+        reservation: CandidateReservation,
+    ) -> Sequence[Tuple[Path, Path]]:
+        """Stage companion plot artifacts (_PV.png, _IV.png, _trace.png) for publication."""
+        if not request.save:
+            return ()
+
+        eff_save_plots = self.save_plots
+        if request.options and "save_plots" in request.options:
+            eff_save_plots = bool(request.options["save_plots"])
+
+        if not eff_save_plots or data.empty:
+            return ()
+
+        dest_dir = reservation.candidate_path.parent
+        base_basename = reservation.candidate_basename
+        staging_pairs: list[Tuple[Path, Path]] = []
+
+        try:
+            # 1. P-V Loop plot (_PV.png)
+            pv_target = dest_dir / f"{base_basename}_PV.png"
+            fd_pv, pv_staging = create_staging_file(
+                dest_dir, prefix=f".{reservation.run_id}-pv-", suffix=".png"
+            )
+            with io.open(fd_pv, "wb") as h_pv:
+                fig_pv, ax_pv = plt.subplots(tight_layout=True)
+                plot_hysteresis_pv(data, ax=ax_pv)
+                fig_pv.savefig(h_pv, format="png")
+                plt.close(fig_pv)
+            staging_pairs.append((pv_staging, pv_target))
+
+            # 2. I-V Loop plot (_IV.png)
+            iv_target = dest_dir / f"{base_basename}_IV.png"
+            fd_iv, iv_staging = create_staging_file(
+                dest_dir, prefix=f".{reservation.run_id}-iv-", suffix=".png"
+            )
+            with io.open(fd_iv, "wb") as h_iv:
+                fig_iv, ax_iv = plt.subplots(tight_layout=True)
+                plot_hysteresis_iv(data, ax=ax_iv)
+                fig_iv.savefig(h_iv, format="png")
+                plt.close(fig_iv)
+            staging_pairs.append((iv_staging, iv_target))
+
+            # 3. Traces plot (_trace.png)
+            tr_target = dest_dir / f"{base_basename}_trace.png"
+            fd_tr, tr_staging = create_staging_file(
+                dest_dir, prefix=f".{reservation.run_id}-trace-", suffix=".png"
+            )
+            with io.open(fd_tr, "wb") as h_tr:
+                fig_tr, ax_tr = plt.subplots(tight_layout=True)
+                plot_hysteresis_traces(data, ax=ax_tr)
+                fig_tr.savefig(h_tr, format="png")
+                plt.close(fig_tr)
+            staging_pairs.append((tr_staging, tr_target))
+
+            return staging_pairs
+        except BaseException:
+            for s_path, _ in staging_pairs:
+                try:
+                    s_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            raise
 
 
 class ThreePulsePund(_LegacyWaveformSupport, DiscreteWaveform):

@@ -6,7 +6,6 @@ and current-voltage (I-V) hysteresis measurements following PIEC standardized sc
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
 import json
 
@@ -15,11 +14,7 @@ import numpy as np
 import pandas as pd
 from scipy.integrate import cumulative_trapezoid
 
-from piec.analysis.utilities import (
-    interpolate_sparse_to_dense,
-    metadata_and_data_to_csv,
-    standard_csv_to_metadata_and_data,
-)
+from piec.analysis.utilities import interpolate_sparse_to_dense
 
 STANDARD_HYSTERESIS_COLUMNS: Tuple[str, ...] = (
     "time",
@@ -234,7 +229,7 @@ def process_hysteresis(
         [0, 1, 0, -1, 0] + ([1, 0, -1, 0] * (eff_n_cycles - 1)),
         dtype=float,
     ) * eff_amp
-    total_points = int(length // timestep)
+    total_points = int(round(length / timestep))
     v_applied = interpolate_sparse_to_dense(
         np.linspace(0, len(interp_v_array), len(interp_v_array)),
         interp_v_array,
@@ -354,78 +349,6 @@ def plot_hysteresis_traces(
     if title:
         ax.set_title(title)
     return ax, ax2
-
-
-def _process_raw_hyst_file(
-    path: str,
-    show_plots: bool = False,
-    save_plots: bool = False,
-    auto_timeshift: bool = False,
-) -> HysteresisAnalysisResult:
-    """Private file bridge for the unmigrated HysteresisLoop caller.
-
-    Maintained as a temporary bridge for unmigrated callers until Checkpoint 20b.
-    Reads the CSV at `path`, performs analysis via `process_hysteresis`, generates
-    optional plots, and updates the CSV on disk with processed columns.
-    """
-    metadata, raw_df = standard_csv_to_metadata_and_data(path)
-    raw_df = raw_df.rename(columns={"time (s)": "time", "voltage (V)": "voltage"})
-    result = process_hysteresis(raw_df, metadata, auto_timeshift=auto_timeshift)
-
-    # Map back to legacy column headers for backward compatibility with unmigrated CSV consumers
-    legacy_df = pd.DataFrame({
-        "time (s)": result.data["time"],
-        "voltage (V)": result.data["voltage"],
-        "current (A)": result.data["current"],
-        "polarization (uC/cm^2)": result.data["polarization"],
-        "applied voltage (V)": result.data["applied_voltage"],
-    })
-
-    if show_plots or save_plots:
-        base_path = path[:-4] if path.lower().endswith(".csv") else path
-
-        # PV Loop plot
-        fig, ax = plt.subplots(tight_layout=True)
-        ax.plot(result.data["applied_voltage"], result.data["polarization"], color="k")
-        ax.set_xlabel("applied voltage (V)")
-        ax.set_ylabel("polarization (uC/cm^2)")
-        if save_plots:
-            fig.savefig(f"{base_path}_PV.png")
-        if show_plots:
-            plt.show()
-        plt.close(fig)
-
-        # IV Loop plot
-        fig, ax = plt.subplots(tight_layout=True)
-        ax.plot(result.data["applied_voltage"], result.data["current"], color="k")
-        ax.set_xlabel("applied voltage (V)")
-        ax.set_ylabel("current (A)")
-        if save_plots:
-            fig.savefig(f"{base_path}_IV.png")
-        if show_plots:
-            plt.show()
-        plt.close(fig)
-
-        # Polarization vs applied current/voltage trace plot
-        fig, ax = plt.subplots(tight_layout=True)
-        ax.plot(result.data["time"], result.data["polarization"], color="k")
-        ax.set_xlabel("time (s)")
-        ax.set_ylabel("polarization (uC/cm^2)")
-        ax1 = ax.twinx()
-        ax1.plot(result.data["time"], result.data["applied_voltage"], color="r")
-        ax1.set_ylabel("applied voltage (V)")
-        if save_plots:
-            fig.savefig(f"{base_path}_trace.png")
-        if show_plots:
-            plt.show()
-        plt.close(fig)
-
-    updated_metadata = metadata.copy()
-    updated_metadata["time_offset"] = result.time_offset
-    updated_metadata["processed"] = True
-
-    metadata_and_data_to_csv(updated_metadata, legacy_df, path)
-    return result
 
 
 __all__ = (

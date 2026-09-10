@@ -63,7 +63,7 @@ from piec.measurement.discrete_waveform import HysteresisLoop
 
 awg = Keysight81150a("VIRTUAL")
 osc = KeysightDSOX3024a("VIRTUAL")
-experiment = HysteresisLoop(awg, osc, save_dir='.')
+experiment = HysteresisLoop(awg, osc, output_dir='.')
 experiment.run_experiment()  # configures, captures, saves, and analyzes
 ```
 

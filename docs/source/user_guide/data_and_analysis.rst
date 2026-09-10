@@ -1,42 +1,36 @@
 Data and Analysis
 =================
 
-PIEC couples data persistence and post-processing directly into the measurement workflow.
-When ``run_experiment()`` is called on any measurement object, the sequence is:
+PIEC couples data persistence and in-memory post-processing directly into the measurement workflow.
+When ``run_experiment(save=True)`` is called on a measurement object, the sequence is:
 
-1. **Capture** — raw instrument data is stored in ``self.data`` (a ``pandas.DataFrame``).
-2. **Save** — ``save_waveform()`` writes metadata and data to a single CSV file.
-3. **Analyze** — ``analyze()`` re-opens that CSV, appends derived columns (current,
-   polarization, applied voltage, etc.), optionally generates plots, and overwrites the file
-   with the enriched dataset.
+1. **Capture** — raw instrument data is acquired in memory as a ``pandas.DataFrame`` with plain columns (e.g. ``time``, ``voltage``).
+2. **Analyze** — data is processed directly in memory via pure analysis functions (such as ``process_hysteresis()`` in ``piec.analysis.hysteresis``), computing derived physical columns (``current``, ``polarization``, ``applied_voltage``) and generating figures.
+3. **Stage & Publish** — if saving is enabled, the enriched dataset and side artifacts (such as PNG plots) are staged atomically and published to the destination directory.
 
-Because analysis is a method on the measurement class, the exact post-processing that runs
-is determined by the measurement type (``HysteresisLoop``, ``ThreePulsePund``, etc.).
-Each subclass overrides ``analyze()`` to call the appropriate function from
-``piec.analysis``.
+Because scientific analysis is decoupled into standalone functions in ``piec.analysis``, you can run analysis routines directly in memory on any DataFrame without touching disk.
 
 
 CSV file format
 ---------------
 
-Every saved file uses the same two-section layout:
+Every saved file uses the standard two-section layout:
 
 .. code-block:: text
 
-   metadata_col_1,metadata_col_2,...,mtype,timestamp,processed   ← row 0 (header)
-   value_1,value_2,...,hysteresis,1714934000.0,True               ← row 1 (values)
-                                                                  ← row 2 (blank)
-   time (s),voltage (V),current (A),polarization (uC/cm^2),...    ← row 3 (data header)
-   0.0,0.00123,...                                                ← row 4+ (data)
+   measurement_schema,run_id,frequency,column_units_json,...,processed   ← row 0 (header)
+   hysteresis,c1a2...,1000.0,"{""time"": ""s"", ...}",...,True           ← row 1 (values)
+                                                                         ← row 2 (blank)
+   time,voltage,current,polarization,applied_voltage                     ← row 3 (data header)
+   0.0,0.00123,...                                                       ← row 4+ (data)
 
 **Row 0–1** — a single-row metadata table whose columns capture every measurement parameter
-(amplitude, frequency, area, instrument IDs, ``mtype``, ``timestamp``, ``processed`` flag,
-etc.).
+(amplitude, frequency, area, instrument IDs, ``measurement_schema``, ``timestamp``, ``processed`` flag,
+and the canonical column units serialized in ``column_units_json``).
 
-**Row 3+** — the data table.  Raw columns (``time (s)``, ``voltage (V)``) are written at
-capture time; derived columns (``current (A)``, ``polarization (uC/cm^2)``,
-``applied voltage (V)``) are appended by the analysis step, which then sets
-``processed = True`` in the metadata row.
+**Row 3+** — the data table with plain lowercase column names (e.g. ``time``, ``voltage``,
+``current``, ``polarization``, ``applied_voltage``). The units corresponding to each column are
+defined in the metadata header.
 
 
 File naming
@@ -100,41 +94,44 @@ throughout the package.
 Example: hysteresis analysis walkthrough
 ----------------------------------------
 
-The ``process_raw_hyst`` function (``piec.analysis.hysteresis``) is called automatically
-by ``HysteresisLoop.analyze()``.  Here is what it does step by step:
+The ``process_hysteresis`` function (``piec.analysis.hysteresis``) is called automatically
+during measurement analysis. Here is what it does step by step:
 
-1. **Load** — reads the CSV back into ``metadata`` and ``raw_df`` using
-   ``standard_csv_to_metadata_and_data()``.
+1. **Input validation** — checks raw DataFrame columns (``time``, ``voltage``) and physical
+   parameters (``frequency``, ``amplitude``, ``area``, ``n_cycles``, ``r_shunt``, etc.).
 
-2. **Current** — converts the oscilloscope voltage to current via the 50 Ω sense resistor
-   and subtracts the DC offset (mean of the first 20 points, which correspond to the
-   quiet baseline prepended by the AWG):
+2. **Current** — converts the oscilloscope voltage to current via the sense resistor (default 50 Ω)
+   and subtracts the DC baseline offset (mean of the quiet prepended points):
 
    .. code-block:: python
 
-      df['current (A)'] = df['voltage (V)'] / 50
-      df['current (A)'] -= np.mean(df['current (A)'].values[:20])
+      df['current'] = df['voltage'] / r_shunt
+      df['current'] -= np.mean(df['current'].values[:baseline_points])
 
 3. **Polarization** — integrates the current over time with
    ``scipy.integrate.cumulative_trapezoid``, converting from C/m² to µC/cm²:
 
    .. code-block:: python
 
-      df['polarization (uC/cm^2)'] = cumulative_trapezoid(
-          df['current (A)'] / area * 100, df['time (s)'], initial=0)
+      df['polarization'] = cumulative_trapezoid(
+          df['current'] / area * 100, df['time'], initial=0)
 
-4. **Time alignment** — if ``auto_timeshift=True``, the code assumes the first
-   polarization maximum coincides with the first applied-voltage maximum and computes the
-   time offset accordingly.  For leaky samples this heuristic can fail, in which case a
+4. **Time alignment** — if ``auto_timeshift=True``, the code aligns the first
+   polarization maximum with the first applied-voltage maximum and computes the
+   time offset accordingly. For leaky samples this heuristic can fail, in which case a
    manual ``time_offset`` should be supplied.
 
 5. **Applied voltage reconstruction** — a piecewise-linear triangle wave is generated from
    the metadata parameters (``amplitude``, ``frequency``, ``n_cycles``) using
-   ``interpolate_sparse_to_dense()`` and aligned to the data using the time offset.
+   ``interpolate_sparse_to_dense()`` and aligned to the data using the time offset:
 
-6. **Plots** — if requested, three figures are generated: the P–V hysteresis loop, the
-   I–V loop, and a dual-axis time trace of polarization and applied voltage.
+   .. code-block:: python
 
-7. **Save** — the enriched DataFrame (now including ``current (A)``,
-   ``polarization (uC/cm^2)``, and ``applied voltage (V)`` columns) is written back to the
-   same CSV, and the metadata ``processed`` flag is set to ``True``.
+      df['applied_voltage'] = reconstructed_applied_voltage
+
+6. **Plots** — when plotting is requested, figures are rendered directly in memory using
+   ``plot_hysteresis_pv()``, ``plot_hysteresis_iv()``, and ``plot_hysteresis_traces()``.
+
+7. **Result Packaging** — returns a ``HysteresisAnalysisResult`` dataclass containing the
+   analyzed DataFrame with plain columns ``['time', 'voltage', 'current', 'polarization', 'applied_voltage']``
+   and standardized metadata conforming to schema ``hysteresis`` v1.

@@ -15,11 +15,16 @@ import pytest
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.analysis.hysteresis import (
+    STANDARD_HYSTERESIS_COLUMNS,
+    STANDARD_HYSTERESIS_UNITS,
+)
 from piec.measurement.discrete_waveform import (
     DiscreteWaveform,
     HysteresisLoop,
     ThreePulsePund,
 )
+from piec.measurement.persistence import read_measurement_csv
 from tests.fixtures.measurement_compatibility import (
     assert_data_columns_match,
     assert_golden_csv_matches,
@@ -154,7 +159,7 @@ class TestDiscreteWaveformCompatibility:
 
 
 class TestHysteresisLoopCompatibility:
-    """Characterize legacy HysteresisLoop behavior and verify regression goldens."""
+    """Characterize migrated HysteresisLoop behavior and verify regression goldens."""
 
     def test_hysteresis_constructor_and_attributes(self, tmp_path):
         awg = VirtualAwg()
@@ -173,10 +178,14 @@ class TestHysteresisLoopCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=True,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
 
+        assert hl.awg is awg
+        assert hl.osc is osc
         assert hl.mtype == "hysteresis"
+        assert hl.measurement_schema == "hysteresis"
+        assert hl.column_units == STANDARD_HYSTERESIS_UNITS
         assert hl.frequency == 500.0
         assert hl.amplitude == 2.0
         assert hl.offset == 0.1
@@ -188,18 +197,17 @@ class TestHysteresisLoopCompatibility:
         assert hl.save_plots is False
         assert hl.auto_timeshift is True
         assert hl.length == pytest.approx(1 / 500.0)
-        assert hl.save_dir == str(tmp_path)
+        assert hl.output_dir == Path(tmp_path)
         assert hl.data is None
         assert hl.filename is None
         assert hl.history == []
 
-        hl._update_notes()
-        assert hl.notes == "2p0V_500Hz"
+        # Target contract: zero hardware I/O in __init__
+        assert osc.state["armed"] is False
 
-        assert isinstance(hl.metadata, pd.DataFrame)
-        assert len(hl.metadata) == 1
-        assert hl.metadata.loc[0, "mtype"] == "hysteresis"
-        assert bool(hl.metadata.loc[0, "processed"]) is False
+        # Must reject legacy save_dir
+        with pytest.raises(TypeError):
+            HysteresisLoop(awg=awg, osc=osc, save_dir=str(tmp_path))
 
     def test_hysteresis_configure_awg(self):
         awg = VirtualAwg()
@@ -225,28 +233,20 @@ class TestHysteresisLoopCompatibility:
             area=1e-5,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
 
-        result = hl.run_experiment()
-        # Legacy contract: returns None
-        assert result is None
+        result = hl.run_experiment(save=True)
+        assert isinstance(result, pd.DataFrame)
         assert hl.filename is not None
         assert Path(hl.filename).is_file()
 
         # Metadata in CSV must be marked processed
         meta, data = assert_piec_csv_layout(hl.filename)
         assert bool(meta.loc[0, "processed"]) is True
-        assert len(hl.history) == 1
+        assert len(hl.run_records) == 1
 
-        expected_columns = [
-            "time (s)",
-            "voltage (V)",
-            "current (A)",
-            "polarization (uC/cm^2)",
-            "applied voltage (V)",
-        ]
-        assert_data_columns_match(data, expected_columns, exact_order=True)
+        assert_data_columns_match(data, list(STANDARD_HYSTERESIS_COLUMNS), exact_order=True)
 
     def test_hysteresis_golden_csv_regression(self, tmp_path):
         """Verify deterministic hysteresis run matches golden CSV."""
@@ -264,18 +264,18 @@ class TestHysteresisLoopCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        hl.run_experiment()
+        hl.run_experiment(save=True)
 
         assert_golden_csv_matches(
             actual_path=hl.filename,
             golden_path=HYSTERESIS_LOOP_GOLDEN_PATH,
-            volatile_metadata_keys=["timestamp", "save_dir", "filename"],
+            volatile_metadata_keys=["timestamp", "run_id"],
         )
 
-    def test_hysteresis_numerical_equivalence_with_mapping(self, tmp_path):
-        """Verify numerical equivalence using the harness old_to_new_column_mapping."""
+    def test_hysteresis_numerical_equivalence(self, tmp_path):
+        """Verify numerical equivalence against golden CSV."""
         awg = VirtualAwg(simulation_points=50)
         osc = VirtualScope(simulation_points=50)
         hl = HysteresisLoop(
@@ -290,13 +290,12 @@ class TestHysteresisLoopCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        hl.run_experiment()
+        hl.run_experiment(save=True)
 
-        _, actual_data = standard_csv_to_metadata_and_data(hl.filename)
-        _, gold_data = standard_csv_to_metadata_and_data(str(HYSTERESIS_LOOP_GOLDEN_PATH))
-        assert_numerical_data_matches_reference(actual_data, gold_data, "HysteresisLoop")
+        _, gold_data, _ = read_measurement_csv(HYSTERESIS_LOOP_GOLDEN_PATH)
+        assert_numerical_data_matches_reference(hl.data, gold_data, "HysteresisLoop")
 
     def test_hysteresis_polarization_calculations(self, tmp_path):
         """Verify physical polarization calculation from current and area."""
@@ -314,19 +313,19 @@ class TestHysteresisLoopCompatibility:
             show_plots=False,
             save_plots=False,
             auto_timeshift=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        hl.run_experiment()
+        hl.run_experiment(save=True)
 
-        _, df = standard_csv_to_metadata_and_data(hl.filename)
+        _, df, _ = read_measurement_csv(hl.filename)
         # Polarization starts at 0
-        assert df["polarization (uC/cm^2)"].iloc[0] == pytest.approx(0.0)
+        assert df["polarization"].iloc[0] == pytest.approx(0.0)
         # Polarization has non-zero range
-        p_min = df["polarization (uC/cm^2)"].min()
-        p_max = df["polarization (uC/cm^2)"].max()
+        p_min = df["polarization"].min()
+        p_max = df["polarization"].max()
         assert p_max > p_min
         # Applied voltage spans the requested amplitude
-        assert df["applied voltage (V)"].max() == pytest.approx(1.0, rel=0.1)
+        assert df["applied_voltage"].max() == pytest.approx(1.0, rel=0.1)
 
     def test_hysteresis_auto_timeshift(self, tmp_path):
         """Verify auto_timeshift detects time alignment offset."""
@@ -341,11 +340,11 @@ class TestHysteresisLoopCompatibility:
             auto_timeshift=False,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path / "manual"),
         )
-        hl_manual.run_experiment()
-        meta_man, _ = standard_csv_to_metadata_and_data(hl_manual.filename)
-        assert meta_man["time_offset"].values[0] == pytest.approx(1e-8)
+        hl_manual.run_experiment(save=True)
+        meta_man, _, _ = read_measurement_csv(hl_manual.filename)
+        assert float(meta_man["time_offset"]) == pytest.approx(1e-8)
 
         # auto_timeshift=True automatically determines non-zero time offset
         hl_auto = HysteresisLoop(
@@ -355,11 +354,11 @@ class TestHysteresisLoopCompatibility:
             auto_timeshift=True,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path / "auto"),
         )
-        hl_auto.run_experiment()
-        meta_auto, _ = standard_csv_to_metadata_and_data(hl_auto.filename)
-        assert meta_auto["time_offset"].values[0] > 1e-8
+        hl_auto.run_experiment(save=True)
+        meta_auto, _, _ = read_measurement_csv(hl_auto.filename)
+        assert float(meta_auto["time_offset"]) > 1e-8
 
     def test_hysteresis_plot_artifacts(self, tmp_path):
         """Verify that save_plots=True creates _PV.png, _IV.png, and _trace.png."""
@@ -372,9 +371,9 @@ class TestHysteresisLoopCompatibility:
             osc=osc,
             show_plots=False,
             save_plots=True,
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
-        hl_save.run_experiment()
+        hl_save.run_experiment(save=True)
 
         base_stem = Path(hl_save.filename).stem
         pv_file = Path(tmp_path) / f"{base_stem}_PV.png"
@@ -396,12 +395,25 @@ class TestHysteresisLoopCompatibility:
             osc=osc,
             show_plots=False,
             save_plots=False,
-            save_dir=str(tmp_no_plots),
+            output_dir=str(tmp_no_plots),
         )
-        hl_nosave.run_experiment()
+        hl_nosave.run_experiment(save=True)
 
         png_files = list(tmp_no_plots.glob("*.png"))
         assert len(png_files) == 0, f"Expected no PNG plots, found {png_files}"
+
+        # Run with save=False
+        tmp_nosave_run = tmp_path / "nosave_run"
+        tmp_nosave_run.mkdir()
+        hl_nosave_run = HysteresisLoop(
+            awg=awg,
+            osc=osc,
+            show_plots=False,
+            save_plots=True,
+            output_dir=str(tmp_nosave_run),
+        )
+        hl_nosave_run.run_experiment(save=False)
+        assert len(list(tmp_nosave_run.glob("*"))) == 0
 
 
 class TestThreePulsePundCompatibility:

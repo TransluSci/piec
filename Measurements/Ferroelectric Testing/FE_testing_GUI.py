@@ -388,7 +388,7 @@ class FEMeasurementApp(MeasurementApp):
             self.experiment = HysteresisLoop(awg=awg, osc=osc,
                                              frequency=frequency, amplitude=amplitude,
                                              offset=offset, n_cycles=n_cycles,
-                                             save_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area,
+                                             output_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area,
                                              save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
             
         elif measurement_type == "ThreePulsePund":
@@ -413,8 +413,21 @@ class FEMeasurementApp(MeasurementApp):
     def plot_data(self, event=None):
         self.ax.clear()
         metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
-        x_data = data[self.x_axis.get()]
-        y_data = data[self.y_axis.get()]
+        x_col = self.x_axis.get()
+        y_col = self.y_axis.get()
+        plain_map = {
+            "time (s)": "time",
+            "applied voltage (V)": "applied_voltage",
+            "current (A)": "current",
+            "polarization (uC/cm^2)": "polarization",
+        }
+        if x_col not in data.columns and x_col in plain_map and plain_map[x_col] in data.columns:
+            x_col = plain_map[x_col]
+        if y_col not in data.columns and y_col in plain_map and plain_map[y_col] in data.columns:
+            y_col = plain_map[y_col]
+
+        x_data = data[x_col]
+        y_data = data[y_col]
         self.timeshift_entry.delete(0, tk.END)
         self.timeshift_entry.insert(0, metadata["time_offset"].values[0]*1e9) # update time offset input in case auto is used
 

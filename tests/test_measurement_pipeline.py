@@ -96,7 +96,7 @@ class TestHysteresisLoopInit:
             osc=VirtualScope(),
             frequency=1000.0,
             amplitude=1.0,
-            save_dir=self.tmp_dir,
+            output_dir=self.tmp_dir,
         )
 
     def teardown_method(self):
@@ -156,9 +156,9 @@ class TestHysteresisFullPipeline:
             area=1.0e-5,       
             show_plots=False,  
             save_plots=False,  
-            save_dir=self.tmp_dir,
+            output_dir=self.tmp_dir,
         )
-        self.loop.run_experiment()
+        self.loop.run_experiment(save=True)
 
         # Store the path returned by save_waveform()
         self.csv_path = self.loop.filename
@@ -212,13 +212,13 @@ class TestHysteresisFullPipeline:
     def test_data_has_raw_capture_columns(self):
         """Columns written by apply_and_capture_waveform() must be present."""
         _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        for col in ('time (s)', 'voltage (V)'):
+        for col in ('time', 'voltage'):
             assert col in data.columns, f"Data is missing column: '{col}'"
 
     def test_data_has_analysis_columns(self):
         """Columns added by process_raw_hyst() during analyze() must be present."""
         _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        for col in ('current (A)', 'polarization (uC/cm^2)', 'applied voltage (V)'):
+        for col in ('current', 'polarization', 'applied_voltage'):
             assert col in data.columns, f"Analysis column missing: '{col}'"
 
     def test_data_has_multiple_rows(self):
@@ -229,20 +229,20 @@ class TestHysteresisFullPipeline:
     def test_data_time_column_is_numeric(self):
         """Time values must be numeric so downstream integration works correctly."""
         _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        assert pd.api.types.is_numeric_dtype(data['time (s)'])
+        assert pd.api.types.is_numeric_dtype(data['time'])
 
     def test_data_voltage_column_is_numeric(self):
         """Voltage values must be numeric so current/polarization calculation works."""
         _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        assert pd.api.types.is_numeric_dtype(data['voltage (V)'])
+        assert pd.api.types.is_numeric_dtype(data['voltage'])
 
     def test_history_has_one_entry_after_run(self):
-        """_update_history() is called once at the end of run_experiment()."""
-        assert len(self.loop.history) == 1
+        """run_records contains 1 entry after run_experiment()."""
+        assert len(self.loop.run_records) == 1
 
     def test_history_entry_is_a_dataframe(self):
-        """Each history entry must be a DataFrame containing the measurement metadata."""
-        assert isinstance(self.loop.history[0], pd.DataFrame)
+        """Metadata property is a DataFrame containing the measurement metadata."""
+        assert isinstance(self.loop.metadata, pd.DataFrame)
 
     # cleanup verification
 

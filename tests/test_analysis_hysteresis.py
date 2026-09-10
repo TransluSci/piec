@@ -23,7 +23,6 @@ from piec.analysis.hysteresis import (
     plot_hysteresis_pv,
     plot_hysteresis_traces,
     process_hysteresis,
-    _process_raw_hyst_file,
 )
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from tests.fixtures.measurement_compatibility import assert_piec_csv_layout
@@ -118,18 +117,18 @@ class TestHysteresisProcessing:
 
         # Raw input columns from golden
         raw_df = pd.DataFrame({
-            "time": data_gold["time (s)"].values,
-            "voltage": data_gold["voltage (V)"].values,
+            "time": data_gold["time"].values,
+            "voltage": data_gold["voltage"].values,
         })
 
         result = process_hysteresis(raw_df, meta_gold)
 
         # Numerical comparison against golden data
-        np.testing.assert_allclose(result.data["time"], data_gold["time (s)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["voltage"], data_gold["voltage (V)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["current"], data_gold["current (A)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["polarization"], data_gold["polarization (uC/cm^2)"], atol=1e-12)
-        np.testing.assert_allclose(result.data["applied_voltage"], data_gold["applied voltage (V)"], atol=1e-12)
+        np.testing.assert_allclose(result.data["time"], data_gold["time"], atol=1e-12)
+        np.testing.assert_allclose(result.data["voltage"], data_gold["voltage"], atol=1e-12)
+        np.testing.assert_allclose(result.data["current"], data_gold["current"], atol=1e-12)
+        np.testing.assert_allclose(result.data["polarization"], data_gold["polarization"], atol=1e-12)
+        np.testing.assert_allclose(result.data["applied_voltage"], data_gold["applied_voltage"], atol=1e-12)
 
     def test_result_tuple_unpacking_and_protocol(self, sample_hysteresis_data, sample_metadata):
         result = process_hysteresis(sample_hysteresis_data, sample_metadata)
@@ -211,8 +210,8 @@ class TestHysteresisProcessing:
     def test_auto_timeshift(self, sample_metadata):
         meta_gold, data_gold = standard_csv_to_metadata_and_data(str(GOLDEN_PATH))
         raw_df = pd.DataFrame({
-            "time": data_gold["time (s)"].values,
-            "voltage": data_gold["voltage (V)"].values,
+            "time": data_gold["time"].values,
+            "voltage": data_gold["voltage"].values,
         })
 
         res_manual = process_hysteresis(raw_df, meta_gold, auto_timeshift=False)
@@ -266,34 +265,13 @@ class TestHysteresisPlotting:
         plt.close(fig)
 
 
-class TestProcessRawHystBridge:
-    """Verify legacy _process_raw_hyst_file file bridge behavior."""
+class TestProcessRawHystBridgeRetired:
+    """Verify legacy _process_raw_hyst_file file bridge is removed upon migration."""
 
-    def test__process_raw_hyst_file_file_updates_and_plots(self, tmp_path):
-        meta_gold, data_gold = standard_csv_to_metadata_and_data(str(GOLDEN_PATH))
-        # Copy to temporary path
-        from piec.analysis.utilities import metadata_and_data_to_csv
-        test_csv = tmp_path / "test_raw_hyst.csv"
-        raw_df = pd.DataFrame({
-            "time (s)": data_gold["time (s)"].values,
-            "voltage (V)": data_gold["voltage (V)"].values,
-        })
-        metadata_and_data_to_csv(meta_gold, raw_df, str(test_csv))
-
-        # Run bridge with save_plots=True
-        res = _process_raw_hyst_file(str(test_csv), show_plots=False, save_plots=True)
-        assert isinstance(res, HysteresisAnalysisResult)
-
-        # Verify updated CSV on disk
-        updated_meta, updated_data = assert_piec_csv_layout(str(test_csv))
-        assert bool(updated_meta.loc[0, "processed"]) is True
-        for col in ("time (s)", "voltage (V)", "current (A)", "polarization (uC/cm^2)", "applied voltage (V)"):
-            assert col in updated_data.columns
-
-        # Verify plot files generated
-        assert (tmp_path / "test_raw_hyst_PV.png").is_file()
-        assert (tmp_path / "test_raw_hyst_IV.png").is_file()
-        assert (tmp_path / "test_raw_hyst_trace.png").is_file()
+    def test__process_raw_hyst_file_is_retired(self):
+        import piec.analysis.hysteresis as mod
+        assert not hasattr(mod, "_process_raw_hyst_file")
+        assert "_process_raw_hyst_file" not in getattr(mod, "__all__", [])
 
 @pytest.mark.parametrize('name', ['frequency', 'area', 'r_shunt'])
 @pytest.mark.parametrize('value', [np.nan, np.inf, -np.inf])

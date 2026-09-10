@@ -40,7 +40,7 @@ General workflow
           amplitude=5.0,      # Volts
           n_cycles=3,
           area=1.0e-9,        # m²
-          save_dir='./data',
+          output_dir='./data',
       )
 
 3. **Run the experiment**
@@ -49,15 +49,15 @@ General workflow
 
    .. code-block:: python
 
-      experiment.run_experiment()
+      data = experiment.run_experiment(save=True)
 
    Internally this method:
 
    * Configures the instrument to output the required waveform.
    * Sets up the oscilloscope (timebase, channels, trigger).
    * Triggers the waveform and captures the response.
-   * Saves the raw data to ``save_dir``.
-   * Calls ``analyze()`` to compute derived quantities and generate plots.
+   * Processes the data in memory using ``process_hysteresis()``.
+   * Atomically publishes the analyzed dataset to ``output_dir`` alongside any generated plots.
 
 4. **Inspect the output**
 
@@ -74,17 +74,16 @@ All measurement classes follow the same pattern:
    Accepts instrument objects and measurement parameters. Stores them as instance attributes
    but does not yet configure any hardware.
 
-``run_experiment(self)``
-   Orchestrates the full measurement: configures instruments, runs the waveform/acquisition
-   loop, saves data, and calls ``analyze()``.
+``run_experiment(self, save=True, ...)``
+   Orchestrates the full measurement: validates options, configures instruments, runs
+   the acquisition, analyzes the data in memory, and publishes results atomically.
 
-``configure_instrument(self)``
-   Implemented by each concrete measurement class. Builds and sends the specific waveform
-   (e.g., triangular sweep for hysteresis, pulse sequence for PUND) to the instrument.
+``configure_instruments(self)``
+   Configures instruments for the experiment protocol (e.g. waveform definition, timebase,
+   voltage scaling, trigger routing).
 
-``analyze(self)``
-   Implemented by each concrete measurement class. Reads the raw captured data, computes
-   physical quantities (polarization, resistance, etc.), and generates plots.
+``capture_data(self)``
+   Performs the acquisition sequence under strict safety and cooperative cancellation controls.
 
 For experiment-specific parameters and examples, see the individual measurement pages:
 :doc:`../measurements/ferroelectric`, :doc:`../measurements/amr`,

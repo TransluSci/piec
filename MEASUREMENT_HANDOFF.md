@@ -1,32 +1,22 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 20a is complete. Checkpoint 17
+Continue on `measuremnt-standarization`. Checkpoint 20b is complete. Checkpoint 17
 physical validation remains explicitly **PENDING**. Next is
-**checkpoint 20b only: Hysteresis integration and consumers**, following the
-measurement standardization plan. Validate and commit checkpoint 20b separately.
+**checkpoint 20c only: PUND integration and consumers**, following the
+measurement standardization plan. Validate and commit checkpoint 20c separately.
 
-## Checkpoint 20a review corrections
+## Checkpoint 20b Hysteresis integration and consumers
 
-- Initial AWG output-disable failures and waveform-configuration exceptions now
-  propagate into the shared failure lifecycle. Acquisition does not proceed;
-  shutdown still attempts remaining actions. The original configuration error
-  remains primary if cleanup also fails, with UNSAFE recorded separately.
-- Cancellation is checked after scope arming and after output enable, before the
-  next activation/trigger command. Stop during either step prevents firing and
-  enters shared shutdown.
-- DiscreteWaveform accepts output_dir only; removed its public save_dir alias.
-  Direct legacy capture/save/analysis methods are confined to the private
-  _LegacyWaveformSupport mixin used only by unmigrated HysteresisLoop/ThreePulsePund.
-  Their old method names remain operational there until 20b/20c; the migrated
-  base does not expose these bypass paths.
-- Added configuration-failure and cancellation regressions and corrected the old
-  test that expected an initial disable error to be ignored. Full suite with Agg:
-  **1374 passed, 1 skipped, 2 xfailed** in 26.58s. Physical hardware was not tested.
-- Proceed with checkpoint **20b only: Hysteresis integration**. Use the shared
-  lifecycle and in-memory analysis, preserve the corrected failure/cancellation
-  behavior and numerical regressions, and remove Hysteresis's legacy paths as it
-  migrates. Keep only the still-needed PUND bridge until 20c. Validate, commit
-  separately, and stop for review. Physical checkpoint 17 remains PENDING.
+- **BaseMeasurement Lifecycle**: `HysteresisLoop` in `piec.measurement.discrete_waveform` subclasses `DiscreteWaveform` and `BaseMeasurement`, implementing the shared lifecycle hooks: `_validate_options`, `configure_awg` (arbitrary waveform generation), `_analyze_data` (in-memory `process_hysteresis`), and `_stage_side_artifacts`.
+- **Target Schema & Units**: Adheres to schema `hysteresis` v1 with plain lowercase columns `['time', 'voltage', 'current', 'polarization', 'applied_voltage']` and canonical JSON metadata units `{'time': 's', 'voltage': 'V', 'current': 'A', 'polarization': 'uC/cm^2', 'applied_voltage': 'V'}`.
+- **In-Memory Scientific Processing**: Replaced file-based post-processing with in-memory execution via `process_hysteresis(raw_df, metadata, ...)`. Returns enriched DataFrame and schema v1 metadata directly.
+- **Multi-Artifact Publication**: Staged side artifacts (`_PV.png`, `_IV.png`, `_trace.png`) are generated via `create_staging_file` and published atomically alongside the CSV when `save=True` and `save_plots=True`. Plots are strictly suppressed when `save=False` or `save_plots=False`.
+- **Legacy Paths Removed**: Fully removed HysteresisLoop bypass paths (`apply_and_capture_waveform`, `save_waveform`, `analyze`, `save_dir`, `_update_notes`).
+- **File Bridge Retired**: Removed private file bridge `_process_raw_hyst_file` from `piec.analysis.hysteresis`. Kept only the PUND bridge (`_process_raw_3pp_file`) needed until 20c.
+- **Consumer Updates**: Updated `FE_testing_GUI.py`, `tests/test_measurement_pipeline.py`, `tests/test_measurement_fe_pund_compatibility.py`, `README.md`, docs, and notebooks (`example_hysteresis.ipynb`, `FE_testing.ipynb`) to use `output_dir` and handle plain target column names.
+- **Validation**: Dedicated test suite `tests/test_measurement_hysteresis.py` added with 12 tests covering lifecycle, zero constructor I/O, parameter validation, plot artifact generation and suppression, cooperative cancellation, safe shutdown, and runner integration.
+- **Physical Validation**: Hardware testing was not performed; Checkpoint 17 physical validation remains explicitly **PENDING**.
+- **Next Step**: Stop after checkpoint 20b. Proceed with **checkpoint 20c only: PUND integration and consumers** once authorized.
 
 ## Checkpoint 20a DiscreteWaveform base acquisition and consumers
 

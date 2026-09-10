@@ -752,7 +752,7 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 18 | In-memory hysteresis processing | New plain schema and explicit metadata; numerical/trace equivalence; update affected callers in the same commit |
 | 19 | In-memory PUND processing | Same as 18 including each PUND polarization quantity |
 | 20a | Completed | Standardized DiscreteWaveform base acquisition to inherit BaseMeasurement, adhere to discrete_waveform schema v1, utilize WaveformReader, enforce strict trigger ordering (arm scope -> enable AWG output -> fire AWG trigger), implement attempt-all output safing, and preserve unmigrated HysteresisLoop/ThreePulsePund paths. All 294 targeted tests passed; full test suite: 1367 passed, 1 skipped, 2 xfailed in 23.86s. Physical checkpoint 17 remains PENDING. |
-| 20b | Hysteresis integration and consumers | Target runner/schema, plots, numerical and fault tests |
+| 20b | Completed | Standardized HysteresisLoop to inherit DiscreteWaveform/BaseMeasurement lifecycle, adhere to hysteresis schema v1, execute in-memory analysis via process_hysteresis, stage multi-artifact plots (_PV.png, _IV.png, _trace.png), remove legacy bypass paths (save_dir, apply_and_capture_waveform, save_waveform, analyze), and retire private _process_raw_hyst_file bridge. Updated all consumers and documentation. All targeted tests passed; physical checkpoint 17 remains PENDING. |
 | 20c | PUND integration and consumers | Target runner/schema, plots, numerical and fault tests |
 | 21 | FE GUI interaction/ownership hardening | Main-thread Tk/plots, virtual selection, settings, Stop/close and save policies |
 | 22 | FE physical record | Low-amplitude known-impedance AWG/scope result or PENDING |
