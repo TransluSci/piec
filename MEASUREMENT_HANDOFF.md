@@ -1,8 +1,26 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 16 is complete. Next is
-**checkpoint 17 only: IV/MOKE physical record**, following the
-measurement standardization plan. Validate and commit checkpoint 17 separately.
+Continue on `measuremnt-standarization`. Checkpoint 17 is complete (PENDING hardware execution). Next is
+**checkpoint 18 only: in-memory hysteresis processing**, following the
+measurement standardization plan. Validate and commit checkpoint 18 separately.
+
+## Checkpoint 17 IV/MOKE physical validation record (PENDING)
+
+- Hardware validation status: **PENDING**.
+- Execution environment: Headless CI / development machine (`pyvisa.ResourceManager().list_resources()`
+  returned empty `()`). Physical instruments are not attached.
+- In accordance with Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md`, virtual benches
+  and software mocks do not prove physical safety. Physical checkpoints stay marked
+  `PENDING` until a dated record of actual hardware execution is completed.
+- Offline work is explicitly permitted to continue: Section 1 notes "Hardware checkpoints
+  are independent manual release gates, not a reason to stop offline work on other families."
+- Documented physical execution record template, safety requirements, staged MOKE
+  validation protocol (Stage 1 benign load, Stage 2 magnet/amplifier, Stage 3 optical bench),
+  and remaining hardware checklist in `MEASUREMENT_STANDARDIZATION_PLAN.md` Section 13.1
+  and `docs/physical_validation_iv_moke.md`.
+- Automated test validation: Full repository suite with Matplotlib Agg:
+  **1249 passed, 1 skipped, 2 xfailed** in 26.53s on Python 3.13.2.
+
 
 ## Checkpoint 16 review corrections
 
