@@ -36,7 +36,7 @@ Every measurement class MUST inherit from ``BaseMeasurement``:
        def __init__(self, instrument, *, output_dir=None, metadata=None):
            super().__init__(
                output_dir=output_dir,
-               measurement_schema="my_schema",
+               measurement_schema="iv_sweep",
                column_units={"voltage": "V", "current": "A"},
                metadata=metadata,
            )
@@ -58,10 +58,13 @@ methods; instead, implement the protected hooks:
 ``_capture_data(self, request, on_update=None)``
    Execute the acquisition loop and return raw tabular data as a ``pandas.DataFrame``.
    Periodically check ``self._coordinator.is_stop_requested`` to support cooperative cancellation.
+   Preserve acquired rows in ``self._raw_data`` in a ``finally`` block on read/callback
+   failure; let the engine invoke the attempt-all safing hook.
 
 ``_safe_shutdown(self, recorder=None)``
-   De-energize hardware outputs and ramp safe states. This hook is guaranteed to execute
-   on every exit path (success, cancellation, error, or interrupt).
+   De-energize hardware outputs and ramp safe states after configuration/acquisition,
+   including cancellation, errors, and Python interrupts. Stop-before-start and
+   rejected preflight perform no hardware I/O and skip this hook.
 
 ``_analyze_data(self, raw_data, request)``
    Perform scientific calculations on raw data and return the analyzed ``pandas.DataFrame``.

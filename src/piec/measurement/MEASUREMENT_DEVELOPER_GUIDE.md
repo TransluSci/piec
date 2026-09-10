@@ -4,11 +4,10 @@ This guide is the normative reference and implementation guide for authoring
 measurement classes, setup adapters, background runners, persistence pipelines,
 and GUI integrations in the `piec` library.
 
-All measurement families in `piec` standardize on a single, robust execution engine:
-`piec.measurement.BaseMeasurement`. Legacy ad-hoc lifecycles, uncoordinated threads,
-units embedded in column headers, and uncoordinated file overwrites have been replaced
-by formal state machines, strict execution ownership, atomic no-replace publication,
-and dual display/control event paths.
+New and migrated measurements use `piec.measurement.BaseMeasurement` for lifecycle,
+execution ownership, persistence, and display/control events. Existing measurement
+families are being migrated in the checkpoints listed in
+`MEASUREMENT_STANDARDIZATION_PLAN.md`; this guide defines their target contract.
 
 ---
 
@@ -174,7 +173,8 @@ COMPLETED
 - `run_experiment(*, on_update=None, save=True, save_partial=None, options=None) -> pd.DataFrame`
   Executes the canonical full run: reservation -> Stop-before-start check ->
   configuration -> acquisition -> safing -> analysis -> publication -> terminal record.
-  Returns the analyzed DataFrame (or raw partial DataFrame if aborted/failed).
+  Returns the analyzed DataFrame, or raw partial data on cooperative abort.
+  Failures re-raise the original error; retained data remains available on the measurement.
 - `session(*, save=False, save_partial=None, options=None) -> MeasurementSession`
   Context manager for piecewise notebook workflows. Holds a single execution lease
   and guarantees safe shutdown on block exit.
@@ -184,7 +184,9 @@ COMPLETED
 - `capture_data(*, on_update=None, options=None) -> pd.DataFrame`
   Acquires data within an active session.
 - `safe_shutdown() -> SafetyReport`
-  Immediately executes the safe shutdown sequence under an exclusive lease.
+  Executes shutdown as the owner or under an idle lease. A call from another thread
+  during an active run requests Stop and raises a deferred-shutdown RuntimeError;
+  that caller does not issue hardware commands.
 - `request_stop() -> None`
   Signals cooperative stop. Acquisition loops checking `self._coordinator.is_stop_requested`
   break cleanly and transition to safing and partial preservation.
@@ -211,12 +213,16 @@ Configure instrument operating modes, ranges, timings, and trigger routes.
 Executes the main acquisition loop and returns the raw captured data as a `pd.DataFrame`.
 - Check `self._coordinator.is_stop_requested` periodically to support cooperative cancellation.
 - If streaming to a UI, call `self.publish_snapshot(...)` or invoke `on_update(...)`.
-- The acquisition loop must place output de-energization in a `finally` block.
+- Preserve collected raw rows in `self._raw_data` in a `finally` block, including
+  when instrument reads or callbacks raise. The engine invokes `_safe_shutdown`
+  afterward; keep hardware cleanup there so a cleanup error cannot replace the
+  original acquisition error.
 
 #### `_safe_shutdown(self, recorder: Optional[ShutdownAttemptRecorder] = None) -> Union[SafetyReport, Sequence[Any]]`
 De-energizes stimuli, disables power outputs, ramps magnets to zero, and stops motion.
-- **Guarantee**: This method is invoked on **every** exit path (normal finish, stop/abort,
-  hardware fault, exception, or `KeyboardInterrupt`).
+- **Guarantee**: After configuration/acquisition is entered, the engine invokes this
+  hook on completion, stop, fault, and Python interrupts. Stop-before-start and
+  rejected preflight perform zero hardware I/O and do not invoke the hook.
 - **Safety Policy**: Record each shutdown action using `recorder.record_action(name, fn, readback_fn)`
   or `self.record_shutdown_action(name, fn, readback_fn)`.
 - **Never Close Connections**: Safing de-energizes hardware; it must never close VISA
@@ -263,6 +269,11 @@ Hardware safety is non-negotiable. Software safing operates under these strict r
 
 ### Implementing `_safe_shutdown`
 
+Only supply `readback_fn` when a setup provides a verified, supported readback API.
+Do not infer support with `hasattr`: a driver may supply optional no-op methods.
+A missing/unknown reading must never be coerced into successful verification.
+The example below records command success without claiming readback verification.
+
 ```python
 from typing import Optional
 from piec.measurement import SafetyReport, SafetyStatus, ShutdownAttemptRecorder
@@ -271,11 +282,10 @@ def _safe_shutdown(self, recorder: Optional[ShutdownAttemptRecorder] = None) -> 
     if recorder is None:
         recorder = ShutdownAttemptRecorder()
 
-    # Attempt 1: Disable sourcemeter output with readback verification
+    # Attempt 1: Disable output. The shared sourcemeter API has no output readback.
     recorder.record_action(
         name="sourcemeter_disable",
         action_fn=lambda: self.sourcemeter.output(channel=1, on=False),
-        readback_fn=lambda: not self.sourcemeter.get_output_state(channel=1),
     )
 
     # Attempt 2: Reset voltage to zero
@@ -399,9 +409,11 @@ def on_window_close():
 
 `runner.can_close()` returns `True` only when:
 1. The background worker thread has completely terminated.
-2. The measurement has reached a terminal state (`COMPLETED`, `ABORTED`, `FAILED`).
+2. The measurement is idle or terminal (`COMPLETED`, `ABORTED`, `FAILED`).
 3. Hardware safety is confirmed (`SAFE` or `NOT_NEEDED`).
-If safety is `UNSAFE`, closing is blocked until the operator acknowledges the emergency.
+If safety is `UNSAFE`, closing remains blocked. There is no acknowledgment override
+in `MeasurementRunner`; after resolving the hardware issue, an owner/idle shutdown
+retry must establish `SAFE` or `NOT_NEEDED` before normal close is permitted.
 
 ---
 
@@ -426,8 +438,9 @@ To prevent data loss and accidental overwrite:
 2. **Atomic Staging and Publication (`atomic_publish_no_replace`)**:
    Data is written to a hidden staging file in the target directory (`tempfile.mkstemp()`).
    Upon successful write and fsync, the staging file is published atomically to the target
-   path using platform primitives (Win32 `MoveFileExW(MOVEFILE_WRITE_THROUGH)` or POSIX
-   `renameat2(RENAME_NOREPLACE)` / hard-link fallback).
+   path using Windows `os.rename` without replacement, or POSIX
+   `renameat2(RENAME_NOREPLACE)` / hard-link fallback. The implementation does not
+   request `MOVEFILE_WRITE_THROUGH` or promise power-loss durability on every filesystem.
 3. **No-Replace Invariant**:
    If the target file already exists, publication raises `FileExistsError` and preserves
    the staging file for manual data recovery. Existing datasets are never silently overwritten.
@@ -440,8 +453,9 @@ To prevent data loss and accidental overwrite:
 
 ### 8.3 Incomplete Runs and Partial Checkpoints
 - Completed runs assign `self.filename` **only after** the final CSV is published.
-- Aborted or failed runs record `self.partial_filename` and `partial=True`. They **never**
-  assign `self.filename`.
+- Aborted or failed runs set `self.partial_filename` only if partial saving is requested,
+  nonempty raw data exists, and publication succeeds. They never assign `self.filename`.
+  Abort defaults to partial saving when `save=True`; failure requires `save_partial=True`.
 - Checkpoints use the grammar: `{candidate_basename}.{run_id}.partial.csv`.
 - The helper `write_partial_csv` allows intentional updates to an owned checkpoint during
   long runs. Automatic periodic checkpoint scheduling is not built into the base engine;
@@ -489,6 +503,9 @@ Executable example of a standardized PIEC measurement class and workflows.
 from __future__ import annotations
 
 import os
+import math
+from numbers import Real
+from queue import Empty
 from pathlib import Path
 import tempfile
 import time
@@ -544,11 +561,18 @@ class StandardizedIvSweep(BaseMeasurement):
             unknown = set(options.keys()) - allowed
             if unknown:
                 raise ValueError(f"Unknown run options: {unknown}")
+            compliance = options.get("compliance_current", 0.01)
+            if (isinstance(compliance, bool) or not isinstance(compliance, Real)
+                    or not math.isfinite(compliance) or compliance <= 0):
+                raise ValueError("compliance_current must be a finite positive number in A")
 
     def _configure_instruments(self, request: RunRequest) -> None:
         # Prepare hardware with outputs strictly off
         self.sourcemeter.output(channel=1, on=False)
-        self.sourcemeter.set_source_voltage(channel=1, voltage=self.voltage_start)
+        self.sourcemeter.configure_voltage_source(
+            channel=1, voltage=self.voltage_start,
+            current_compliance=(request.options or {}).get("compliance_current", 0.01),
+        )
 
     def _capture_data(
         self,
@@ -558,8 +582,8 @@ class StandardizedIvSweep(BaseMeasurement):
         voltages = []
         currents = []
 
-        self.sourcemeter.output(channel=1, on=True)
         try:
+            self.sourcemeter.output(channel=1, on=True)
             step = (self.voltage_stop - self.voltage_start) / max(1, self.points - 1)
             for i in range(self.points):
                 # Check for cooperative cancellation
@@ -575,18 +599,20 @@ class StandardizedIvSweep(BaseMeasurement):
 
                 # Publish bounded live snapshot for GUI
                 live_df = pd.DataFrame({"voltage": voltages, "current": currents})
-                self.publish_snapshot(
-                    views={"data": live_df},
+                snapshot = self.publish_snapshot(
+                    views={"raw_window": live_df.tail(100)},
                     completed_steps=i + 1,
                     total_steps=self.points,
                 )
 
                 if on_update is not None:
-                    on_update(live_df)
+                    on_update(snapshot)
         finally:
-            self.sourcemeter.output(channel=1, on=False)
+            # Keep completed samples even when a read, callback, or interrupt fails.
+            # The engine performs attempt-all safing and preserves the primary error.
+            self._raw_data = pd.DataFrame({"voltage": voltages, "current": currents})
 
-        return pd.DataFrame({"voltage": voltages, "current": currents})
+        return self._raw_data.copy()
 
     def _safe_shutdown(
         self, recorder: Optional[ShutdownAttemptRecorder] = None
@@ -637,6 +663,16 @@ class StandardizedIvSweep(BaseMeasurement):
         return [(staging_path, target_path)]
 
 
+def consume_live_display(runner):
+    while runner.is_worker_alive:
+        try:
+            snap = runner.display_queue.get(timeout=0.1)
+        except Empty:
+            continue
+        print(f"Progress: {snap.completed_steps}/{snap.total_steps}")
+        time.sleep(0.02)
+
+
 # ============================================================================
 # Execution Demonstrations
 # ============================================================================
@@ -684,12 +720,8 @@ if __name__ == "__main__":
         token = runner.start(save=False)
         print(f"Worker launched with run ID: {token.run_id}")
 
-        # Consume display queue snapshots while running
-        while runner.is_worker_alive:
-            snap = runner.display_queue.get(timeout=0.1)
-            if snap is not None:
-                print(f"Progress: {snap.completed_steps}/{snap.total_steps}")
-            time.sleep(0.02)
+        # Queue timeout means no new frame yet, not a measurement failure.
+        consume_live_display(runner)
 
         # Coordinate close safely
         runner.request_close()
@@ -710,7 +742,7 @@ Before opening a pull request for a new or updated measurement family, verify:
 - [ ] **Constructor**: Performs NO hardware I/O, VISA queries, or filesystem creation. Instruments are injected; settings are keyword-only.
 - [ ] **Columns and Units**: Column names are plain lowercase strings without units. All units are declared in `column_units` dictionary (or `None` for unitless fields).
 - [ ] **Hardware Safing**: `_safe_shutdown` attempts ALL cleanup actions via `ShutdownAttemptRecorder` or `record_shutdown_action`. Outputs are de-energized; connections are NOT closed.
-- [ ] **Cancellation**: `_capture_data` checks `self._coordinator.is_stop_requested` and cleans up outputs in a `finally` block.
+- [ ] **Cancellation**: `_capture_data` checks `self._coordinator.is_stop_requested` and retains partial raw data in a `finally` block. The engine owns attempt-all safing.
 - [ ] **Side Artifacts**: If plots are produced, they are staged via `_stage_side_artifacts` with targets matching `f"{reservation.candidate_basename}_*"` and staged to hidden temporary files.
 - [ ] **Persistence**: Successful runs set `self.filename`; incomplete runs set `self.partial_filename`. The standard CSV reads back cleanly via `read_measurement_csv`.
 - [ ] **Virtual Operation**: Works with virtual drivers (`VirtualSourcemeter`, `VirtualDMM`, etc.) without branching on `if virtual:` in measurement methods.

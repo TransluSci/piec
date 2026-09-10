@@ -1,9 +1,33 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 11c review fixes are complete;
-the next task is **checkpoint 12 only: rewrite the developer guide against the
-implemented engine**. Validate runnable examples, run relevant checks, and commit
-checkpoint 12 separately before starting the IV migration in checkpoint 13.
+Continue on `measuremnt-standarization`. Checkpoints 11c and 12 review fixes are
+complete. The next task is **checkpoint 13 only: the IV vertical slice**, including
+IV GUI, analysis, notebook and test consumers. Follow the plan's IV-specific
+configuration, cancellable ramp/read, and paced safing requirements. The guide's
+small example illustrates the engine API; it is not the completed production IV
+migration. Commit checkpoint 13 separately before starting checkpoint 14.
+
+## Checkpoint 12 corrections
+
+- `compliance_current` is validated before reservation/I/O and applied through
+  `configure_voltage_source`; its default in the example is 0.01 A.
+- Acquisition preserves completed samples in `self._raw_data` in `finally`, including
+  read and callback failures. Hardware cleanup belongs to the engine-invoked
+  `_safe_shutdown`, keeping acquisition errors primary if shutdown also fails.
+- Display snapshots are bounded, callbacks receive snapshots, and the command-line
+  queue consumer handles `queue.Empty`. GUI consumers still use UI timer polling.
+- The safing example records command success without inventing readback support.
+  A driver's optional no-op must never be converted into successful verification.
+- Documentation now describes actual Windows publication and close gating. There
+  is no unsafe-close acknowledgment override. Stop-before-start skips hardware
+  safing, and partial filenames depend on save policy and successful publication.
+- `tests/test_measurement_developer_guide.py` executes the published code blocks,
+  covering successful workflows, invalid/applied compliance, read/callback partial
+  recovery in runs and sessions, queue timeout, and simultaneous acquisition and
+  shutdown errors. All 16 tests passed.
+- Full repository verification: **1163 passed, 1 skipped, 2 xfailed**. Real SMB and
+  physical hardware remain unverified. Production measurement files were unchanged
+  in the checkpoint 12 correction.
 
 ## Corrections already implemented
 
@@ -25,7 +49,7 @@ checkpoint 12 separately before starting the IV migration in checkpoint 13.
   requires matching ownership metadata. Replacement failures retain/report the
   new staging file and preserve the previous checkpoint.
 
-## Shared engine persistence API to document
+## Shared engine persistence API reference
 
 `BaseMeasurement` accepts keyword arguments `output_dir`, `measurement_schema`,
 `column_units`, optional `raw_column_units`, and optional `metadata`.
@@ -63,7 +87,8 @@ Do not describe automatic periodic checkpoint scheduling as implemented.
 
 ## Verification and boundaries
 
-The full repository suite passed: **1147 passed, 1 skipped, 2 xfailed**.
+Checkpoint 11c verification passed: **1147 passed, 1 skipped, 2 xfailed**.
+The newer checkpoint 12 result is recorded above.
 Sixteen new recovery/engine regressions cover the reviewed failures, actual
 completed and partial CSVs for runs and sessions, and failed-save recovery.
 The opt-in real SMB test remains skipped; cross-volume behavior was fault-injected.
