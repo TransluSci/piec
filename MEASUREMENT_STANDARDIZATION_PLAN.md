@@ -123,6 +123,14 @@ methods in private support used only by unmigrated subclasses. Full suite with
 Agg: **1374 passed, 1 skipped, 2 xfailed**. Checkpoint **20b only** is next;
 physical checkpoint 17 remains PENDING. See MEASUREMENT_HANDOFF.md.
 
+Checkpoint 20b review corrections completed: DC offset is represented in nominal
+applied voltage; plot staging cleans files/figures on failure and uses Agg figures
+in workers. Hysteresis GUI uses the runner, in-memory snapshots, Stop and deferred
+safe close with connection retention on UNSAFE shutdown. PUND GUI integration is
+still part of 20c. Targeted tests: **63 passed**; full suite: **1393 passed,
+1 skipped, 2 xfailed** with Agg. Checkpoint **20c only** is next; physical
+checkpoint 17 remains PENDING. See MEASUREMENT_HANDOFF.md.
+
 ## 1. Purpose and non-negotiable constraints
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.

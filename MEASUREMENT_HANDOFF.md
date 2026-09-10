@@ -5,6 +5,28 @@ physical validation remains explicitly **PENDING**. Next is
 **checkpoint 20c only: PUND integration and consumers**, following the
 measurement standardization plan. Validate and commit checkpoint 20c separately.
 
+## Checkpoint 20b review corrections
+
+- Hysteresis analysis now applies the configured AWG DC offset to nominal
+  applied_voltage, including idle levels. Detector/current/polarization data are
+  unchanged. Explicit offset overrides metadata; nonfinite offsets are rejected.
+- Plot staging registers each path immediately and cleans all created PNGs on
+  failure. Figures are closed in finally; undeletable paths are reported with
+  recoverable staging paths. Explicit Agg figures avoid Tk creation in workers.
+- The Hysteresis FE GUI path uses MeasurementRunner. Tk polls controls before at
+  most one live snapshot, plots final data from memory, reports errors/recovery,
+  and provides Stop plus deferred close. Connections remain open while shutdown
+  is unsafe and close only after terminal handling and worker exit with safety.
+  New runs and VISA refresh are blocked while that ownership remains active.
+- PUND's GUI path still requires migration in checkpoint 20c; do not treat the
+  entire FE GUI as migrated yet. Reuse the runner path for PUND in that checkpoint.
+- Validation: **63 targeted tests passed**; full suite with Agg **1393 passed,
+  1 skipped, 2 xfailed** in 26.14s. GUI tests are headless; physical checkpoint 17
+  remains PENDING.
+- Proceed with **checkpoint 20c only: PUND integration**. Remove its remaining
+  legacy lifecycle/file bridge, update its GUI and other callers, preserve the
+  scientific, ownership and recovery tests, commit separately, and stop for review.
+
 ## Checkpoint 20b Hysteresis integration and consumers
 
 - **BaseMeasurement Lifecycle**: `HysteresisLoop` in `piec.measurement.discrete_waveform` subclasses `DiscreteWaveform` and `BaseMeasurement`, implementing the shared lifecycle hooks: `_validate_options`, `configure_awg` (arbitrary waveform generation), `_analyze_data` (in-memory `process_hysteresis`), and `_stage_side_artifacts`.

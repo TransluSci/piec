@@ -644,6 +644,7 @@ class HysteresisLoop(DiscreteWaveform):
             metadata=self.measurement_metadata,
             frequency=self.frequency,
             amplitude=self.amplitude,
+            offset=self.offset,
             area=self.area,
             n_cycles=self.n_cycles,
             time_offset=self.time_offset,
@@ -678,50 +679,39 @@ class HysteresisLoop(DiscreteWaveform):
         staging_pairs: list[Tuple[Path, Path]] = []
 
         try:
-            # 1. P-V Loop plot (_PV.png)
-            pv_target = dest_dir / f"{base_basename}_PV.png"
-            fd_pv, pv_staging = create_staging_file(
-                dest_dir, prefix=f".{reservation.run_id}-pv-", suffix=".png"
-            )
-            with io.open(fd_pv, "wb") as h_pv:
-                fig_pv, ax_pv = plt.subplots(tight_layout=True)
-                plot_hysteresis_pv(data, ax=ax_pv)
-                fig_pv.savefig(h_pv, format="png")
-                plt.close(fig_pv)
-            staging_pairs.append((pv_staging, pv_target))
-
-            # 2. I-V Loop plot (_IV.png)
-            iv_target = dest_dir / f"{base_basename}_IV.png"
-            fd_iv, iv_staging = create_staging_file(
-                dest_dir, prefix=f".{reservation.run_id}-iv-", suffix=".png"
-            )
-            with io.open(fd_iv, "wb") as h_iv:
-                fig_iv, ax_iv = plt.subplots(tight_layout=True)
-                plot_hysteresis_iv(data, ax=ax_iv)
-                fig_iv.savefig(h_iv, format="png")
-                plt.close(fig_iv)
-            staging_pairs.append((iv_staging, iv_target))
-
-            # 3. Traces plot (_trace.png)
-            tr_target = dest_dir / f"{base_basename}_trace.png"
-            fd_tr, tr_staging = create_staging_file(
-                dest_dir, prefix=f".{reservation.run_id}-trace-", suffix=".png"
-            )
-            with io.open(fd_tr, "wb") as h_tr:
-                fig_tr, ax_tr = plt.subplots(tight_layout=True)
-                plot_hysteresis_traces(data, ax=ax_tr)
-                fig_tr.savefig(h_tr, format="png")
-                plt.close(fig_tr)
-            staging_pairs.append((tr_staging, tr_target))
-
-            return staging_pairs
-        except BaseException:
-            for s_path, _ in staging_pairs:
+            for suffix, plotter in (("PV", plot_hysteresis_pv),
+                                    ("IV", plot_hysteresis_iv),
+                                    ("trace", plot_hysteresis_traces)):
+                target = dest_dir / f"{base_basename}_{suffix}.png"
+                fd, staging = create_staging_file(
+                    dest_dir, prefix=f".{reservation.run_id}-{suffix}-", suffix=".png"
+                )
+                staging_pairs.append((staging, target))
+                # An explicit Agg canvas avoids Tk creation on the runner thread.
+                from matplotlib.figure import Figure
+                from matplotlib.backends.backend_agg import FigureCanvasAgg
+                fig = None
                 try:
-                    s_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
+                    with io.open(fd, "wb") as handle:
+                        fig = Figure(tight_layout=True)
+                        FigureCanvasAgg(fig)
+                        plotter(data, ax=fig.subplots())
+                        fig.savefig(handle, format="png")
+                finally:
+                    if fig is not None:
+                        fig.clear()
+                        plt.close(fig)
+            return staging_pairs
+        except BaseException as exc:
+            remaining = []
+            for staging, _ in staging_pairs:
+                try:
+                    staging.unlink(missing_ok=True)
+                except OSError:
+                    remaining.append(str(staging))
+            exc.recoverable_staging_paths = tuple(remaining)
             raise
+
 
 
 class ThreePulsePund(_LegacyWaveformSupport, DiscreteWaveform):

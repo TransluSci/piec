@@ -65,6 +65,7 @@ def process_hysteresis(
     *,
     frequency: Optional[float] = None,
     amplitude: Optional[float] = None,
+    offset: Optional[float] = None,
     area: Optional[float] = None,
     n_cycles: Optional[int] = None,
     time_offset: Optional[float] = None,
@@ -84,6 +85,7 @@ def process_hysteresis(
                   measurement parameters.
         frequency: Excitation frequency in Hz (overrides metadata).
         amplitude: Peak excitation amplitude in V (overrides metadata).
+        offset: AWG DC offset in V, including idle levels (metadata or default 0).
         area: Capacitor device area in m² (overrides metadata).
         n_cycles: Number of excitation cycles (overrides metadata).
         time_offset: Trigger-to-response time alignment offset in seconds (overrides metadata).
@@ -126,6 +128,9 @@ def process_hysteresis(
 
     eff_freq = _get_param("frequency", frequency)
     eff_amp = _get_param("amplitude", amplitude)
+    eff_dc_offset = float(_get_param("offset", offset, default_val=0.0))
+    if not np.isfinite(eff_dc_offset):
+        raise ValueError("offset must be finite")
     eff_area = _get_param("area", area)
     eff_n_cycles = _get_param("n_cycles", n_cycles)
     eff_offset = _get_param("time_offset", time_offset, default_val=0.0)
@@ -243,7 +248,7 @@ def process_hysteresis(
     if len(v_applied) < len(time_zeroed):
         v_applied = np.concatenate([v_applied, np.zeros(len(time_zeroed) - len(v_applied))])
 
-    applied_voltage_arr = v_applied[:len(time_zeroed)]
+    applied_voltage_arr = v_applied[:len(time_zeroed)] + eff_dc_offset
 
     # 4. Construct standard result
     processed_df = pd.DataFrame({
@@ -260,6 +265,7 @@ def process_hysteresis(
     out_meta["column_units"] = dict(STANDARD_HYSTERESIS_UNITS)
     out_meta["frequency"] = eff_freq
     out_meta["amplitude"] = eff_amp
+    out_meta["offset"] = eff_dc_offset
     out_meta["n_cycles"] = eff_n_cycles
     out_meta["area"] = eff_area
     out_meta["r_shunt"] = r_shunt

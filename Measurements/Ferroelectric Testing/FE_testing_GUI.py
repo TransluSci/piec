@@ -1,6 +1,7 @@
 import os
+import queue
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import numpy as np
 import pandas as pd
 from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
@@ -10,6 +11,7 @@ from piec.drivers.awg.k_81150a import Keysight81150a
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.measurement.gui_utils import MeasurementApp
+from piec.measurement import MeasurementRunner, TerminalEvent, SafetyAlertEvent
 
 DEFAULTS = {"awg_address":"VIRTUAL",
             "osc_address":"VIRTUAL",
@@ -126,6 +128,18 @@ class FEMeasurementApp(MeasurementApp):
             "<Control-t>": lambda event: self.timeshift_entry.focus_set()
         })
         self.setup_shortcuts()
+        self.runner = None
+        self._awaiting_terminal = False
+        self._terminal_event = None
+        self._instruments = []
+        self._closing = False
+        self._plot_frame = None
+        self._plot_units = {}
+        self.status_label = ttk.Label(self.plot_config_frame, text="Idle")
+        self.status_label.grid(row=3, column=0, columnspan=2)
+        self.stop_button = ttk.Button(self.plot_config_frame, text="Stop", command=self.stop_measurement, state="disabled")
+        self.stop_button.grid(row=4, column=0, columnspan=2)
+        self._poll_id = self.root.after(50, self._poll_events)
 
     def save_settings(self):
         """Override to save all cached dynamic input sets, not just the currently visible one."""
@@ -283,6 +297,8 @@ class FEMeasurementApp(MeasurementApp):
             DEFAULTS[key] = self.dynamic_inputs[key].get()
 
     def refresh_instruments(self):
+        if self._busy():
+            return
         print('Refreshing VISA instruments...')
         visa_resources = self.get_visa_resources()
         
@@ -349,7 +365,40 @@ class FEMeasurementApp(MeasurementApp):
         self.dynamic_inputs["offset"].grid(row=6, column=1, padx=5, pady=5)
         self.dynamic_inputs["offset"].insert(0, DEFAULTS["offset"])
 
+    def _busy(self):
+        return getattr(self, "runner", None) is not None and (self._awaiting_terminal or not self.runner.can_close())
+
     def run_measurement(self):
+        if self._busy():
+            return
+        self.runner = None
+        try:
+            self._create_experiment()
+            if not self.measurement_type.get():
+                return
+            if isinstance(self.experiment, HysteresisLoop):
+                self._plot_frame = None
+                self._plot_units = dict(self.experiment.column_units)
+                self._terminal_event = None
+                self.runner = MeasurementRunner(self.experiment)
+                self.run_button.config(state="disabled")
+                self.stop_button.config(state="normal")
+                self.status_label.config(text="Running")
+                self._awaiting_terminal = True
+                self.runner.start(save=True)
+            else:
+                # PUND remains on its existing path until checkpoint 20c.
+                self.experiment.run_experiment()
+                self.update_dynamic_defaults()
+                self.plot_data()
+        except Exception as error:
+            messagebox.showerror("FE measurement error", str(error))
+            if self.runner is None or self.runner.can_close():
+                self._close_instruments()
+                self.run_button.config(state="normal")
+                self.stop_button.config(state="disabled")
+
+    def _create_experiment(self):
         if not self.measurement_type.get():
             print("No measurement type selected.")
             return
@@ -364,11 +413,13 @@ class FEMeasurementApp(MeasurementApp):
             awg = VirtualAwg(awg_address)
         else:
             awg = Keysight81150a(awg_address)
+        self._instruments = [awg]
         if osc_address == "VIRTUAL": 
             osc = VirtualScope(osc_address)
         else:
             osc = KeysightDSOX3024a(osc_address)
 
+        self._instruments.append(osc)
         v_div = float(self.vdiv_entry.get())
         area = float(eval(str(self.area_entry.get())))
         time_offset = float(self.timeshift_entry.get() or 0)*1.0e-9
@@ -406,13 +457,17 @@ class FEMeasurementApp(MeasurementApp):
                                              p_u_amp=p_u_amp, p_u_width=p_u_width, p_u_delay=p_u_delay,
                                              save_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area, offset=offset,
                                              save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
-        self.experiment.run_experiment()
-        self.update_dynamic_defaults()
-        self.plot_data(self.experiment.filename)
 
     def plot_data(self, event=None):
-        self.ax.clear()
-        metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
+        if getattr(self, "experiment", None) is None:
+            return
+        if isinstance(self.experiment, HysteresisLoop):
+            data = self._plot_frame
+            if data is None or data.empty:
+                return
+            metadata = None
+        else:
+            metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
         x_col = self.x_axis.get()
         y_col = self.y_axis.get()
         plain_map = {
@@ -426,16 +481,108 @@ class FEMeasurementApp(MeasurementApp):
         if y_col not in data.columns and y_col in plain_map and plain_map[y_col] in data.columns:
             y_col = plain_map[y_col]
 
+        if x_col not in data.columns or y_col not in data.columns:
+            # During acquisition only raw time/voltage are available.
+            if isinstance(self.experiment, HysteresisLoop):
+                x_col, y_col = "time", "voltage"
+            else:
+                return
+        self.ax.clear()
         x_data = data[x_col]
         y_data = data[y_col]
-        self.timeshift_entry.delete(0, tk.END)
-        self.timeshift_entry.insert(0, metadata["time_offset"].values[0]*1e9) # update time offset input in case auto is used
+        if metadata is not None:
+            self.timeshift_entry.delete(0, tk.END)
+            self.timeshift_entry.insert(0, metadata["time_offset"].values[0]*1e9)
 
         self.ax.plot(x_data, y_data, marker='.',color='k', label=f"{self.y_axis.get()} vs {self.x_axis.get()}")
-        self.ax.set_xlabel(self.x_axis.get())
-        self.ax.set_ylabel(self.y_axis.get())
+        def label(column):
+            unit = self._plot_units.get(column)
+            return f"{column} ({unit})" if unit else column
+        self.ax.set_xlabel(label(x_col))
+        self.ax.set_ylabel(label(y_col))
         # self.ax.legend()
         self.canvas.draw()
+
+    def stop_measurement(self):
+        if self.runner is not None:
+            self.runner.request_stop()
+            self.status_label.config(text="Stopping; waiting for shutdown")
+
+    def _show_snapshot(self, snapshot, terminal=False):
+        if snapshot is None:
+            return
+        self._plot_frame = snapshot.get_view("data" if terminal else "raw")
+        self.plot_data()
+
+    def _poll_events(self):
+        if self.runner is not None:
+            terminal_seen = self._terminal_event is not None
+            try:
+                while True:
+                    event = self.runner.control_queue.get_nowait()
+                    if isinstance(event, SafetyAlertEvent):
+                        self.status_label.config(text="Unsafe shutdown: connections retained")
+                    elif isinstance(event, TerminalEvent):
+                        terminal_seen = True
+                        self._terminal_event = event
+                        self._show_snapshot(event.final_snapshot, terminal=True)
+                        self.status_label.config(text=f"{event.state.value}: {event.safety.status.value}")
+                        if event.primary_error_message:
+                            messagebox.showerror("FE measurement failed", event.primary_error_message)
+                        if event.record is not None:
+                            paths = event.record.metadata.get("recoverable_staging_paths", ())
+                            if paths:
+                                print(f"Recoverable staging paths: {paths}")
+            except queue.Empty:
+                pass
+            try:
+                snapshot = self.runner.display_queue.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                if not terminal_seen:
+                    self._show_snapshot(snapshot)
+            if self._terminal_event is not None and not self.runner.is_worker_alive:
+                self._terminal_event = None
+                self._awaiting_terminal = False
+                self.stop_button.config(state="disabled")
+                self.timeshift_entry.delete(0, tk.END)
+                self.timeshift_entry.insert(0, self.experiment.time_offset * 1e9)
+                if self.runner.can_close():
+                    self._close_instruments()
+                    self.run_button.config(state="normal")
+            if self._closing and self.runner.can_close() and not self._awaiting_terminal:
+                self._close_instruments()
+                self._finish_close()
+                return
+        self._poll_id = self.root.after(50, self._poll_events)
+
+    def _close_instruments(self):
+        for instrument in self._instruments:
+            try:
+                close = getattr(instrument, "close", None)
+                if callable(close):
+                    close()
+            except Exception:
+                pass
+        self._instruments = []
+
+    def on_closing(self):
+        if self.runner is not None:
+            self._closing = True
+            self.runner.request_close()
+            if not self.runner.can_close() or self._awaiting_terminal:
+                self.status_label.config(text="Waiting for worker exit and confirmed safety")
+                return
+        self._close_instruments()
+        self._finish_close()
+
+    def _finish_close(self):
+        if self._poll_id is not None:
+            self.root.after_cancel(self._poll_id)
+            self._poll_id = None
+        super().on_closing()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
