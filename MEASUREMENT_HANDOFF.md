@@ -1,9 +1,25 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 18 is complete. Checkpoint 17
+Continue on `measuremnt-standarization`. Checkpoint 19 is complete. Checkpoint 17
 physical validation remains explicitly **PENDING**. Next is
-**checkpoint 19 only: in-memory PUND processing**, following the
-measurement standardization plan. Validate and commit checkpoint 19 separately.
+**checkpoint 20a only: DiscreteWaveform base acquisition and consumers**, following the
+measurement standardization plan. Validate and commit checkpoint 20a separately.
+
+## Checkpoint 19 in-memory PUND processing
+
+Validation: focused FE/PUND suites **114 passed** (including 49 new unit, schema, numerical, and fault tests in `tests/test_analysis_pund.py`); full suite with Agg **1342 passed, 1 skipped, 2 xfailed** in 24.72s on Python 3.13.2. Physical hardware was not tested; Checkpoint 17 physical validation remains explicitly **PENDING**.
+
+- In-memory scientific processing: `process_pund` in `piec.analysis.pund` operates purely in-memory on DataFrame or Mapping inputs with explicit metadata.
+- Plain target schema: Output DataFrame columns are strictly `['time', 'voltage', 'current', 'polarization', 'polarization_p_hat', 'polarization_p_star', 'polarization_p_hat_r', 'polarization_p_star_r', 'delta_polarization', 'applied_voltage']` with declared units `{'time': 's', 'voltage': 'V', 'current': 'A', 'polarization': 'uC/cm^2', 'polarization_p_hat': 'uC/cm^2', 'polarization_p_star': 'uC/cm^2', 'polarization_p_hat_r': 'uC/cm^2', 'polarization_p_star_r': 'uC/cm^2', 'delta_polarization': 'uC/cm^2', 'applied_voltage': 'V'}`.
+- Parameter extraction & validation: Parameter precedence is explicit kwarg > metadata > default (including `r_shunt`, default 50.0 ohms; `auto_timeshift`, default True; `length`, default pulse train duration). `reset_width`, `reset_delay`, `p_u_width`, `p_u_delay`, `area`, `length`, and `r_shunt` must be finite and positive. `reset_amp`, `p_u_amp`, `offset`, and `time_offset` must be finite numbers. Metadata must be a Mapping or exactly 1-row DataFrame.
+- Public processing and plotting accept plain columns only: Input units are seconds and volts; when `column_units` is declared (as mapping or JSON string), incompatible/missing time or voltage declarations are rejected. Time must be strictly increasing. Negative explicit or auto-detected time offsets raise `ValueError` because the nominal delayed-waveform algorithm cannot represent them.
+- Numerical and trace equivalence: Confirmed exact numerical reproduction of golden data from `three_pulse_pund_golden.csv` with zero regression across all 10 quantities (residuals <= 1.33e-16).
+- Result protocol: Returns `PundAnalysisResult(data, metadata, time_offset)` supporting tuple unpacking (`data, metadata = result`), indexing, and length.
+- In-memory visualization helpers: Added `plot_pund_delta_p`, `plot_pund_traces`, and `plot_pund_components` operating on in-memory DataFrames with optional user axes.
+- Unmigrated consumer bridge: Retained private `_process_raw_3pp_file` (not exported in `__all__`) as a temporary backward-compatible file bridge that delegates to `process_pund` and writes legacy column headers to CSV for unmigrated `ThreePulsePund.analyze` until Checkpoint 20c. Removed obsolete public `process_raw_3pp`.
+- Checkpoint 17 physical validation status: Remains explicitly **PENDING**.
+- Checkpoint 20a only is next: DiscreteWaveform base acquisition and consumers.
+
 
 ## Checkpoint 18 review corrections
 

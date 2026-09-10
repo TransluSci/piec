@@ -3,7 +3,7 @@ import time
 import pandas as pd
 import matplotlib.pyplot as plt
 from piec.analysis.utilities import *
-from piec.analysis.pund import *
+from piec.analysis.pund import _process_raw_3pp_file
 from piec.analysis.hysteresis import _process_raw_hyst_file
 
 class DiscreteWaveform:
@@ -363,7 +363,7 @@ class ThreePulsePund(DiscreteWaveform):
         switched charge values. Generates time-domain and polarization plots.
         """
         if self.data is not None:
-            process_raw_3pp(self.filename, show_plots=self.show_plots, save_plots=self.save_plots, auto_timeshift=self.auto_timeshift)
+            _process_raw_3pp_file(self.filename, show_plots=self.show_plots, save_plots=self.save_plots, auto_timeshift=self.auto_timeshift)
             print(f"Analysis succeeded, updated {self.filename}")
         else:
             print("No data to analyze. Capture the waveform first.")
