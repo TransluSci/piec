@@ -370,3 +370,51 @@ def test_file_bridge_is_private():
     import piec.analysis.pund as module
     assert "_process_raw_3pp_file" not in module.__all__
     assert not hasattr(module, "process_raw_3pp")
+
+@pytest.mark.parametrize('value', ['False', 'True', 0, 1, [], float('nan')])
+def test_auto_timeshift_requires_boolean(sample_pund_data, sample_metadata, value):
+    with pytest.raises(ValueError, match='boolean'):
+        process_pund(sample_pund_data, sample_metadata, auto_timeshift=value)
+
+@pytest.mark.parametrize('automatic', [False, True])
+def test_offset_outside_capture_is_validation_error(sample_pund_data, sample_metadata, automatic):
+    data = sample_pund_data.assign(voltage=0.0)
+    with pytest.raises(ValueError, match='captured time range'):
+        process_pund(data, sample_metadata, auto_timeshift=automatic, time_offset=1.0)
+
+@pytest.mark.parametrize('automatic', [False, True])
+def test_truncated_last_interval_rejected(sample_pund_data, sample_metadata, automatic):
+    data = sample_pund_data[sample_pund_data.time < .0052].assign(voltage=0.0)
+    with pytest.raises(ValueError, match='full PUND sequence'):
+        process_pund(data, sample_metadata, auto_timeshift=automatic, time_offset=0)
+
+def test_dc_offset_changes_only_applied_voltage(sample_pund_data, sample_metadata):
+    base = process_pund(sample_pund_data, sample_metadata, offset=0)
+    shifted = process_pund(sample_pund_data, sample_metadata, offset=2)
+    np.testing.assert_allclose(shifted.data.applied_voltage, base.data.applied_voltage + 2)
+    pd.testing.assert_frame_equal(shifted.data.drop(columns='applied_voltage'), base.data.drop(columns='applied_voltage'))
+    assert shifted.metadata['offset'] == 2
+
+def test_manual_alignment_selects_expected_polarization_windows(sample_metadata):
+    # Known nonlinear integral makes incorrect window placement observable.
+    t = np.linspace(0, .008, 801)
+    data = pd.DataFrame({'time': t, 'voltage': t ** 2})
+    delay = .001
+    result = process_pund(data, sample_metadata, auto_timeshift=False, time_offset=delay)
+    p = result.data.polarization.to_numpy()
+    bounds = np.searchsorted(t - delay, [.002, .003, .004, .005, .006])
+    ph, phr, ps, psr = [p[a:b] for a,b in zip(bounds[:-1], bounds[1:])]
+    size = min(len(ph), len(ps)); rem = min(len(phr), len(psr))
+    expected = np.r_[ph[:size], phr[:rem]] - np.r_[ps[:size], psr[:rem]]
+    expected -= expected[0]
+    np.testing.assert_allclose(result.data.delta_polarization.iloc[:len(expected)], expected)
+    unshifted = process_pund(data, sample_metadata, auto_timeshift=False, time_offset=0)
+    assert not np.allclose(result.data.delta_polarization, unshifted.data.delta_polarization, atol=1e-14, rtol=1e-8)
+
+def test_no_peak_fallback_matches_manual_alignment(sample_metadata):
+    t = np.linspace(0, .008, 801)
+    data = pd.DataFrame({'time': t, 'voltage': t ** 2})
+    manual = process_pund(data, sample_metadata, auto_timeshift=False, time_offset=.001)
+    automatic = process_pund(data, sample_metadata, auto_timeshift=True, time_offset=.001)
+    pd.testing.assert_frame_equal(manual.data, automatic.data)
+    assert automatic.time_offset == manual.time_offset

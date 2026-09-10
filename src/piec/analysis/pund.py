@@ -111,9 +111,12 @@ def process_pund(
         p_u_delay: Inter-pulse delay in seconds (overrides metadata).
         area: Capacitor device area in m² (overrides metadata).
         length: Total excitation length in seconds (overrides metadata).
-        offset: Baseline voltage offset in V (overrides metadata, default 0.0).
+        offset: AWG DC offset in V, added to nominal applied voltage including idle
+                levels (overrides metadata, default 0.0). Does not alter detector data.
         time_offset: Trigger-to-response time alignment offset in seconds (overrides metadata, default 0.0).
-        auto_timeshift: If True, auto-detects time offset from the first pulse peak (overrides metadata, default True).
+        auto_timeshift: Boolean; detect onset from the first pulse peak when True
+                        (overrides metadata, default True). If no peak is found,
+                        use the validated manual offset for both slicing and trace delay.
         r_shunt: Shunt resistance in Ohms (overrides metadata; default 50.0).
 
     Returns:
@@ -121,6 +124,10 @@ def process_pund(
             - data: DataFrame with plain standard columns
             - metadata: Dictionary with updated metadata, units, and processing status
             - time_offset: Effective time offset in seconds
+
+    Capture coverage must include the entire aligned pulse sequence. Trailing
+    padding of derived components is a table layout convention, not permission
+    to analyze an incomplete final pulse or remanent interval.
     """
     # 1. Resolve and extract metadata parameters
     meta_dict: Dict[str, Any] = {}
@@ -186,6 +193,8 @@ def process_pund(
     eff_offset = float(eff_offset)
     eff_time_offset = float(eff_time_offset)
     r_shunt = float(r_shunt)
+    if not isinstance(eff_auto, (bool, np.bool_)):
+        raise ValueError("auto_timeshift must be a boolean")
     eff_auto_timeshift = bool(eff_auto)
 
     if not np.isfinite(eff_reset_amp) or not np.isfinite(eff_p_u_amp) or not np.isfinite(eff_offset):
@@ -247,6 +256,8 @@ def process_pund(
     time_zeroed = time_arr - time_arr[0]
     if time_zeroed[-1] <= 0:
         raise ValueError("Time span must be positive (last time point must exceed first).")
+    if eff_time_offset >= time_zeroed[-1]:
+        raise ValueError("time_offset must fall within the captured time range")
 
     timestep = time_zeroed[-1] / len(time_zeroed)
     polarity = float(np.sign(eff_p_u_amp))
@@ -272,27 +283,26 @@ def process_pund(
         distance = min(eff_reset_delay, eff_p_u_delay + eff_p_u_width) / timestep * 0.9
         distance = max(1.0, distance)
         peaks, _ = find_peaks(-polarity * voltage_arr, height=threshold, distance=distance)
-        try:
-            if len(peaks) > 0:
-                first_peak = int(peaks[0])
-                v_at_first_peak = float(-polarity * voltage_arr[first_peak])
-                rc_rise = 0
-                for i in range(first_peak):
-                    if -polarity * voltage_arr[first_peak - i] < v_at_first_peak * 0.1:
-                        rc_rise = i
-                        break
-                N_t0 = first_peak - rc_rise
-                final_time_offset = float(N_t0 * timestep)
-        except Exception:
-            pass
+        if len(peaks) > 0:
+            first_peak = int(peaks[0])
+            v_at_first_peak = float(-polarity * voltage_arr[first_peak])
+            rc_rise = 0
+            for i in range(first_peak):
+                if -polarity * voltage_arr[first_peak - i] < v_at_first_peak * 0.1:
+                    rc_rise = i
+                    break
+            N_t0 = first_peak - rc_rise
+            final_time_offset = float(N_t0 * timestep)
 
     if final_time_offset < 0:
         raise ValueError("Negative time_offset cannot be represented by the nominal delayed waveform")
 
-    if eff_auto_timeshift:
+    if eff_auto_timeshift and len(peaks) > 0:
+        # Preserve the established sample-based automatic onset algorithm.
         time_for_slicing = time_zeroed - time_zeroed[N_t0]
     else:
-        time_for_slicing = time_zeroed
+        # Manual alignment also applies when automatic peak detection finds none.
+        time_for_slicing = time_zeroed - eff_time_offset
 
     # Segment slicing
     t_ph = eff_reset_width + eff_reset_delay
@@ -300,6 +310,9 @@ def process_pund(
     t_ps = t_phr + eff_p_u_delay
     t_psr = t_ps + eff_p_u_width
     t_end = t_psr + eff_p_u_delay
+    rounding_tolerance = np.finfo(float).eps * max(t_end, time_zeroed[-1]) * 16
+    if time_for_slicing[-1] + rounding_tolerance < t_end:
+        raise ValueError("Captured waveform does not contain sufficient points: full PUND sequence required")
 
     n_ph = int(np.searchsorted(time_for_slicing, t_ph))
     n_phr = int(np.searchsorted(time_for_slicing, t_phr))
@@ -361,7 +374,8 @@ def process_pund(
     if len(v_applied) < len(time_zeroed):
         v_applied = np.concatenate([v_applied, np.zeros(len(time_zeroed) - len(v_applied))])
 
-    applied_voltage_arr = v_applied[:len(time_zeroed)]
+    # The AWG applies this DC offset to the full waveform, including idle levels.
+    applied_voltage_arr = v_applied[:len(time_zeroed)] + eff_offset
 
     # 4. Construct standard result
     processed_df = pd.DataFrame({

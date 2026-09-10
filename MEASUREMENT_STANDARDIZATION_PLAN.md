@@ -100,6 +100,13 @@ base acquisition and consumers.
 
 This document is the implementation contract for standardizing PIEC measurements. If a later implementation choice conflicts with this plan, the implementation must stop and the plan must be amended in a separate documentation commit before code continues.
 
+Checkpoint 19 review corrections completed: manual alignment applies to pulse
+windows; no-peak fallback uses the manual offset; AWG DC offset appears in nominal
+applied voltage. Incomplete aligned pulse trains and invalid alignment options
+are rejected. Existing complete-capture goldens remain unchanged. Targeted tests:
+**83 passed**; full suite with Agg: **1355 passed, 1 skipped, 2 xfailed**.
+Checkpoint **20a only** is next; physical checkpoint 17 remains **PENDING**.
+
 Checkpoint 18 review corrections: fixed shunt metadata precedence, finite positive
 parameter validation, integer counts, metadata container validation, explicit input
 unit checks, strict timestamp ordering, and rejection of unrepresentable negative

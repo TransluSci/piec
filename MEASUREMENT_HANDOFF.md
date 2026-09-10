@@ -5,6 +5,25 @@ physical validation remains explicitly **PENDING**. Next is
 **checkpoint 20a only: DiscreteWaveform base acquisition and consumers**, following the
 measurement standardization plan. Validate and commit checkpoint 20a separately.
 
+## Checkpoint 19 review corrections
+
+- Manual time_offset now aligns polarization windows as well as the nominal
+  voltage delay. Automatic detection retains the established sample-onset math;
+  no-peak fallback now uses the validated manual alignment consistently.
+- AWG DC offset is added to reconstructed applied_voltage, including idle levels.
+  Detector voltage, current and polarization are not shifted by this parameter.
+- Require coverage of the full aligned pulse train, including the last remanent
+  interval. Reject incomplete captures rather than hiding them through paired
+  segment trimming and table padding. Existing complete-capture goldens pass.
+- auto_timeshift accepts actual booleans only. Out-of-range manual offsets raise
+  ValueError before detection/fallback; broad exception suppression was removed.
+- Validation: targeted PUND/FE suites **83 passed**; full suite with Agg
+  **1355 passed, 1 skipped, 2 xfailed** in 26.70s. No hardware execution.
+- Continue with **checkpoint 20a only**, preserving these analysis contracts and
+  the numerical regressions. Keep bridges private until their callers migrate
+  (hysteresis 20b, PUND 20c). Commit 20a separately and stop for review.
+  Checkpoint 17 physical validation remains PENDING.
+
 ## Checkpoint 19 in-memory PUND processing
 
 Validation: focused FE/PUND suites **114 passed** (including 49 new unit, schema, numerical, and fault tests in `tests/test_analysis_pund.py`); full suite with Agg **1342 passed, 1 skipped, 2 xfailed** in 24.72s on Python 3.13.2. Physical hardware was not tested; Checkpoint 17 physical validation remains explicitly **PENDING**.
