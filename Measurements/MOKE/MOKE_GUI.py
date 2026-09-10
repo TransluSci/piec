@@ -1,7 +1,9 @@
 """Tk GUI for the general calibrated-source/DMM MOKE measurement."""
 
 import ctypes
+from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 import queue
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -50,6 +52,40 @@ DEFAULTS = {
 }
 
 
+@dataclass(frozen=True)
+class MokeSetupProfile:
+    """Validated, run-specific geometry setup; no instrument I/O during creation."""
+
+    geometry: str
+    settings: object
+    shutdown_handler: object = None
+
+    def __post_init__(self):
+        if self.geometry not in ("in-plane", "out-of-plane"):
+            raise ValueError("Unknown MOKE geometry")
+        if self.shutdown_handler is not None and not callable(self.shutdown_handler):
+            raise TypeError("shutdown_handler must be callable")
+        settings = dict(self.settings)
+        calibration = settings["calibration"]
+        settings["calibration"] = FieldCalibration(**calibration.to_dict())
+        settings["outputs"] = tuple(float(v) for v in settings["outputs"])
+        calibration.field_at_output(settings["outputs"])
+        for key in ("compliance", "max_output_step"):
+            if not np.isfinite(settings[key]) or settings[key] <= 0:
+                raise ValueError(f"{key} must be positive and finite")
+        for key in ("dwell_time", "ramp_delay"):
+            if not np.isfinite(settings[key]) or settings[key] < 0:
+                raise ValueError(f"{key} must be nonnegative and finite")
+        for key in ("n_cycles", "average_cycles", "raw_window_points"):
+            if settings[key] < 1:
+                raise ValueError(f"{key} must be positive")
+        if settings["source_channel"] is not None and settings["source_channel"] < 1:
+            raise ValueError("Source channel must be positive")
+        if not all(np.isfinite(settings[k]) for k in ("field_per_volt", "field_offset")):
+            raise ValueError("Field-reader conversion must be finite")
+        object.__setattr__(self, "settings", MappingProxyType(settings))
+
+
 def make_output_cycle(output_min, output_max, points):
     """Return one closed low-high-low cycle with exactly ``points`` values."""
     output_min = float(output_min)
@@ -96,7 +132,7 @@ def connect_virtual_detector(
 
 
 class MokeMeasurementApp(MeasurementApp):
-    def __init__(self, root):
+    def __init__(self, root, *, shutdown_handlers=None):
         super().__init__(root, title="MOKE Measurement GUI", geometry="1600x950")
         print("Welcome to the MOKE measurement GUI!")
         print("Ctrl+Enter: run measurement")
@@ -107,6 +143,9 @@ class MokeMeasurementApp(MeasurementApp):
         self.is_measuring = False
         self._close_when_safe = False
         self._instruments = []
+        self._geometry_settings = {}
+        self._selected_geometry = DEFAULTS["geometry"]
+        self._shutdown_handlers = dict(shutdown_handlers or {})
 
         resources = self.get_visa_resources()
         self.save_dir_entry.insert(0, DEFAULTS["save_dir"])
@@ -159,7 +198,7 @@ class MokeMeasurementApp(MeasurementApp):
             self.static_frame, 4, "Geometry:", ["in-plane", "out-of-plane"],
             DEFAULTS["geometry"],
         )
-        self.geometry_entry.bind("<<ComboboxSelected>>", lambda e: self._redraw_current())
+        self.geometry_entry.bind("<<ComboboxSelected>>", self._on_geometry_changed)
         self.calibration_entry = self._labeled_entry(
             self.static_frame, 5, "Calibration CSV:",
             DEFAULTS["calibration_path"], width=32,
@@ -287,6 +326,37 @@ class MokeMeasurementApp(MeasurementApp):
             )
         return instrument
 
+    def _profile_widgets(self):
+        return {
+            **self.dynamic_inputs,
+            **{key: getattr(self, key + "_entry") for key in (
+                "source_address", "detector_address", "field_reader_address",
+                "source_channel", "field_per_volt", "field_offset",
+            )},
+            "calibration_path": self.calibration_entry,
+        }
+
+    def _on_geometry_changed(self, event=None):
+        """Keep independent session-local setups; new geometries start in demo mode."""
+        if self.is_measuring or (self.runner is not None and not self.runner.can_close()):
+            self.geometry_entry.set(self._selected_geometry)
+            return
+        geometry = self.geometry_entry.get()
+        if geometry == self._selected_geometry:
+            return
+        widgets = self._profile_widgets()
+        self._geometry_settings[self._selected_geometry] = {
+            key: widget.get() for key, widget in widgets.items()
+        }
+        settings = self._geometry_settings.get(geometry, DEFAULTS)
+        for key, widget in widgets.items():
+            if key.endswith("address"):
+                widget.set(settings[key])
+            else:
+                self._set_entry(widget, settings[key])
+        self._selected_geometry = geometry
+        self.status_label.config(text=f"{geometry} setup selected; verify settings before running")
+
     def _settings(self):
         calibration = FieldCalibration.load_csv(self.calibration_entry.get())
         outputs = make_output_cycle(
@@ -300,6 +370,11 @@ class MokeMeasurementApp(MeasurementApp):
         if self.save_data.get() and not save_dir.is_dir():
             raise ValueError("Save directory must already exist")
         return {
+            "source_address": self.source_address_entry.get(),
+            "detector_address": self.detector_address_entry.get(),
+            "field_reader_address": self.field_reader_address_entry.get(),
+            "field_per_volt": float(self.field_per_volt_entry.get()),
+            "field_offset": float(self.field_offset_entry.get()),
             "calibration": calibration,
             "outputs": outputs,
             "source_channel": (
@@ -316,10 +391,14 @@ class MokeMeasurementApp(MeasurementApp):
         }
 
     def _create_experiment(self):
-        settings = self._settings()
-        source_address = self.source_address_entry.get()
-        detector_address = self.detector_address_entry.get()
-        field_address = self.field_reader_address_entry.get()
+        geometry = self.geometry_entry.get()
+        profile = MokeSetupProfile(
+            geometry, self._settings(), self._shutdown_handlers.get(geometry)
+        )
+        settings = profile.settings
+        source_address = settings["source_address"]
+        detector_address = settings["detector_address"]
+        field_address = settings["field_reader_address"]
         if detector_address == "VIRTUAL" and source_address != "VIRTUAL":
             raise ValueError(
                 "The virtual detector requires the virtual source; select a real "
@@ -327,6 +406,9 @@ class MokeMeasurementApp(MeasurementApp):
             )
         if field_address == "VIRTUAL" and source_address != "VIRTUAL":
             raise ValueError("The virtual field reader requires the virtual source")
+        if field_address not in ("NONE", "VIRTUAL") and field_address == detector_address:
+            raise ValueError("Detector and field reader require separate DMMs")
+        self._active_profile = profile
 
         source = self._connect(source_address, Sourcemeter, VirtualSourcemeter)
         self._instruments = [source]
@@ -359,8 +441,8 @@ class MokeMeasurementApp(MeasurementApp):
             self._instruments.append(field_dmm)
             field_dmm.set_sense_function(sense_func="VOLT")
             field_dmm.set_measurement_coupling(coupling="DC")
-            field_per_volt = float(self.field_per_volt_entry.get())
-            field_offset = float(self.field_offset_entry.get())
+            field_per_volt = settings["field_per_volt"]
+            field_offset = settings["field_offset"]
 
             def field_reader():
                 return field_dmm.get_voltage() * field_per_volt + field_offset
@@ -380,7 +462,8 @@ class MokeMeasurementApp(MeasurementApp):
             average_cycles=settings["average_cycles"],
             raw_window_points=settings["raw_window_points"],
             source_channel=settings["source_channel"],
-            geometry=self.geometry_entry.get(),
+            geometry=profile.geometry,
+            shutdown_handler=profile.shutdown_handler,
             field_reader=field_reader,
             field_reader_unit=(
                 settings["calibration"].field_unit if field_reader else None
@@ -439,17 +522,14 @@ class MokeMeasurementApp(MeasurementApp):
 
     def _poll_events(self):
         if self.runner is not None:
-            try:
-                while True:
-                    self._plot_snapshot(self.runner.display_queue.get_nowait())
-            except queue.Empty:
-                pass
+            terminal_received = self._terminal_event is not None
             try:
                 while True:
                     event = self.runner.control_queue.get_nowait()
                     if isinstance(event, SafetyAlertEvent):
                         self.status_label.config(text="Hardware unsafe: retain connections for recovery")
                     elif isinstance(event, TerminalEvent):
+                        terminal_received = True
                         self._terminal_event = event
                         if event.final_snapshot is not None:
                             self._plot_snapshot(event.final_snapshot)
@@ -473,6 +553,15 @@ class MokeMeasurementApp(MeasurementApp):
                             messagebox.showerror("MOKE measurement failed", event.primary_error_message)
             except queue.Empty:
                 pass
+            # The display queue already coalesces updates. Bound rendering per tick
+            # so a fast producer cannot monopolize Tk or delay control delivery.
+            try:
+                snapshot = self.runner.display_queue.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                if not terminal_received:
+                    self._plot_snapshot(snapshot)
             # Terminal delivery can precede worker exit. Retain ownership until both finish.
             if self._terminal_event is not None and not self.runner.is_worker_alive:
                 event = self._terminal_event
@@ -528,7 +617,7 @@ class MokeMeasurementApp(MeasurementApp):
             )
         self.ax.set_xlabel(x_label)
         self.ax.set_ylabel(y_label)
-        geometry = self.geometry_entry.get() if getattr(self, "geometry_entry", None) is not None else "in-plane"
+        geometry = snapshot.get("geometry", getattr(self.experiment, "geometry", "unspecified"))
         self.ax.set_title(f"MOKE loop: {geometry}")
         if self.ax.lines:
             self.ax.legend()

@@ -66,6 +66,16 @@ Suggested implementation prompt:
 | 16 | Completed | Hardened MOKE GUI interaction and ownership against race conditions, thread safety, and resource ownership. Enforced single hardware writer rule in refresh_instruments, browse_calibration, and run_measurement. Gated deferred connection teardown on confirmed safety (SAFE/NOT_NEEDED) before window destruction, retaining open connections on UNSAFE shutdown. Extracted recoverable staging paths from TerminalEvent.record.metadata on save failure. Hardened pre-run controls (trace toggles, geometry combobox, STOP, and redraw) as safe operations before initial run. Bound geometry selection to dynamic plot title updates. Added 8 comprehensive regression tests in tests/test_moke_gui.py (13 passed). Focused MOKE suites: 96 passed; full test suite (with Agg backend): 1239 passed, 1 skipped, 2 xfailed in 24.30s on Python 3.13.2. Checkpoint 17 is next. |
 
 
+Checkpoint 16 review completed: geometry choices now restore independent session-local
+setups, captured and validated before connection, with per-geometry shutdown handlers.
+Unconfigured geometries start with explicit virtual demo defaults. Acquisition
+geometry stays attached to snapshots instead of relabeling old data from the current
+selector. Control events precede display rendering, bounded to one live frame per
+poll; terminal frames take priority. Added 10 regression cases and removed the
+scheduler race in the existing Stop-before-start test. Full suite with Agg:
+**1249 passed, 1 skipped, 2 xfailed**. Physical hardware remains unverified.
+Checkpoint **17 only** is next: dated actual execution, otherwise **PENDING**.
+
 2R handoff: `assert_family_interface` selects reference or target structural checks using `migrated_families`; mark a family migrated only with its own execution/schema/safety tests. `assert_numerical_data_matches_reference` requires all expected columns (use `view="raw"` for raw FE), accepts reference or target names, and compares waveform time including negative pre-trigger values. Only MOKE's manifest-declared elapsed clocks may vary. `assert_golden_csv_matches` compares time by default; MOKE callers explicitly pass `time_columns=("time", "field_time")` for elapsed clocks. Keep waveform timing numerical. The uncommitted 2b MOKE golden calls have been adjusted to this explicit policy.
 
 This document is the implementation contract for standardizing PIEC measurements. If a later implementation choice conflicts with this plan, the implementation must stop and the plan must be amended in a separate documentation commit before code continues.

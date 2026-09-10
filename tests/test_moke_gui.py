@@ -2,11 +2,13 @@
 
 import importlib.util
 import json
+import queue
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from piec.analysis.field_calibration import FieldCalibration
 from piec.drivers.dmm.virtual_dmm import VirtualDMM
@@ -140,6 +142,9 @@ def make_headless_moke_gui(tmp_path=None):
     app._close_when_safe = False
     app._instruments = []
     app._poll_events_id = None
+    app._geometry_settings = {}
+    app._selected_geometry = "in-plane"
+    app._shutdown_handlers = {}
 
     app.run_button = Mock()
     app.stop_button = Mock()
@@ -214,22 +219,20 @@ def test_moke_gui_single_hardware_writer_rule():
 def test_moke_gui_stop_before_start():
     """Verify Stop-before-start zero-I/O abort and clean instrument cleanup."""
     app, module = make_headless_moke_gui()
-    from piec.measurement.runner import MeasurementRunner
-    original_start = MeasurementRunner.start
+    original_run = MokeMeasurement.run_experiment
 
-    def stopping_start(runner_self, *args, **kwargs):
-        token = original_start(runner_self, *args, **kwargs)
+    def stopping_run(measurement, *args, **kwargs):
+        # Reservation exists, but the execution wrapper has not begun I/O.
         app.stop_measurement()
-        return token
+        return original_run(measurement, *args, **kwargs)
 
-    with patch.object(MeasurementRunner, "start", stopping_start):
+    with patch.object(MokeMeasurement, "run_experiment", stopping_run):
         app.run_measurement()
-
-    assert app.runner.join(timeout=5)
+        assert app.runner.join(timeout=5)
     app._poll_events()
 
     assert app.runner.run_state == RunState.ABORTED
-    assert app.runner.safety_status in (SafetyStatus.NOT_NEEDED, SafetyStatus.SAFE)
+    assert app.runner.safety_status == SafetyStatus.NOT_NEEDED
     assert not app.is_measuring
     assert app.runner.can_close()
     assert len(app._instruments) == 0
@@ -320,8 +323,8 @@ def test_moke_gui_reports_recovery_paths_from_failed_save_record(monkeypatch, tm
     assert all(p in output for p in paths) or str(paths) in output
 
 
-def test_moke_gui_geometry_change_updates_title():
-    """Verify geometry changes update plot title dynamically."""
+def test_moke_gui_geometry_change_preserves_acquisition_title():
+    """Selecting the next setup must never relabel previously acquired data."""
     app, module = make_headless_moke_gui()
     snap = MokeSnapshot(
         raw=pd.DataFrame({"field_calibrated": [0.0, 1.0], "detector_voltage": [0.1, 0.2]}),
@@ -329,13 +332,99 @@ def test_moke_gui_geometry_change_updates_title():
         cycle_average=pd.DataFrame(),
         completed_cycles=1,
         field_column="field_calibrated",
+        geometry="in-plane",
     )
     app._plot_snapshot(snap)
     app.ax.set_title.assert_called_with("MOKE loop: in-plane")
 
     app.geometry_entry.get.return_value = "out-of-plane"
     app._redraw_current()
-    app.ax.set_title.assert_called_with("MOKE loop: out-of-plane")
+    app.ax.set_title.assert_called_with("MOKE loop: in-plane")
+
+
+def test_geometry_profiles_restore_independent_settings():
+    app, module = make_headless_moke_gui()
+    # Give the mocked widgets real value storage for selection/restoration.
+    for widget in [app.geometry_entry, *app._profile_widgets().values()]:
+        widget.set.side_effect = lambda value, w=widget: setattr(w.get, "return_value", str(value))
+        widget.insert.side_effect = lambda index, value, w=widget: w.set(value)
+    app.source_address_entry.set("physical-source")
+    app.dynamic_inputs["compliance"].set("0.002")
+    app.geometry_entry.set("out-of-plane")
+    app._on_geometry_changed()
+    assert app.source_address_entry.get() == "VIRTUAL"
+    app.dynamic_inputs["compliance"].set("0.003")
+    app.geometry_entry.set("in-plane")
+    app._on_geometry_changed()
+    assert app.source_address_entry.get() == "physical-source"
+    assert app.dynamic_inputs["compliance"].get() == "0.002"
+    app.geometry_entry.set("out-of-plane")
+    app._on_geometry_changed()
+    assert app.dynamic_inputs["compliance"].get() == "0.003"
+
+
+@pytest.mark.parametrize("active", [True, False])
+def test_geometry_selection_blocked_during_run_or_unsafe_recovery(active):
+    app, module = make_headless_moke_gui()
+    app.is_measuring = active
+    app.runner = Mock(can_close=Mock(return_value=False))
+    app.geometry_entry.get.return_value = "out-of-plane"
+    app._on_geometry_changed()
+    app.geometry_entry.set.assert_called_once_with("in-plane")
+    assert app._geometry_settings == {}
+
+
+@pytest.mark.parametrize("key,value", [("compliance", "nan"), ("max_output_step", "0"), ("dwell_time", "-1"), ("n_cycles", "0")])
+def test_profile_validation_precedes_instrument_connection(key, value):
+    app, module = make_headless_moke_gui()
+    app.dynamic_inputs[key].get.return_value = value
+    app._connect = Mock()
+    with pytest.raises(ValueError):
+        app._create_experiment()
+    app._connect.assert_not_called()
+
+
+def test_profile_captures_geometry_and_shutdown_policy_for_actual_run():
+    app, module = make_headless_moke_gui()
+    app.geometry_entry.get.return_value = "out-of-plane"
+    def shutdown(source):
+        source.set_source_voltage(voltage=0)
+        source.output(on=False)
+    handler = Mock(side_effect=shutdown)
+    app._shutdown_handlers["out-of-plane"] = handler
+    experiment = app._create_experiment()
+    app.geometry_entry.get.return_value = "in-plane"
+    experiment.run_experiment(save=False)
+    handler.assert_called_once()
+    assert experiment.geometry == "out-of-plane"
+    assert experiment.metadata.loc[0, "geometry"] == "out-of-plane"
+    assert experiment.snapshot().get("geometry") == "out-of-plane"
+
+
+def test_display_poll_renders_at_most_one_frame_and_handles_controls_first():
+    app, module = make_headless_moke_gui()
+    order = []
+    app.runner = Mock()
+    def no_control_events():
+        order.append("control")
+        raise queue.Empty
+    app.runner.control_queue.get_nowait.side_effect = no_control_events
+    app.runner.display_queue.get_nowait.return_value = object()
+    app._plot_snapshot = lambda snapshot: order.append("display")
+    app._poll_events()
+    assert order == ["control", "display"]
+    app.runner.display_queue.get_nowait.assert_called_once()
+    app.root.after.assert_called_once()
+
+
+def test_terminal_snapshot_wins_over_pending_live_frame():
+    app, module = make_headless_moke_gui()
+    app.run_measurement()
+    assert app.runner.join(timeout=5)
+    app._plot_snapshot = Mock()
+    app._poll_events()
+    app._plot_snapshot.assert_called_once()
+    assert app._plot_snapshot.call_args.args[0].completed_steps == 5
 
 
 def test_moke_gui_setup_validation_errors(monkeypatch):
@@ -352,4 +441,3 @@ def test_moke_gui_setup_validation_errors(monkeypatch):
     assert mock_showerror.called
     assert app.runner is None
     assert len(app._instruments) == 0
-

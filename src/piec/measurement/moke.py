@@ -579,6 +579,7 @@ class MokeMeasurement(BaseMeasurement):
                         },
                         completed_cycles=self._completed_cycles,
                         field_column=self.field_column,
+                        geometry=self.geometry,
                         completed_steps=len(collected_rows),
                         total_steps=self.n_cycles * len(self.output_values),
                     )

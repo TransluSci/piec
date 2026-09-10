@@ -4,6 +4,34 @@ Continue on `measuremnt-standarization`. Checkpoint 16 is complete. Next is
 **checkpoint 17 only: IV/MOKE physical record**, following the
 measurement standardization plan. Validate and commit checkpoint 17 separately.
 
+## Checkpoint 16 review corrections
+
+- Geometry choices retain separate editable setups for this GUI session: instrument
+  addresses, source channel, calibration, output range, compliance, timing, and
+  field-reader conversion. A newly selected geometry starts with virtual demo
+  defaults; no physical laboratory wiring or calibration is assumed. Settings
+  are not persisted across application restarts. Configure and verify physical
+  settings explicitly before running.
+- Run creation captures and validates a `MokeSetupProfile` before connections.
+  Custom source shutdown callbacks can be supplied per geometry through
+  `MokeMeasurementApp(root, shutdown_handlers={...})`; otherwise the standard
+  ramp-to-zero/output-off policy applies. Geometry switching is blocked during
+  active runs and unsafe recovery.
+- Snapshots retain acquisition geometry, so selecting the next setup cannot
+  relabel acquired data. Plot toggles retain the snapshot's original geometry.
+- Polling handles control events first, renders at most one live frame per tick,
+  and discards pending live data when a terminal snapshot is received.
+- Added regressions for profile restoration, active/unsafe selection rejection,
+  validation before connection, actual virtual acquisition with custom shutdown,
+  original plot geometry, bounded polling, and terminal-frame precedence.
+- Removed a scheduler race in the existing Stop-before-start test: Stop is now
+  requested after reservation and before execution, requiring `NOT_NEEDED` safety.
+- Full suite with the Agg command below: **1249 passed, 1 skipped, 2 xfailed**
+  in 26.53s. This covers headless GUI logic; physical hardware remains unverified.
+- Checkpoint 17 requires a dated record of actual physical IV/MOKE execution.
+  Without hardware execution, mark it **PENDING** and describe the missing checks;
+  virtual tests are not physical validation. Do not proceed to checkpoint 18 yet.
+
 ## Checkpoint 16 MOKE GUI interaction and ownership hardening
 
 - Single hardware writer rule: callbacks (`refresh_instruments`, `browse_calibration`,
@@ -26,8 +54,8 @@ measurement standardization plan. Validate and commit checkpoint 17 separately.
   the console.
 - Pre-run control safety: Controls like trace toggles, geometry combobox, STOP, and
   redraw safely handle `_last_snapshot` and `runner` being None/unset before the first run.
-- Dynamic geometry title updates: Bound geometry combobox selection to redraw current
-  snapshot, updating the plot title dynamically.
+- Geometry selection and titles: corrected by the review above; titles describe
+  acquisition geometry and choices select the next run's setup.
 - Setup validation errors: Invalid inputs (e.g. inverted min/max output) display an error
   dialog and abort before creating a runner or leaving dangling instruments.
 - Added 8 comprehensive regression tests in `tests/test_moke_gui.py` (13 passed).
