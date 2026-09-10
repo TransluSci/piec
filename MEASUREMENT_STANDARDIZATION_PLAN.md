@@ -143,6 +143,12 @@ Retired private file bridge _process_raw_3pp_file and removed _LegacyWaveformSup
 Full test suite: **1411 passed, 1 skipped, 2 xfailed** in 28.18s on Python 3.13.2.
 Checkpoint 17 physical validation remains explicitly **PENDING**. Checkpoint **21 only** is next.
 
+Checkpoint 20c review corrections completed: nominal PUND pulse polarity matches
+AWG generation for signed amplitudes; FE run options require actual booleans before
+reservation/I/O. Targeted suites: **109 passed**; full suite with Agg:
+**1440 passed, 1 skipped, 2 xfailed**. Checkpoint **21 only** is next;
+physical checkpoint 17 remains PENDING. See MEASUREMENT_HANDOFF.md.
+
 ## 1. Purpose and non-negotiable constraints
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.

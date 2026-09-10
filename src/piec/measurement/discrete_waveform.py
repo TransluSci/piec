@@ -523,6 +523,8 @@ class HysteresisLoop(DiscreteWaveform):
             for key in options:
                 if key not in allowed:
                     raise ValueError(f"Unknown Hysteresis option: {key}")
+                if not isinstance(options[key], bool):
+                    raise ValueError(f"{key} must be a boolean")
 
     def configure_awg(self) -> None:
         """Configure arbitrary triangular excitation waveform on the AWG."""
@@ -551,7 +553,7 @@ class HysteresisLoop(DiscreteWaveform):
 
         eff_auto_timeshift = self.auto_timeshift
         if request.options and "auto_timeshift" in request.options:
-            eff_auto_timeshift = bool(request.options["auto_timeshift"])
+            eff_auto_timeshift = request.options["auto_timeshift"]
 
         result = process_hysteresis(
             data=raw_data,
@@ -583,7 +585,7 @@ class HysteresisLoop(DiscreteWaveform):
 
         eff_save_plots = self.save_plots
         if request.options and "save_plots" in request.options:
-            eff_save_plots = bool(request.options["save_plots"])
+            eff_save_plots = request.options["save_plots"]
 
         if not eff_save_plots or data.empty:
             return ()
@@ -776,6 +778,8 @@ class ThreePulsePund(DiscreteWaveform):
             for key in options:
                 if key not in allowed:
                     raise ValueError(f"Unknown ThreePulsePund option: {key}")
+                if not isinstance(options[key], bool):
+                    raise ValueError(f"{key} must be a boolean")
 
     def configure_awg(self) -> None:
         """Configure PUND arbitrary waveform on the AWG."""
@@ -845,7 +849,7 @@ class ThreePulsePund(DiscreteWaveform):
 
         eff_auto_timeshift = self.auto_timeshift
         if request.options and "auto_timeshift" in request.options:
-            eff_auto_timeshift = bool(request.options["auto_timeshift"])
+            eff_auto_timeshift = request.options["auto_timeshift"]
 
         result = process_pund(
             data=raw_data,
@@ -880,7 +884,7 @@ class ThreePulsePund(DiscreteWaveform):
 
         eff_save_plots = self.save_plots
         if request.options and "save_plots" in request.options:
-            eff_save_plots = bool(request.options["save_plots"])
+            eff_save_plots = request.options["save_plots"]
 
         if not eff_save_plots or data.empty:
             return ()

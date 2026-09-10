@@ -5,6 +5,24 @@ physical validation remains explicitly **PENDING**. Next is
 **checkpoint 21 only: AMR driver and field angle contract**, following the
 measurement standardization plan. Validate and commit checkpoint 21 separately.
 
+## Checkpoint 20c review corrections
+
+- Nominal PUND voltage now uses pulse magnitudes and applies sequence polarity
+  exactly once, matching configure_awg. The sign of p_u_amp sets polarity; reset
+  opposes it. Zero P/U amplitude uses positive polarity, matching acquisition.
+- Both ThreePulsePund and HysteresisLoop validate save_plots, show_plots and
+  auto_timeshift run options as booleans before reservation or hardware I/O.
+  Removed truthiness conversion in the consuming hooks; string "False" is rejected.
+- Added comparisons of reconstructed voltage to programmed AWG plateaus for
+  positive, negative and zero amplitude combinations, plus pre-reservation option
+  rejection and actual False-option execution tests.
+- Validation: targeted suites **109 passed**; full suite with Agg **1440 passed,
+  1 skipped, 2 xfailed** in 27.27s. No physical hardware execution.
+- Proceed with **checkpoint 21 only: AMR driver and field angle contract**.
+  Follow the recorded AMR capability decisions, preserve manual lock-in setup
+  and existing four-instrument operation, run relevant regressions, commit
+  separately, and stop for review. Physical checkpoint 17 remains PENDING.
+
 ## Checkpoint 20c PUND integration and consumers
 
 - **BaseMeasurement Lifecycle**: `ThreePulsePund` in `piec.measurement.discrete_waveform` subclasses `DiscreteWaveform` and `BaseMeasurement`, implementing the shared lifecycle hooks: `_validate_options`, `configure_awg` (arbitrary waveform generation), `_analyze_data` (in-memory `process_pund`), and `_stage_side_artifacts`.

@@ -99,10 +99,12 @@ def process_pund(
               in seconds and volts. Declared incompatible units are rejected.
         metadata: Optional scalar metadata Mapping or 1-row DataFrame containing
                   measurement parameters.
-        reset_amp: Reset pulse amplitude in V (overrides metadata).
+        reset_amp: Reset pulse magnitude in V (absolute value is used, matching AWG
+                   generation; its polarity opposes p_u_amp).
         reset_width: Reset pulse duration in seconds (overrides metadata).
         reset_delay: Delay after reset pulse in seconds (overrides metadata).
-        p_u_amp: Measurement pulse amplitude in V (overrides metadata).
+        p_u_amp: Signed measurement pulse amplitude in V (overrides metadata).
+                 Its sign determines sequence polarity; zero uses positive polarity.
         p_u_width: Measurement pulse duration in seconds (overrides metadata).
         p_u_delay: Inter-pulse delay in seconds (overrides metadata).
         area: Capacitor device area in m² (overrides metadata).
@@ -357,9 +359,10 @@ def process_pund(
         sum_times[0], sum_times[1], sum_times[1], sum_times[2], sum_times[2], sum_times[3], sum_times[3],
         sum_times[4], sum_times[4], sum_times[5], sum_times[5], sum_times[6],
     ], dtype=float)
+    # Match AWG generation: amplitudes are magnitudes; P/U sign sets polarity.
     sparse_v = np.array([
-        -eff_reset_amp, -eff_reset_amp, 0.0, 0.0, eff_p_u_amp, eff_p_u_amp, 0.0, 0.0,
-        eff_p_u_amp, eff_p_u_amp, 0.0, 0.0,
+        -abs(eff_reset_amp), -abs(eff_reset_amp), 0.0, 0.0, abs(eff_p_u_amp), abs(eff_p_u_amp), 0.0, 0.0,
+        abs(eff_p_u_amp), abs(eff_p_u_amp), 0.0, 0.0,
     ], dtype=float) * polarity
 
     n_points = int(eff_length / timestep)
