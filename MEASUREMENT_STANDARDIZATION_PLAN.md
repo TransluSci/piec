@@ -93,6 +93,15 @@ PUND processing.
 
 This document is the implementation contract for standardizing PIEC measurements. If a later implementation choice conflicts with this plan, the implementation must stop and the plan must be amended in a separate documentation commit before code continues.
 
+Checkpoint 18 review corrections: fixed shunt metadata precedence, finite positive
+parameter validation, integer counts, metadata container validation, explicit input
+unit checks, strict timestamp ordering, and rejection of unrepresentable negative
+offsets. Public analysis/plots use plain columns; only the private
+`_process_raw_hyst_file` bridge translates the unmigrated caller's legacy CSV.
+Remove that bridge at checkpoint 20b. Targeted suites: **99 passed**. Full suite
+with Agg: **1293 passed, 1 skipped, 2 xfailed**. Checkpoint 19 only is next;
+checkpoint 17 physical validation remains PENDING.
+
 ## 1. Purpose and non-negotiable constraints
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.

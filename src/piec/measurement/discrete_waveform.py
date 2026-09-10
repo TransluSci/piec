@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from piec.analysis.utilities import *
 from piec.analysis.pund import *
-from piec.analysis.hysteresis import *
+from piec.analysis.hysteresis import _process_raw_hyst_file
 
 class DiscreteWaveform:
     """
@@ -267,7 +267,7 @@ class HysteresisLoop(DiscreteWaveform):
         and generates hysteresis loop plots. Results appended to CSV.
         """
         if self.data is not None:
-            process_raw_hyst(self.filename, show_plots=self.show_plots, save_plots=self.save_plots, auto_timeshift=self.auto_timeshift)
+            _process_raw_hyst_file(self.filename, show_plots=self.show_plots, save_plots=self.save_plots, auto_timeshift=self.auto_timeshift)
             print(f"Analysis succeeded, updated {self.filename}")
         else:
             print("No data to analyze. Capture the waveform first.")

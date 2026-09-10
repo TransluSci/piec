@@ -5,6 +5,29 @@ physical validation remains explicitly **PENDING**. Next is
 **checkpoint 19 only: in-memory PUND processing**, following the
 measurement standardization plan. Validate and commit checkpoint 19 separately.
 
+## Checkpoint 18 review corrections
+
+Validation: targeted suites **99 passed**; full suite with Agg **1293 passed,
+1 skipped, 2 xfailed** in 25.18s. Physical hardware was not tested.
+
+- Parameter precedence is explicit argument, metadata, then default (including
+  r_shunt, default 50 ohms). Frequency, area and shunt must be finite and positive;
+  cycle and baseline counts must be valid integers. Metadata must be a mapping
+  or exactly one DataFrame row.
+- Public processing and plotting accept plain columns only. Input units are seconds
+  and volts; when column_units is declared (mapping or JSON), incompatible/missing
+  time or voltage declarations are rejected rather than silently relabeled.
+- Time must be strictly increasing. Negative explicit or automatically detected
+  offsets raise ValueError because the existing nominal delayed-waveform algorithm
+  cannot represent them. Nonnegative-offset golden mathematics is preserved.
+- The only file/legacy-column bridge is private `_process_raw_hyst_file`, explicitly
+  imported by the unmigrated HysteresisLoop consumer. Remove it when that caller
+  migrates at checkpoint 20b; do not reintroduce public legacy aliases.
+- Checkpoint 19 only is next: apply these validation and explicit-unit conventions
+  to in-memory PUND processing, preserve each numerical quantity, update consumers,
+  validate and commit separately, then stop for review. Physical checkpoint 17
+  remains PENDING.
+
 ## Checkpoint 18 in-memory hysteresis processing
 
 - In-memory scientific processing: `process_hysteresis` in `piec.analysis.hysteresis`
@@ -15,12 +38,12 @@ measurement standardization plan. Validate and commit checkpoint 19 separately.
   DataFrames, and explicit kwargs (which override metadata). Validates positivity of
   frequency, area, r_shunt, n_cycles >= 1, and finiteness of amplitude and time_offset.
 - Result protocol: Returns `HysteresisAnalysisResult(data, metadata, time_offset)`
-  supporting tuple unpacking (`data, metadata = result`), indexing, and immutability.
+  supporting tuple unpacking (`data, metadata = result`), indexing, and frozen attribute bindings (the contained DataFrame and dict remain mutable).
 - Numerical and trace equivalence: Confirmed exact numerical reproduction of golden
   data from `hysteresis_loop_golden.csv` with zero regression (residuals <= 9.5e-17).
 - In-memory visualization helpers: Added `plot_hysteresis_pv`, `plot_hysteresis_iv`,
   and `plot_hysteresis_traces` operating on in-memory DataFrames with optional user axes.
-- Unmigrated consumer bridge: Retained `process_raw_hyst` as a temporary backward-compatible
+- Unmigrated consumer bridge: Retained private `_process_raw_hyst_file` as a temporary backward-compatible
   file bridge that delegates to `process_hysteresis` and writes legacy column headers to
   CSV for unmigrated callers until Checkpoint 20b.
 - Checkpoint 17 physical validation status: Remains explicitly **PENDING**.

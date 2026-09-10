@@ -23,7 +23,7 @@ from piec.analysis.hysteresis import (
     plot_hysteresis_pv,
     plot_hysteresis_traces,
     process_hysteresis,
-    process_raw_hyst,
+    _process_raw_hyst_file,
 )
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from tests.fixtures.measurement_compatibility import assert_piec_csv_layout
@@ -82,15 +82,13 @@ class TestHysteresisProcessing:
         assert result.metadata["r_shunt"] == 50.0
         assert result.time_offset == pytest.approx(1e-8)
 
-    def test_process_hysteresis_with_legacy_columns(self, sample_metadata):
+    def test_process_hysteresis_rejects_legacy_columns(self, sample_metadata):
         t = np.linspace(0, 0.001, 50)
         v = np.sin(2 * np.pi * 1000.0 * t)
         legacy_df = pd.DataFrame({"time (s)": t, "voltage (V)": v})
 
-        result = process_hysteresis(legacy_df, sample_metadata)
-        assert tuple(result.data.columns) == STANDARD_HYSTERESIS_COLUMNS
-        assert np.allclose(result.data["time"], t - t[0])
-        assert np.allclose(result.data["voltage"], v)
+        with pytest.raises(KeyError, match="time"):
+            process_hysteresis(legacy_df, sample_metadata)
 
     def test_process_hysteresis_with_explicit_kwargs_overrides_metadata(self, sample_hysteresis_data):
         meta = {
@@ -230,7 +228,7 @@ class TestHysteresisProcessing:
         v[2] = 1.0  # early peak
         df = pd.DataFrame({"time": t, "voltage": v})
 
-        with pytest.warns(UserWarning, match="Negative time offset detected"):
+        with pytest.raises(ValueError, match="Negative time_offset"):
             process_hysteresis(df, sample_metadata, auto_timeshift=True)
 
 
@@ -269,9 +267,9 @@ class TestHysteresisPlotting:
 
 
 class TestProcessRawHystBridge:
-    """Verify legacy process_raw_hyst file bridge behavior."""
+    """Verify legacy _process_raw_hyst_file file bridge behavior."""
 
-    def test_process_raw_hyst_file_updates_and_plots(self, tmp_path):
+    def test__process_raw_hyst_file_file_updates_and_plots(self, tmp_path):
         meta_gold, data_gold = standard_csv_to_metadata_and_data(str(GOLDEN_PATH))
         # Copy to temporary path
         from piec.analysis.utilities import metadata_and_data_to_csv
@@ -283,7 +281,7 @@ class TestProcessRawHystBridge:
         metadata_and_data_to_csv(meta_gold, raw_df, str(test_csv))
 
         # Run bridge with save_plots=True
-        res = process_raw_hyst(str(test_csv), show_plots=False, save_plots=True)
+        res = _process_raw_hyst_file(str(test_csv), show_plots=False, save_plots=True)
         assert isinstance(res, HysteresisAnalysisResult)
 
         # Verify updated CSV on disk
@@ -296,3 +294,57 @@ class TestProcessRawHystBridge:
         assert (tmp_path / "test_raw_hyst_PV.png").is_file()
         assert (tmp_path / "test_raw_hyst_IV.png").is_file()
         assert (tmp_path / "test_raw_hyst_trace.png").is_file()
+
+@pytest.mark.parametrize('name', ['frequency', 'area', 'r_shunt'])
+@pytest.mark.parametrize('value', [np.nan, np.inf, -np.inf])
+def test_nonfinite_physical_parameters_rejected(sample_hysteresis_data, sample_metadata, name, value):
+    with pytest.raises(ValueError):
+        process_hysteresis(sample_hysteresis_data, sample_metadata, **{name: value})
+
+@pytest.mark.parametrize('value', [2.9, True, np.nan, np.inf])
+def test_cycle_count_is_integer(sample_hysteresis_data, sample_metadata, value):
+    with pytest.raises(ValueError):
+        process_hysteresis(sample_hysteresis_data, sample_metadata, n_cycles=value)
+
+@pytest.mark.parametrize('value', [0, -1, 2.5, True])
+def test_baseline_count_is_positive_integer(sample_hysteresis_data, sample_metadata, value):
+    with pytest.raises(ValueError):
+        process_hysteresis(sample_hysteresis_data, sample_metadata, baseline_points=value)
+
+def test_shunt_metadata_and_explicit_precedence(sample_hysteresis_data, sample_metadata):
+    default = process_hysteresis(sample_hysteresis_data, sample_metadata)
+    meta = dict(sample_metadata, r_shunt=100)
+    from_meta = process_hysteresis(sample_hysteresis_data, meta)
+    override = process_hysteresis(sample_hysteresis_data, meta, r_shunt=50)
+    np.testing.assert_allclose(from_meta.data['current'], default.data['current'] / 2)
+    np.testing.assert_allclose(from_meta.data['polarization'], default.data['polarization'] / 2)
+    pd.testing.assert_frame_equal(override.data, default.data)
+
+@pytest.mark.parametrize('units', [{'time':'ms','voltage':'mV'}, '{"time":"ms","voltage":"V"}', {'time':'s'}])
+def test_incompatible_units_rejected(sample_hysteresis_data, sample_metadata, units):
+    with pytest.raises(ValueError, match='column_units'):
+        process_hysteresis(sample_hysteresis_data, dict(sample_metadata, column_units=units))
+
+def test_json_units_accepted(sample_hysteresis_data, sample_metadata):
+    result = process_hysteresis(sample_hysteresis_data, dict(sample_metadata, column_units='{"time":"s","voltage":"V"}'))
+    assert result.metadata['column_units'] == STANDARD_HYSTERESIS_UNITS
+
+@pytest.mark.parametrize('duplicate', [True, False])
+def test_nonincreasing_time_rejected(sample_hysteresis_data, sample_metadata, duplicate):
+    sample_hysteresis_data.loc[2, 'time'] = sample_hysteresis_data.loc[1 if duplicate else 0, 'time']
+    with pytest.raises(ValueError, match='strictly increasing'):
+        process_hysteresis(sample_hysteresis_data, sample_metadata)
+
+def test_explicit_negative_offset_rejected(sample_hysteresis_data, sample_metadata):
+    with pytest.raises(ValueError, match='Negative time_offset'):
+        process_hysteresis(sample_hysteresis_data, sample_metadata, time_offset=-0.0001)
+
+@pytest.mark.parametrize('metadata', [[], pd.DataFrame(), pd.DataFrame([{}, {}])])
+def test_metadata_shape_and_type_rejected(sample_hysteresis_data, metadata):
+    with pytest.raises((ValueError, TypeError), match='Metadata'):
+        process_hysteresis(sample_hysteresis_data, metadata)
+
+def test_file_bridge_is_private():
+    import piec.analysis.hysteresis as module
+    assert 'process_raw_hyst' not in module.__all__
+    assert not hasattr(module, 'process_raw_hyst')

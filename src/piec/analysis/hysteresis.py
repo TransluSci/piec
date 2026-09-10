@@ -8,7 +8,7 @@ and current-voltage (I-V) hysteresis measurements following PIEC standardized sc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
-import warnings
+import json
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -74,7 +74,7 @@ def process_hysteresis(
     n_cycles: Optional[int] = None,
     time_offset: Optional[float] = None,
     auto_timeshift: bool = False,
-    r_shunt: float = 50.0,
+    r_shunt: Optional[float] = None,
     baseline_points: int = 20,
 ) -> HysteresisAnalysisResult:
     """In-memory analysis of raw ferroelectric hysteresis waveform data.
@@ -84,7 +84,7 @@ def process_hysteresis(
 
     Args:
         data: Input DataFrame or Mapping containing 'time' and 'voltage' columns
-              (or legacy 'time (s)' and 'voltage (V)').
+              in seconds and volts. Declared incompatible units are rejected.
         metadata: Optional scalar metadata Mapping or 1-row DataFrame containing
                   measurement parameters.
         frequency: Excitation frequency in Hz (overrides metadata).
@@ -93,7 +93,7 @@ def process_hysteresis(
         n_cycles: Number of excitation cycles (overrides metadata).
         time_offset: Trigger-to-response time alignment offset in seconds (overrides metadata).
         auto_timeshift: If True, auto-detects time offset from first polarization peak.
-        r_shunt: Shunt resistor impedance in Ohms (default 50.0).
+        r_shunt: Shunt resistance in Ohms (overrides metadata; default 50.0).
         baseline_points: Initial points used to estimate and subtract DC current offset (default 20).
 
     Returns:
@@ -106,10 +106,13 @@ def process_hysteresis(
     meta_dict: Dict[str, Any] = {}
     if metadata is not None:
         if isinstance(metadata, pd.DataFrame):
-            if not metadata.empty:
-                meta_dict = metadata.iloc[0].to_dict()
+            if len(metadata) != 1:
+                raise ValueError("Metadata must contain exactly one row")
+            meta_dict = metadata.iloc[0].to_dict()
         elif isinstance(metadata, Mapping):
             meta_dict = dict(metadata)
+        else:
+            raise TypeError("Metadata must be a Mapping or one-row DataFrame")
 
     def _get_param(name: str, explicit_val: Optional[Any], default_val: Any = None) -> Any:
         if explicit_val is not None:
@@ -144,20 +147,29 @@ def process_hysteresis(
     eff_freq = float(eff_freq)
     eff_amp = float(eff_amp)
     eff_area = float(eff_area)
+    if isinstance(eff_n_cycles, (bool, np.bool_)) or not np.isfinite(float(eff_n_cycles)) or not float(eff_n_cycles).is_integer():
+        raise ValueError("n_cycles must be a finite integer")
     eff_n_cycles = int(eff_n_cycles)
     eff_offset = float(eff_offset)
-    r_shunt = float(r_shunt)
+    r_shunt = float(_get_param("r_shunt", r_shunt, default_val=50.0))
 
-    if eff_freq <= 0:
+    if not np.isfinite(eff_freq) or eff_freq <= 0:
         raise ValueError(f"Frequency must be positive, got {eff_freq}.")
-    if eff_area <= 0:
+    if not np.isfinite(eff_area) or eff_area <= 0:
         raise ValueError(f"Area must be positive, got {eff_area}.")
     if eff_n_cycles < 1:
         raise ValueError(f"n_cycles must be >= 1, got {eff_n_cycles}.")
-    if r_shunt <= 0:
+    if not np.isfinite(r_shunt) or r_shunt <= 0:
         raise ValueError(f"r_shunt must be positive, got {r_shunt}.")
     if not np.isfinite(eff_amp) or not np.isfinite(eff_offset):
         raise ValueError("Amplitude and time_offset must be finite numbers.")
+    if isinstance(baseline_points, (bool, np.bool_)) or not isinstance(baseline_points, (int, np.integer)) or baseline_points < 1:
+        raise ValueError("baseline_points must be a positive integer")
+    units = meta_dict.get("column_units", {"time": "s", "voltage": "V"})
+    if isinstance(units, str):
+        units = json.loads(units)
+    if not isinstance(units, Mapping) or any(units.get(k) != v for k, v in (("time", "s"), ("voltage", "V"))):
+        raise ValueError("Input column_units must declare time in s and voltage in V")
 
     # 2. Resolve input columns from data
     if isinstance(data, pd.DataFrame):
@@ -170,27 +182,18 @@ def process_hysteresis(
     if len(df_in) < 2:
         raise ValueError(f"Data must have at least 2 rows for hysteresis analysis, got {len(df_in)}.")
 
-    time_col = None
-    for cand in ("time", "time (s)", "Time", "TIME"):
-        if cand in df_in.columns:
-            time_col = cand
-            break
-    if time_col is None:
-        raise KeyError("Missing required time column (expected 'time' or 'time (s)').")
+    if "time" not in df_in.columns:
+        raise KeyError("Missing required time column 'time'.")
+    if "voltage" not in df_in.columns:
+        raise KeyError("Missing required voltage column 'voltage'.")
 
-    volt_col = None
-    for cand in ("voltage", "voltage (V)", "Voltage", "VOLTAGE"):
-        if cand in df_in.columns:
-            volt_col = cand
-            break
-    if volt_col is None:
-        raise KeyError("Missing required voltage column (expected 'voltage' or 'voltage (V)').")
-
-    time_arr = np.asarray(df_in[time_col], dtype=float)
-    voltage_arr = np.asarray(df_in[volt_col], dtype=float)
+    time_arr = np.asarray(df_in["time"], dtype=float)
+    voltage_arr = np.asarray(df_in["voltage"], dtype=float)
 
     if not np.all(np.isfinite(time_arr)) or not np.all(np.isfinite(voltage_arr)):
         raise ValueError("Input data contains non-finite values (NaN or Inf).")
+    if not np.all(np.diff(time_arr) > 0):
+        raise ValueError("Time must be strictly increasing")
 
     # 3. Scientific mathematical processing
     time_zeroed = time_arr - time_arr[0]
@@ -223,12 +226,8 @@ def process_hysteresis(
             max_v_time = time_zeroed[step_idx]
             max_p_time = time_zeroed[int(np.argmax(first_pol_wave))]
             final_time_offset = float(max_p_time - max_v_time)
-            if final_time_offset < 0:
-                warnings.warn(
-                    "Negative time offset detected, full waveform possibly not captured or data too noisy.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+    if final_time_offset < 0:
+        raise ValueError("Negative time_offset cannot be represented by the nominal delayed waveform")
 
     # Reconstruct nominal applied voltage waveform
     interp_v_array = np.array(
@@ -269,6 +268,7 @@ def process_hysteresis(
     out_meta["n_cycles"] = eff_n_cycles
     out_meta["area"] = eff_area
     out_meta["r_shunt"] = r_shunt
+    out_meta["baseline_points"] = baseline_points
     out_meta["time_offset"] = final_time_offset
     out_meta["auto_timeshift"] = bool(auto_timeshift)
     out_meta["processed"] = True
@@ -292,8 +292,8 @@ def plot_hysteresis_pv(
     """Plot polarization versus applied voltage (P-V hysteresis loop)."""
     if ax is None:
         fig, ax = plt.subplots(tight_layout=True)
-    v_col = "applied_voltage" if "applied_voltage" in data.columns else "applied voltage (V)"
-    p_col = "polarization" if "polarization" in data.columns else "polarization (uC/cm^2)"
+    v_col = "applied_voltage"
+    p_col = "polarization"
     ax.plot(data[v_col], data[p_col], color=color, linewidth=linewidth, **kwargs)
     ax.set_xlabel("Applied Voltage (V)")
     ax.set_ylabel("Polarization (uC/cm^2)")
@@ -314,8 +314,8 @@ def plot_hysteresis_iv(
     """Plot switching current versus applied voltage (I-V loop)."""
     if ax is None:
         fig, ax = plt.subplots(tight_layout=True)
-    v_col = "applied_voltage" if "applied_voltage" in data.columns else "applied voltage (V)"
-    i_col = "current" if "current" in data.columns else "current (A)"
+    v_col = "applied_voltage"
+    i_col = "current"
     ax.plot(data[v_col], data[i_col], color=color, linewidth=linewidth, **kwargs)
     ax.set_xlabel("Applied Voltage (V)")
     ax.set_ylabel("Current (A)")
@@ -337,9 +337,9 @@ def plot_hysteresis_traces(
     """Plot polarization and applied voltage versus time on twin y-axes."""
     if ax is None:
         fig, ax = plt.subplots(tight_layout=True)
-    t_col = "time" if "time" in data.columns else "time (s)"
-    p_col = "polarization" if "polarization" in data.columns else "polarization (uC/cm^2)"
-    v_col = "applied_voltage" if "applied_voltage" in data.columns else "applied voltage (V)"
+    t_col = "time"
+    p_col = "polarization"
+    v_col = "applied_voltage"
 
     ax.plot(data[t_col], data[p_col], color=p_color, linewidth=linewidth, label="Polarization", **kwargs)
     ax.set_xlabel("Time (s)")
@@ -356,19 +356,20 @@ def plot_hysteresis_traces(
     return ax, ax2
 
 
-def process_raw_hyst(
+def _process_raw_hyst_file(
     path: str,
     show_plots: bool = False,
     save_plots: bool = False,
     auto_timeshift: bool = False,
 ) -> HysteresisAnalysisResult:
-    """Legacy file-path-oriented wrapper around in-memory process_hysteresis.
+    """Private file bridge for the unmigrated HysteresisLoop caller.
 
     Maintained as a temporary bridge for unmigrated callers until Checkpoint 20b.
     Reads the CSV at `path`, performs analysis via `process_hysteresis`, generates
     optional plots, and updates the CSV on disk with processed columns.
     """
     metadata, raw_df = standard_csv_to_metadata_and_data(path)
+    raw_df = raw_df.rename(columns={"time (s)": "time", "voltage (V)": "voltage"})
     result = process_hysteresis(raw_df, metadata, auto_timeshift=auto_timeshift)
 
     # Map back to legacy column headers for backward compatibility with unmigrated CSV consumers
@@ -432,7 +433,6 @@ __all__ = (
     "STANDARD_HYSTERESIS_UNITS",
     "HysteresisAnalysisResult",
     "process_hysteresis",
-    "process_raw_hyst",
     "plot_hysteresis_pv",
     "plot_hysteresis_iv",
     "plot_hysteresis_traces",
