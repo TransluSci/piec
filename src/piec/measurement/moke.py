@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import collections
-import io
+from contextlib import contextmanager
 import json
 import math
 from pathlib import Path
@@ -17,12 +16,11 @@ import pandas as pd
 from piec.analysis.field_calibration import FieldCalibration
 from piec.measurement.base import BaseMeasurement
 from piec.measurement.contracts import (
+    ConcurrentRunError,
     HardwareSafetyError,
     MeasurementSnapshot,
-    RunRecord,
     RunRequest,
     RunState,
-    SafetyAction,
     SafetyReport,
     SafetyStatus,
     ShutdownAttemptRecorder,
@@ -43,8 +41,8 @@ class MokeSnapshot(MeasurementSnapshot):
         run_id: str = "",
         generation: int = 0,
         sequence: int = 0,
-        state: RunState = RunState.RUNNING,
-        safety: SafetyStatus = SafetyStatus.SAFE,
+        state: RunState = RunState.IDLE,
+        safety: SafetyStatus = SafetyStatus.UNKNOWN,
         completed_steps: int = 0,
         total_steps: Optional[int] = None,
         message: str = "",
@@ -99,6 +97,7 @@ class MokeMeasurement(BaseMeasurement):
     - Plain lowercase columns and declared JSON unit metadata
     """
 
+    snapshot_type = MokeSnapshot
     mtype = "moke"
     measurement_schema = "moke"
 
@@ -118,12 +117,11 @@ class MokeMeasurement(BaseMeasurement):
         raw_window_points: int = 1000,
         source_channel: Optional[int] = None,
         geometry: str = "unspecified",
-        safe_shutdown: Optional[Callable[[Any], Any]] = None,
+        shutdown_handler: Optional[Callable[[Any], Any]] = None,
         field_reader: Optional[Callable[[], float]] = None,
         field_reader_unit: Optional[str] = None,
         field_reader_name: str = "",
         output_dir: Optional[Union[str, Path]] = None,
-        save_dir: Optional[Union[str, Path]] = None,
         notes: str = "",
     ):
         if not isinstance(calibration, FieldCalibration):
@@ -148,8 +146,8 @@ class MokeMeasurement(BaseMeasurement):
             if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
 
-        if safe_shutdown is not None and not callable(safe_shutdown):
-            raise TypeError("safe_shutdown must be callable")
+        if shutdown_handler is not None and not callable(shutdown_handler):
+            raise TypeError("shutdown_handler must be callable")
         if field_reader is not None:
             if not callable(field_reader):
                 raise TypeError("field_reader must be a callable returning magnetic field")
@@ -174,10 +172,7 @@ class MokeMeasurement(BaseMeasurement):
         self.raw_window_points = int(raw_window_points)
         self.source_channel = source_channel
         self.geometry = str(geometry)
-        self.safe_shutdown_fn = safe_shutdown
-
-        effective_output_dir = output_dir if output_dir is not None else save_dir
-        self.save_dir = str(effective_output_dir) if effective_output_dir is not None else r"\scratch"
+        self.shutdown_handler = shutdown_handler
 
         # Check driver limits without performing hardware I/O
         self._validate_source_limits(np.r_[outputs, 0.0])
@@ -196,7 +191,6 @@ class MokeMeasurement(BaseMeasurement):
         self._last_cycle = pd.DataFrame()
         self._cycle_average = pd.DataFrame()
         self._raw_data_bounded = pd.DataFrame()
-        self._history: List[pd.DataFrame] = []
         self._timestamp: float = time.time()
 
         self._data: Optional[pd.DataFrame] = None
@@ -204,7 +198,7 @@ class MokeMeasurement(BaseMeasurement):
 
         self.notes = str(notes)
         super().__init__(
-            output_dir=effective_output_dir,
+            output_dir=output_dir,
             measurement_schema="moke",
             column_units=None,
             metadata=self._build_metadata_dict(),
@@ -266,18 +260,6 @@ class MokeMeasurement(BaseMeasurement):
         self._data = value
 
     @property
-    def raw_data(self) -> pd.DataFrame:
-        if self._raw_data_bounded is not None and not self._raw_data_bounded.empty:
-            return self._raw_data_bounded
-        if self._raw_data is not None and not self._raw_data.empty:
-            return self._raw_data.tail(self.raw_window_points).copy()
-        return pd.DataFrame()
-
-    @raw_data.setter
-    def raw_data(self, value: pd.DataFrame) -> None:
-        self._raw_data_bounded = value
-
-    @property
     def last_cycle(self) -> pd.DataFrame:
         return self._last_cycle
 
@@ -300,10 +282,6 @@ class MokeMeasurement(BaseMeasurement):
     @completed_cycles.setter
     def completed_cycles(self, value: int) -> None:
         self._completed_cycles = value
-
-    @property
-    def history(self) -> List[pd.DataFrame]:
-        return self._history
 
     @property
     def processed(self) -> bool:
@@ -377,7 +355,7 @@ class MokeMeasurement(BaseMeasurement):
             "average_cycles": self.average_cycles,
             "raw_window_points": self.raw_window_points,
             "processed": self.processed,
-            "shutdown_policy": "custom" if self.safe_shutdown_fn else "ramp to electrical zero, output off",
+            "shutdown_policy": "custom" if self.shutdown_handler else "ramp to electrical zero, output off",
         }
 
     def _source_call(self, method: str, **kwargs: Any) -> Any:
@@ -461,9 +439,21 @@ class MokeMeasurement(BaseMeasurement):
     # Protected Subclass Hooks (BaseMeasurement implementation)
     # ========================================================================
 
+    def _reset_run_views(self) -> None:
+        self._raw_data_bounded = pd.DataFrame()
+        self._cycles = []
+        self._completed_cycles = 0
+        self._last_cycle = pd.DataFrame()
+        self._cycle_average = pd.DataFrame()
+        self._configured = False
+        self._timestamp = time.time()
+        self.measurement_metadata.update(self._build_metadata_dict())
+
     def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
         """Validate run options before reservation."""
         super()._validate_options(options)
+        if options:
+            raise ValueError(f"Unknown MOKE options: {sorted(options)}")
 
     def _configure_instruments(self, request: RunRequest) -> None:
         """Configure sourcemeter and DMM with outputs disabled."""
@@ -558,12 +548,11 @@ class MokeMeasurement(BaseMeasurement):
                     collected_rows.append(row)
 
                     # Update raw data and bounded live view
-                    self._raw_data = pd.DataFrame(collected_rows)
-                    self._raw_data_bounded = self._raw_data.tail(self.raw_window_points).copy()
+                    self._raw_data_bounded = pd.DataFrame(collected_rows[-self.raw_window_points:])
 
                     # Check for complete cycle
                     if point == len(self.output_values) - 1:
-                        cycle_frame = self._raw_data.tail(len(self.output_values)).copy()
+                        cycle_frame = pd.DataFrame(collected_rows[-len(self.output_values):])
                         self._last_cycle = cycle_frame
                         self._completed_cycles += 1
                         self._cycles.append(cycle_frame)
@@ -606,6 +595,7 @@ class MokeMeasurement(BaseMeasurement):
             elif self._raw_data is None:
                 self._raw_data = self._get_empty_dataframe()
                 self._raw_data_bounded = pd.DataFrame()
+            self.measurement_metadata.update(self._build_metadata_dict())
 
         return self._raw_data.copy()
 
@@ -624,10 +614,10 @@ class MokeMeasurement(BaseMeasurement):
 
         self._safing_failure_exc: Optional[BaseException] = None
 
-        if self.safe_shutdown_fn is not None:
+        if self.shutdown_handler is not None:
             def custom_shutdown():
                 try:
-                    self.safe_shutdown_fn(self.sourcemeter)
+                    self.shutdown_handler(self.sourcemeter)
                 except BaseException as exc:
                     if self._safing_failure_exc is None:
                         self._safing_failure_exc = exc
@@ -680,123 +670,33 @@ class MokeMeasurement(BaseMeasurement):
         self._data = df.copy()
         self.measurement_metadata.update(self._build_metadata_dict())
         self.measurement_metadata["processed"] = True
-        self._history.append(self.metadata.copy())
         return df
 
     # ========================================================================
-    # Compatibility & Helper Methods
+    # Owner-scoped manual source helpers
     # ========================================================================
 
-    def configure_sourcemeter(self) -> None:
-        """Configure sourcemeter with electrical zero and output off."""
-        self._source_call("output", on=False)
-        if self.calibration.output_unit == "V":
-            self._source_call("configure_voltage_source", voltage=0.0, current_compliance=self.compliance)
+    @contextmanager
+    def _command_lease(self):
+        if self.run_state.is_active:
+            if self._active_owner_thread_id != threading.get_ident():
+                raise ConcurrentRunError("Hardware commands require the execution owner")
+            yield
         else:
-            self._source_call("configure_current_source", current=0.0, voltage_compliance=self.compliance)
-        self._current_output = 0.0
-        self._configured = True
-
-    def configure_dmm(self) -> None:
-        """Configure DMM for DC voltage reading."""
-        self.dmm.set_sense_function(sense_func="VOLT")
-        self.dmm.set_measurement_coupling(coupling="DC")
+            with self._idle_command_lease():
+                yield
 
     def set_output(self, output: float) -> bool:
         """Program a direct source setting; does not enable the output."""
-        if not self._configured:
-            raise RuntimeError("configure the sourcemeter before setting output")
-        if not np.isscalar(output):
-            raise ValueError("output must be a scalar")
-        self.calibration.field_at_output(output)
-        self._validate_source_limits([output])
-        return self._ramp_output(float(output))
+        with self._command_lease():
+            if not self._configured:
+                raise RuntimeError("configure the sourcemeter before setting output")
+            if not np.isscalar(output):
+                raise ValueError("output must be a scalar")
+            self.calibration.field_at_output(output)
+            self._validate_source_limits([output])
+            return self._ramp_output(float(output))
 
     def set_field(self, field: float) -> bool:
         """Program the calibrated source setting for a requested field."""
         return self.set_output(self.calibration.output_at_field(field))
-
-    def shut_off(self) -> SafetyReport:
-        """Apply the setup's shutdown policy, re-raising underlying exception if safing failed."""
-        try:
-            res = self.safe_shutdown()
-            self._configured = False
-            return res
-        except HardwareSafetyError as exc:
-            self._configured = False
-            if getattr(self, "_safing_failure_exc", None) is not None:
-                raise self._safing_failure_exc
-            if self._last_safing_exc is not None:
-                raise self._last_safing_exc
-            raise
-
-    def publish_snapshot(
-        self,
-        *,
-        views: Optional[Mapping[str, pd.DataFrame]] = None,
-        completed_steps: int = 0,
-        total_steps: Optional[int] = None,
-        message: str = "",
-        **extra: Any,
-    ) -> MokeSnapshot:
-        """Publishes a mutation-isolated MokeSnapshot to display listeners and queues."""
-        with self._snapshot_lock:
-            self._snapshot_sequence += 1
-            seq = self._snapshot_sequence
-            tok = self.active_token
-            run_id = tok.run_id if tok is not None else ""
-            generation = tok.generation if tok is not None else self._coordinator.generation
-            state = self.run_state
-            safety = self.safety_status
-
-            snap = MokeSnapshot(
-                views=views or {},
-                run_id=run_id,
-                generation=generation,
-                sequence=seq,
-                state=state,
-                safety=safety,
-                completed_steps=completed_steps,
-                total_steps=total_steps,
-                message=message,
-                **extra,
-            )
-            self._latest_snapshot = snap
-            queues = list(self._display_queues)
-            listeners = list(self._display_listeners)
-
-        for q in queues:
-            try:
-                q.put(snap)
-            except Exception:
-                pass
-
-        for listener in listeners:
-            try:
-                listener(snap)
-            except Exception:
-                pass
-
-        return snap
-
-    def snapshot(self) -> MokeSnapshot:
-        """Return a MokeSnapshot with mutation-isolated views and metadata."""
-        return MokeSnapshot(
-            raw=self.raw_data.copy(),
-            last_cycle=self.last_cycle.copy(),
-            cycle_average=self.cycle_average.copy(),
-            completed_cycles=self.completed_cycles,
-            field_column=self.field_column,
-        )
-
-    def analyze(self) -> None:
-        """Analyze method compatibility shim."""
-        pass
-
-    def save_data(self) -> Optional[str]:
-        """Save data compatibility shim."""
-        if self._data is None or self._data.empty:
-            raise RuntimeError("no MOKE data to save")
-        req = RunRequest(save=True)
-        self._filename = self._publish_data(self._data, req, is_partial=False)
-        return self._filename

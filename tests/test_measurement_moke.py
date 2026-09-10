@@ -164,8 +164,8 @@ class TestMokeConstructorAndValidation:
             MokeMeasurement(**{**valid_opts, "field_reader_unit": "Oe"})
 
         # Invalid safe_shutdown
-        with pytest.raises(TypeError, match="safe_shutdown must be callable"):
-            MokeMeasurement(**{**valid_opts, "safe_shutdown": "not_callable"})
+        with pytest.raises(TypeError, match="shutdown_handler must be callable"):
+            MokeMeasurement(**{**valid_opts, "shutdown_handler": "not_callable"})
 
         # Exceeds driver limits
         with pytest.raises(ValueError, match="compliance exceeds the driver's current_compliance limit"):
@@ -436,8 +436,8 @@ class TestMokeFaultInjectionAndDataRecovery:
         # Fail the ramp to zero
         source.set_source_voltage.side_effect = RuntimeError("Zero ramp failed")
 
-        with pytest.raises(RuntimeError, match="Zero ramp failed"):
-            moke.shut_off()
+        with pytest.raises(HardwareSafetyError, match="Zero ramp failed"):
+            moke.safe_shutdown()
 
         # Output disable MUST still be called!
         assert source.output.call_args_list[-1] == call(on=False)
@@ -454,10 +454,10 @@ class TestMokeFaultInjectionAndDataRecovery:
             max_output_step=5.0,
             dwell_time=0.0,
             ramp_delay=0.0,
-            safe_shutdown=custom_shutdown,
+            shutdown_handler=custom_shutdown,
         )
 
-        moke.shut_off()
+        moke.safe_shutdown()
         custom_shutdown.assert_called_once_with(source)
         assert source.output.call_args_list[-1] == call(on=False)
 

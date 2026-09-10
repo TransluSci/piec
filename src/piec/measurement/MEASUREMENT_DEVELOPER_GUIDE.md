@@ -201,6 +201,17 @@ COMPLETED
 
 Subclasses implement their experimental logic by overriding the following protected hooks:
 
+#### `_reset_run_views(self) -> None`
+Reset family-specific buffers and cycle counters without hardware I/O. The engine
+calls this after a successful reservation and before configuration or early abort,
+so a failed repeat run cannot expose a previous run's views. Keep this hook simple
+and non-throwing. It must not perform acquisition, persistence, or safing.
+
+For specialized snapshot properties, set the subclass's `snapshot_type` to a
+`MeasurementSnapshot` subclass accepting the standard constructor fields. The
+engine still owns snapshot identity, locking, publication, and terminal state;
+do not override `snapshot()` or `publish_snapshot()`.
+
 #### `_validate_options(self, options: Optional[Mapping[str, Any]]) -> None`
 Validates run-specific options passed via `options={...}`. Reject unknown keys or
 illegal types early before acquiring a reservation or touching hardware.

@@ -4,6 +4,31 @@ Continue on `measuremnt-standarization`. Checkpoint 14 is complete. Next is
 **checkpoint 15 only: IV GUI interaction/ownership hardening**, following the
 measurement standardization plan. Validate and commit checkpoint 15 separately.
 
+## Checkpoint 14 review corrections
+
+- Public `raw_data` now uses the base contract and retains every acquired point.
+  Only live raw views are bounded; complete raw data is materialized in finally.
+- MOKE inherits `snapshot()` and `publish_snapshot()` unchanged. The shared engine
+  uses `snapshot_type = MokeSnapshot` for live, queried, and terminal snapshots,
+  preserving real run ID, generation, sequence, state, safety, and defensive copies.
+- The engine invokes `_reset_run_views()` after successful reservation and before
+  configuration or early abort. MOKE resets windows, averages, cycles, and per-run
+  metadata there so failed repeat runs cannot expose old data.
+- Removed `configure_sourcemeter`, `configure_dmm`, `shut_off`, `analyze`, `save_data`,
+  and legacy `history`. Use shared configure/capture/session/safe_shutdown wrappers
+  and `run_records`. Retained manual `set_output`/`set_field` helpers enforce the
+  execution owner or an idle command lease.
+- Constructor uses only `output_dir` and `shutdown_handler`; no `save_dir` or
+  `safe_shutdown` keyword aliases. Unknown run options are rejected before I/O.
+  Tests, notebook code, documentation and the GUI now use this interface.
+- GUI uses MeasurementRunner, non-daemon execution, separate display/control queues,
+  terminal snapshots, and worker-exit plus safety checks before releasing connections.
+  Unsafe shutdown retains connections and blocks normal close. Further MOKE GUI
+  interaction, geometry and recovery UX hardening remains checkpoint 16.
+- Added tests/test_measurement_moke_review.py (10 regression cases). Focused MOKE
+  suites: **94 passed**. Full suite: **1220 passed, 1 skipped, 2 xfailed**.
+  Physical hardware and the opt-in SMB path remain unverified.
+
 ## Checkpoint 14 MOKE vertical slice migration
 
 - `MokeMeasurement` migrated to `BaseMeasurement`:

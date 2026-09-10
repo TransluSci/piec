@@ -11,6 +11,7 @@ from piec.analysis.field_calibration import FieldCalibration
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.drivers.dmm.dmm import DMM
 from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
+from piec.measurement import HardwareSafetyError
 from piec.measurement.moke import MokeMeasurement
 from piec.simulation.hysteretic_magnetic_material import HystereticMagneticMaterial
 
@@ -131,7 +132,7 @@ def test_single_measurement_uses_voltage_source_and_dmm_with_raw_cycles():
     run.dmm.set_measurement_coupling.assert_called_once_with(coupling="DC")
     assert not run.sourcemeter.state["output_on"]
     assert run.sourcemeter.state["source_voltage"] == 0
-    assert len(run.history) == 1
+    assert len(run.run_records) == 1
     assert "field_measured" not in data
 
 
@@ -181,13 +182,13 @@ def test_configuration_failure_does_not_leave_output_enabled():
 
 def test_setup_can_supply_its_own_shutdown_procedure():
     shutdown = Mock(side_effect=lambda source: source.output(channel=1, on=False))
-    run = measurement(safe_shutdown=shutdown)
+    run = measurement(shutdown_handler=shutdown)
     run.run_experiment(save=False)
     shutdown.assert_called_once_with(run.sourcemeter)
 
 
 def test_saved_data_includes_original_calibration_and_units(tmp_path):
-    run = measurement(save_dir=str(tmp_path))
+    run = measurement(output_dir=str(tmp_path))
     run.run_experiment()
     metadata, data = standard_csv_to_metadata_and_data(run.filename)
     assert json.loads(metadata.loc[0, "calibration"]) == calibration().to_dict()
@@ -217,7 +218,7 @@ def test_manual_field_setting_uses_calibration_inverse():
         assert run.sourcemeter.state["source_voltage"] == 2.5
         assert not run.sourcemeter.state["output_on"]
     finally:
-        run.shut_off()
+        run.safe_shutdown()
 
 
 def test_csv_loader_accepts_manual_table_without_name(tmp_path):
@@ -282,8 +283,8 @@ def test_shutdown_still_disables_output_if_zero_ramp_fails():
     run.sourcemeter.output(channel=1, on=True)
     run.set_output(-5)
     run.sourcemeter.set_source_voltage = Mock(side_effect=RuntimeError("ramp failed"))
-    with pytest.raises(RuntimeError, match="ramp failed"):
-        run.shut_off()
+    with pytest.raises(HardwareSafetyError, match="ramp failed"):
+        run.safe_shutdown()
     assert not run.sourcemeter.state["output_on"]
 
 
@@ -292,7 +293,8 @@ def test_snapshot_mutation_does_not_change_saved_measurement():
     run.run_experiment(save=False)
     snapshot = run.snapshot()
     assert len(snapshot.raw) == 2
-    snapshot.last_cycle.loc[:, "detector_voltage"] = 999
+    view = snapshot.last_cycle
+    view.loc[:, "detector_voltage"] = 999
     assert run.last_cycle["detector_voltage"].max() < 1
 
 
@@ -310,7 +312,7 @@ def test_gaussmeter_selects_measured_axis_and_preserves_calibration(tmp_path):
     reader = Mock(side_effect=fields)
     run = measurement(
         field_reader=reader, field_reader_unit="Oe",
-        field_reader_name="test gaussmeter", save_dir=str(tmp_path),
+        field_reader_name="test gaussmeter", output_dir=str(tmp_path),
     )
     reader.assert_not_called()  # No field acquisition in constructor.
     snapshots = []

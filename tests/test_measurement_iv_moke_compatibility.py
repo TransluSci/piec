@@ -201,7 +201,7 @@ class TestMokeMeasurementCompatibility:
             ramp_delay=0.0,
             n_cycles=1,
             average_cycles=1,
-            save_dir=str(save_dir),
+            output_dir=str(save_dir),
         )
         if field_reader is not None:
             kwargs["field_reader"] = field_reader
@@ -219,7 +219,7 @@ class TestMokeMeasurementCompatibility:
         assert moke.max_output_step == 5.0
         assert moke.n_cycles == 1
         assert moke.data is None
-        assert moke.history == []
+        assert moke.run_records == ()
         assert moke.abort_requested is False
 
         # Target contract: zero hardware I/O in __init__
@@ -331,11 +331,11 @@ class TestMokeMeasurementCompatibility:
             output_values=[-5.0, 0.0, 5.0, 0.0, -5.0],
             compliance=0.01,
             max_output_step=5.0,
-            safe_shutdown=custom_shutdown,
-            save_dir=str(tmp_path),
+            shutdown_handler=custom_shutdown,
+            output_dir=str(tmp_path),
         )
 
-        moke.shut_off()
+        moke.safe_shutdown()
         custom_shutdown.assert_called_once_with(source)
 
     def test_moke_default_safe_shutdown_disables_output(self, standard_calibration, tmp_path):
@@ -343,8 +343,8 @@ class TestMokeMeasurementCompatibility:
         moke.configure_instruments()
         assert moke._configured is True
 
-        moke.shut_off()
-        assert moke._configured is False
+        moke.safe_shutdown()
+        assert moke.safety_status.value == "SAFE"
         source.output.assert_called_with(on=False)
 
     def test_moke_column_units_json_round_trip_and_alternative_units(self, tmp_path):
@@ -372,7 +372,7 @@ class TestMokeMeasurementCompatibility:
             field_reader=Mock(return_value=0.012),
             field_reader_unit="T",
             field_reader_name="gaussmeter_T",
-            save_dir=str(tmp_path),
+            output_dir=str(tmp_path),
         )
 
         assert moke.output_column == "source_output"

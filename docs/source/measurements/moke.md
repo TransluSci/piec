@@ -90,7 +90,7 @@ experiment = MokeMeasurement(
     dwell_time=0.1,       # Seconds at each acquired setpoint
     n_cycles=3,
     geometry="in_plane",
-    save_dir="results",
+    output_dir="results",
 )
 data = experiment.run_experiment()
 ```
@@ -104,10 +104,12 @@ requires a driver supporting the standard channel argument.
 
 To sweep specified fields, first convert your closed field sequence with
 `calibration.output_at_field(fields)` and pass those outputs to the constructor.
-For piecewise operation, `configure_instruments()`, `set_output(value)`, and
-`set_field(value)` are available. The last two only program the source; they
-do not enable its output. `capture_data()` enables output for acquisition and
-always invokes shutdown afterward.
+For piecewise operation, use `with experiment.session(save=False) as session:`
+and call `session.configure_instruments()` and `session.capture_data()` inside
+that scope. Shutdown runs on session exit. Standalone configure/capture calls
+create their own transient scopes and safe on return. `set_output(value)` and
+`set_field(value)` only program the source; they do not enable output. They require
+the current execution owner or an idle command lease, rejecting foreign threads.
 
 Each acquired row stores actual elapsed time, cycle and point indices, sweep
 direction, commanded source output, calibrated field, and raw detector voltage.
@@ -118,6 +120,7 @@ estimate; this version does not monitor source readback or compliance status.
 An optional `on_update(snapshot)` callback receives data after every DMM read.
 When a field reader is enabled, the callback follows both detector and field
 reads, so each published row contains a complete pair.
+`experiment.raw_data` retains the complete acquired dataset after a run.
 Snapshots provide a bounded raw window, the last complete cycle, and the average
 of complete cycles. Averaging is by point in the ordered cycle, so opposite
 branches at the same field are not combined. Partial cycles remain in raw/saved
@@ -125,7 +128,7 @@ data but do not enter the average. Call `request_stop()` for cooperative
 cancellation. A stopped measurement saves acquired rows when saving is enabled.
 
 The normal lifecycle is configure, capture, shut down, analyze, save, update
-history. Analysis retains detector volts; it does not claim to calibrate Kerr
+`run_records`. Analysis retains detector volts; it does not claim to calibrate Kerr
 angle or magnetization. Files use the existing metadata-plus-data CSV format,
 including a JSON copy of the full calibration table and its units. Exceptions
 leave partial data available on the object but do not automatically save it.
@@ -133,7 +136,7 @@ leave partial data available on the object but do not automatically save it.
 The default shutdown ramps the command to electrical zero and disables output.
 This is not a degaussing routine, and zero command does not guarantee zero field.
 For hardware requiring a different discharge/shutdown sequence, inject
-`safe_shutdown(source)`; that callback owns the complete safe-state procedure.
+`shutdown_handler=callback` (called as `callback(source)`); that callback owns the complete safe-state procedure.
 The setup must begin idle and be exclusively controlled by this measurement.
 
 ## Optional measured-field plotting
@@ -220,3 +223,11 @@ from the source/DMM interfaces. The existing `VirtualDMM` is not automatically
 a simulated optical detector: this work does not change its existing behavior.
 Tests use the unchanged `VirtualSourcemeter` plus a voltage-reader test double
 to exercise the ordinary MOKE measurement against this model.
+
+## GUI execution
+
+The MOKE GUI uses `MeasurementRunner` with a non-daemon worker, bounded display
+queue, and separate lossless control queue. Tk polls queues on its own thread.
+Terminal receipt does not imply worker exit; instrument connections are closed
+only after the worker has exited and the runner confirms safe closing. Unsafe
+shutdown retains connections for recovery and blocks normal closing.

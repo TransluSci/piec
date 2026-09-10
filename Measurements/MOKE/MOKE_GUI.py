@@ -3,7 +3,6 @@
 import ctypes
 from pathlib import Path
 import queue
-import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -17,6 +16,7 @@ from piec.drivers.sourcemeter.sourcemeter import Sourcemeter
 from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
 from piec.measurement.gui_utils import MeasurementApp
 from piec.measurement.moke import MokeMeasurement
+from piec.measurement import MeasurementRunner, TerminalEvent, SafetyAlertEvent
 from piec.simulation.hysteretic_magnetic_material import HystereticMagneticMaterial
 
 
@@ -102,10 +102,10 @@ class MokeMeasurementApp(MeasurementApp):
         print("Ctrl+Enter: run measurement")
 
         self.experiment = None
-        self.measurement_thread = None
+        self.runner = None
+        self._terminal_event = None
         self.is_measuring = False
         self._close_when_safe = False
-        self._events = queue.Queue(maxsize=20)
         self._instruments = []
 
         resources = self.get_visa_resources()
@@ -379,11 +379,11 @@ class MokeMeasurementApp(MeasurementApp):
                 settings["calibration"].field_unit if field_reader else None
             ),
             field_reader_name=field_reader_name,
-            save_dir=settings["save_dir"],
+            output_dir=settings["save_dir"],
         )
 
     def run_measurement(self):
-        if self.is_measuring:
+        if self.is_measuring or (self.runner is not None and not self.runner.can_close()):
             return
         try:
             self.experiment = self._create_experiment()
@@ -398,34 +398,17 @@ class MokeMeasurementApp(MeasurementApp):
         self.status_label.config(text="Running: 0 complete cycles")
         self.run_button.config(state="disabled")
         self.stop_button.config(state="normal")
-        self.measurement_thread = threading.Thread(
-            target=self._measurement_worker,
-            daemon=True,
-        )
-        self.measurement_thread.start()
-
-    def _queue_event(self, kind, payload=None):
-        event = (kind, payload)
+        self._terminal_event = None
+        self.runner = MeasurementRunner(self.experiment)
         try:
-            self._events.put_nowait(event)
-        except queue.Full:
-            try:
-                self._events.get_nowait()
-            except queue.Empty:
-                pass
-            self._events.put_nowait(event)
-
-    def _measurement_worker(self):
-        try:
-            self.experiment.run_experiment(
-                on_update=lambda snapshot: self._queue_event("snapshot", snapshot),
-                save=self._save_this_run,
-            )
+            self.runner.start(save=self._save_this_run)
         except BaseException as error:
-            self._queue_event("error", error)
-        finally:
-            self._close_instruments()
-            self._queue_event("done")
+            messagebox.showerror("MOKE start error", str(error))
+            self.is_measuring = False
+            if self.runner.can_close():
+                self._close_instruments()
+                self.run_button.config(state="normal")
+            self.stop_button.config(state="disabled")
 
     def _close_instruments(self):
         seen = set()
@@ -445,35 +428,41 @@ class MokeMeasurementApp(MeasurementApp):
         if self.experiment is not None and self.is_measuring:
             self.status_label.config(text="Stopping and returning output to zero...")
             self.stop_button.config(state="disabled")
-            self.experiment.request_stop()
+            self.runner.request_stop()
 
     def _poll_events(self):
-        try:
-            while True:
-                kind, payload = self._events.get_nowait()
-                if kind == "snapshot":
-                    self._plot_snapshot(payload)
-                    self.status_label.config(
-                        text=f"Running: {payload.completed_cycles} complete cycles"
-                    )
-                elif kind == "error":
-                    print(f"MOKE measurement failed: {payload}")
-                    messagebox.showerror("MOKE measurement failed", str(payload))
-                elif kind == "done":
-                    self.is_measuring = False
+        if self.runner is not None:
+            try:
+                while True:
+                    self._plot_snapshot(self.runner.display_queue.get_nowait())
+            except queue.Empty:
+                pass
+            try:
+                while True:
+                    event = self.runner.control_queue.get_nowait()
+                    if isinstance(event, SafetyAlertEvent):
+                        self.status_label.config(text="Hardware unsafe: retain connections for recovery")
+                    elif isinstance(event, TerminalEvent):
+                        self._terminal_event = event
+                        if event.final_snapshot is not None:
+                            self._plot_snapshot(event.final_snapshot)
+                        if event.primary_error_message:
+                            messagebox.showerror("MOKE measurement failed", event.primary_error_message)
+            except queue.Empty:
+                pass
+            # Terminal delivery can precede worker exit. Retain ownership until both finish.
+            if self._terminal_event is not None and not self.runner.is_worker_alive:
+                event = self._terminal_event
+                self._terminal_event = None
+                self.is_measuring = False
+                self.stop_button.config(state="disabled")
+                self.status_label.config(text=f"{event.state.value}: safety {event.safety.status.value}")
+                if self.runner.can_close():
+                    self._close_instruments()
                     self.run_button.config(state="normal")
-                    self.stop_button.config(state="disabled")
-                    cycles = (
-                        self.experiment.completed_cycles if self.experiment else 0
-                    )
-                    self.status_label.config(text=f"Idle: {cycles} complete cycles")
-                    if self.experiment is not None:
-                        self._plot_snapshot(self.experiment.snapshot())
-                    if self._close_when_safe:
-                        self._finish_close()
-                        return
-        except queue.Empty:
-            pass
+            if self._close_when_safe and self.runner.can_close():
+                self._finish_close()
+                return
         if self.root.winfo_exists():
             self._poll_events_id = self.root.after(50, self._poll_events)
 
@@ -490,17 +479,17 @@ class MokeMeasurementApp(MeasurementApp):
         x_label = f"{x_column} ({x_unit})" if x_unit else (x_column or "field")
         y_label = f"{y_column} ({y_unit})" if y_unit else y_column
 
-        if self.show_raw.get() and not snapshot.raw.empty:
+        if self.show_raw.get() and snapshot.raw is not None and not snapshot.raw.empty:
             self.ax.plot(
                 snapshot.raw[x_column], snapshot.raw[y_column],
                 color="#888888", alpha=0.45, linewidth=1, label="real-time raw",
             )
-        if self.show_last.get() and not snapshot.last_cycle.empty:
+        if self.show_last.get() and snapshot.last_cycle is not None and not snapshot.last_cycle.empty:
             self.ax.plot(
                 snapshot.last_cycle[x_column], snapshot.last_cycle[y_column],
                 color="#4C9AFF", linewidth=2, label="last complete cycle",
             )
-        if self.show_average.get() and not snapshot.cycle_average.empty:
+        if self.show_average.get() and snapshot.cycle_average is not None and not snapshot.cycle_average.empty:
             self.ax.plot(
                 snapshot.cycle_average[x_column],
                 snapshot.cycle_average[y_column],
@@ -518,11 +507,13 @@ class MokeMeasurementApp(MeasurementApp):
             self._plot_snapshot(self._last_snapshot)
 
     def on_closing(self):
-        if self.is_measuring and self.experiment is not None:
+        if self.runner is not None:
             self._close_when_safe = True
-            self.stop_measurement()
-            self.status_label.config(text="Closing after safe shutdown...")
-            return
+            self.runner.request_close()
+            if not self.runner.can_close():
+                self.status_label.config(text="Waiting for worker exit and confirmed hardware safety...")
+                return
+        self._close_instruments()
         self._finish_close()
 
     def _finish_close(self):

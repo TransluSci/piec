@@ -148,6 +148,7 @@ class BaseMeasurement:
     and setup-specific safe shutdown.
     """
 
+    snapshot_type = MeasurementSnapshot
     supports_pause: bool = False
 
     def __init__(
@@ -242,7 +243,7 @@ class BaseMeasurement:
         """
         with self._snapshot_lock:
             if self._latest_snapshot is not None:
-                return MeasurementSnapshot(
+                return self.snapshot_type(
                     run_id=self._latest_snapshot.run_id,
                     generation=self._latest_snapshot.generation,
                     sequence=self._latest_snapshot.sequence,
@@ -257,7 +258,7 @@ class BaseMeasurement:
                 )
             else:
                 active_tok = self.active_token
-                return MeasurementSnapshot(
+                return self.snapshot_type(
                     run_id=active_tok.run_id if active_tok is not None else None,
                     generation=active_tok.generation if active_tok is not None else self._coordinator.generation,
                     sequence=0,
@@ -300,7 +301,7 @@ class BaseMeasurement:
             state = self.run_state
             safety = self.safety_status
 
-            snap = MeasurementSnapshot(
+            snap = self.snapshot_type(
                 run_id=run_id,
                 generation=generation,
                 sequence=seq,
@@ -499,7 +500,7 @@ class BaseMeasurement:
             if data is not None:
                 final_views["data"] = data.copy()
 
-            final_snapshot = MeasurementSnapshot(
+            final_snapshot = self.snapshot_type(
                 run_id=record.run_id,
                 generation=record.generation,
                 sequence=self._snapshot_sequence,
@@ -616,6 +617,7 @@ class BaseMeasurement:
             self._filename = None
             self.recoverable_staging_paths = ()
             self._partial_filename = None
+            self._reset_run_views()
 
             # Step 2: Stop-before-start check (Section 4.2 & 4.4)
             if self._coordinator.is_stop_requested:
@@ -997,6 +999,7 @@ class BaseMeasurement:
         self._filename = None
         self.recoverable_staging_paths = ()
         self._partial_filename = None
+        self._reset_run_views()
 
         if self._coordinator.is_stop_requested:
             self._transition_to(
@@ -1169,6 +1172,7 @@ class BaseMeasurement:
         self._filename = None
         self.recoverable_staging_paths = ()
         self._partial_filename = None
+        self._reset_run_views()
 
         if self._coordinator.is_stop_requested:
             self._transition_to(
@@ -1579,6 +1583,7 @@ class BaseMeasurement:
         self._filename = None
         self.recoverable_staging_paths = ()
         self._partial_filename = None
+        self._reset_run_views()
 
     def _session_configure(
         self, *, options: Optional[Mapping[str, Any]] = None
@@ -1983,6 +1988,10 @@ class BaseMeasurement:
     # ========================================================================
     # Protected Subclass Hooks (Section 3.1 & 4.4)
     # ========================================================================
+
+    def _reset_run_views(self) -> None:
+        """Reset family views after reservation, before configuration or early abort."""
+        pass
 
     def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
         """
