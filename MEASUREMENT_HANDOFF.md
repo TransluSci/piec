@@ -1,11 +1,33 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoints 11c and 12 review fixes are
-complete. The next task is **checkpoint 13 only: the IV vertical slice**, including
-IV GUI, analysis, notebook and test consumers. Follow the plan's IV-specific
-configuration, cancellable ramp/read, and paced safing requirements. The guide's
-small example illustrates the engine API; it is not the completed production IV
-migration. Commit checkpoint 13 separately before starting checkpoint 14.
+Continue on `measuremnt-standarization`. The five checkpoint 13 review findings
+are fixed. Next is **checkpoint 14 only: the MOKE vertical slice and its affected
+consumers**, following the measurement standardization plan. Validate and commit
+checkpoint 14 separately. IV GUI interaction/ownership hardening remains in
+checkpoint 15; do not describe it as completed by this patch.
+
+## Checkpoint 13 review corrections
+
+- IV configuration disables output before identity queries, source programming,
+  or sense changes. Voltage endpoints reject NaN and infinity before hardware I/O.
+- Every sweep transition uses the paced, cancellable ramp helper. `ramp_step` now
+  limits initial, between-point, and safing transitions; intermediate ramp commands
+  do not add measurement rows. Stop during a transition skips its pending read.
+  Dwell timing uses the monotonic clock.
+- Session configure/capture use the already validated request. They no longer reread
+  the caller's mutable options dictionary after entering the session.
+- Live IV raw views contain at most the latest 100 points; full raw data is built
+  from the acquisition buffer in finally, including on read/callback failure.
+  The existing authoritative terminal result remains complete. The GUI uses
+  `TerminalEvent.data` for its final plot rather than the bounded raw window.
+- The abort regression now stops after two acquired samples rather than counting
+  voltage writes, because ramp writes are not acquired samples.
+- Added `tests/test_measurement_iv_review.py`: endpoint validation, output order,
+  frozen session options, ascending/descending ramp limits, cancellation during
+  a sweep transition, bounded raw views/full retained data, and full GUI final plots.
+- Focused IV/session tests: **71 passed**. Full suite: **1194 passed, 1 skipped,
+  2 xfailed**. Real hardware and SMB validation remain
+  pending; these checks use virtual hardware and headless GUI logic.
 
 ## Checkpoint 12 corrections
 

@@ -207,7 +207,9 @@ class IVSweepApp(MeasurementApp):
                 event = self.runner.control_queue.get_nowait()
                 if isinstance(event, TerminalEvent):
                     is_done = True
-                    if event.final_snapshot is not None:
+                    if event.data is not None and not event.data.empty:
+                        self._plot_dataframe(event.data)
+                    elif event.final_snapshot is not None:
                         final_raw = event.final_snapshot.get_view("raw")
                         if final_raw is not None and not final_raw.empty:
                             self._plot_dataframe(final_raw)

@@ -421,16 +421,11 @@ class TestIVSweepRunnerAndPersistence:
             output_dir=tmp_path,
         )
 
-        call_count = [0]
-
-        def step_v(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 4:
+        def stop_after_two_points(snapshot):
+            if snapshot.completed_steps == 2:
                 iv.request_stop()
 
-        sm.set_source_voltage.side_effect = step_v
-
-        res = iv.run_experiment(save=True, save_partial=True)
+        res = iv.run_experiment(save=True, save_partial=True, on_update=stop_after_two_points)
 
         assert iv.run_state == RunState.ABORTED
         assert iv.filename is None

@@ -73,7 +73,7 @@ class IVSweep(BaseMeasurement):
             current_compliance: Maximum current compliance limit in Amperes (keyword-only).
             dwell_time: Stabilization dwell time at each step in seconds (keyword-only).
             sense_mode: Sensing mode, '2W' or '4W' (keyword-only).
-            ramp_step: Voltage step size for pre-sweep and safing ramps in Volts (keyword-only).
+            ramp_step: Maximum voltage step for initial, between-point, and safing ramps in Volts.
             ramp_delay: Delay between ramp steps in seconds (keyword-only).
             output_dir: Target directory for data persistence (keyword-only).
             metadata: Optional additional user metadata mapping (keyword-only).
@@ -81,6 +81,8 @@ class IVSweep(BaseMeasurement):
         self.sourcemeter = sourcemeter
         self.v_start = float(v_start)
         self.v_stop = float(v_stop)
+        if not math.isfinite(self.v_start) or not math.isfinite(self.v_stop):
+            raise ValueError("v_start and v_stop must be finite voltages")
         self.num_steps = int(num_steps)
         if self.num_steps < 1:
             raise ValueError(f"num_steps must be >= 1, got {self.num_steps}")
@@ -165,6 +167,9 @@ class IVSweep(BaseMeasurement):
         if request.options and "compliance_current" in request.options:
             compliance = float(request.options["compliance_current"])
 
+        # Disable a potentially energized source before changing its configuration.
+        self.sourcemeter.output(channel=1, on=False)
+
         # Query instrument identity on worker thread during configuration
         try:
             idn = str(self.sourcemeter.idn())
@@ -181,18 +186,17 @@ class IVSweep(BaseMeasurement):
             current_compliance=compliance,
         )
         self.sourcemeter.set_sense_mode(channel=1, sense_mode=self.sense_mode)
-        self.sourcemeter.output(channel=1, on=False)
         self._current_voltage = 0.0
 
     def _cancellable_dwell(self, duration: float) -> None:
         """Dwell in small time increments checking cooperative cancellation."""
         if duration <= 0:
             return
-        end_time = time.time() + duration
-        while time.time() < end_time:
+        end_time = time.monotonic() + duration
+        while time.monotonic() < end_time:
             if self._coordinator.is_stop_requested:
                 break
-            remaining = end_time - time.time()
+            remaining = end_time - time.monotonic()
             time.sleep(min(0.05, max(0.0, remaining)))
 
     def _ramp_to(self, target_voltage: float) -> None:
@@ -242,8 +246,9 @@ class IVSweep(BaseMeasurement):
                     break
 
                 target_v = float(v)
-                self.sourcemeter.set_source_voltage(channel=1, voltage=target_v)
-                self._current_voltage = target_v
+                self._ramp_to(target_v)
+                if self._coordinator.is_stop_requested:
+                    break
 
                 self._cancellable_dwell(self.dwell_time)
                 if self._coordinator.is_stop_requested:
@@ -255,9 +260,10 @@ class IVSweep(BaseMeasurement):
                 row = {"voltage": measured_v, "current": measured_i}
                 collected_rows.append(row)
 
-                self._raw_data = pd.DataFrame(collected_rows, columns=["voltage", "current"])
+                # Full raw data is materialized once in finally; live copies stay bounded.
+                raw_window = pd.DataFrame(collected_rows[-100:], columns=["voltage", "current"])
                 snap = self.publish_snapshot(
-                    views={"raw": self._raw_data},
+                    views={"raw": raw_window},
                     completed_steps=len(collected_rows),
                     total_steps=self.num_steps,
                     current_voltage=target_v,

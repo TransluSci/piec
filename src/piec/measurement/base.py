@@ -108,7 +108,7 @@ class MeasurementSession:
 
     def configure_instruments(self) -> None:
         """Configures instruments within the active session scope."""
-        self._measurement._session_configure(options=self._options)
+        self._measurement._session_configure()
 
     def capture_data(
         self,
@@ -117,7 +117,7 @@ class MeasurementSession:
     ) -> pd.DataFrame:
         """Captures data within the active session scope (at most once)."""
         return self._measurement._session_capture(
-            on_update=on_update, options=self._options
+            on_update=on_update
         )
 
     def safe_shutdown(self) -> SafetyReport:
