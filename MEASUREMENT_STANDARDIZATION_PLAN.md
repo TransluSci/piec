@@ -64,7 +64,7 @@ Suggested implementation prompt:
 | 15 | Completed | Hardened IV GUI interaction and ownership against race conditions and thread safety. Enforced single hardware writer rule across callbacks (blocking new runs or VISA refresh while active). Tracked GUI-created instruments and gated teardown on confirmed safety (SAFE/NOT_NEEDED) and worker death. Retained instrument connections and blocked window close when safety is UNSAFE. Coordinated window closing (WM_DELETE_WINDOW) with cooperative stop and non-blocking polling. Handled Stop-before-start zero-I/O aborts, dual queues, live bounded display views, complete terminal event data plotting, and error/recovery reporting. Added 8 comprehensive regression tests in tests/test_measurement_iv_gui.py (10 passed). Focused IV suites: 53 passed; full test suite: 1228 passed, 1 skipped, 2 xfailed in 26.38s on Python 3.13.2. Checkpoint 16 is next. |
 | 15 review | Completed | Fixed deferred connection teardown after safety retry, recovery-path lookup from terminal RunRecord metadata, and pre-run plot-axis handling. Added three GUI regressions; focused IV GUI/review tests 26 passed. Default full run encountered missing host Tk icons.tcl in a PUND plotting test; Agg-backend full suite: 1231 passed, 1 skipped, 2 xfailed; command recorded in MEASUREMENT_HANDOFF.md. Checkpoint 16 remains next. |
 | 16 | Completed | Hardened MOKE GUI interaction and ownership against race conditions, thread safety, and resource ownership. Enforced single hardware writer rule in refresh_instruments, browse_calibration, and run_measurement. Gated deferred connection teardown on confirmed safety (SAFE/NOT_NEEDED) before window destruction, retaining open connections on UNSAFE shutdown. Extracted recoverable staging paths from TerminalEvent.record.metadata on save failure. Hardened pre-run controls (trace toggles, geometry combobox, STOP, and redraw) as safe operations before initial run. Bound geometry selection to dynamic plot title updates. Added 8 comprehensive regression tests in tests/test_moke_gui.py (13 passed). Focused MOKE suites: 96 passed; full test suite (with Agg backend): 1239 passed, 1 skipped, 2 xfailed in 24.30s on Python 3.13.2. Checkpoint 17 is next. |
-| 17 | PENDING | Physical hardware testing is unavailable in execution environment (no physical VISA instruments connected; pyvisa.ResourceManager().list_resources() returned empty). Virtual and headless test suites pass (1249 passed, 1 skipped, 2 xfailed on Python 3.13.2) but do not validate physical hardware. Documented physical execution record template, safety requirements, staged MOKE validation protocol, and remaining hardware verification checklist in Section 13.1 and docs/physical_validation_iv_moke.md. Checkpoint 18 is next. |
+| 17 | PENDING | Physical hardware testing is unavailable in execution environment (Gemini reported an empty VISA discovery result; no physical execution recorded). Virtual and headless test suites pass (1249 passed, 1 skipped, 2 xfailed on Python 3.13.2) but do not validate physical hardware. Documented physical execution record template, safety requirements, staged MOKE validation protocol, and remaining hardware verification checklist in Section 13.1 and docs/physical_validation_iv_moke.md. Checkpoint 17 remains PENDING; wait for user direction before checkpoint 18. |
 
 
 Checkpoint 16 review completed: geometry choices now restore independent session-local
@@ -80,7 +80,7 @@ Checkpoint 17 recorded: physical execution is **PENDING** as physical VISA instr
 are unavailable in this test environment. Virtual tests pass but do not substitute for
 physical hardware validation. Staged validation protocol and remaining hardware checks
 documented in Section 13.1 and `docs/physical_validation_iv_moke.md`.
-Checkpoint **18 only** is next: in-memory hysteresis processing.
+The checkpoint 17 template is complete; physical validation remains **PENDING**. Stop here until the user requests further work.
 
 2R handoff: `assert_family_interface` selects reference or target structural checks using `migrated_families`; mark a family migrated only with its own execution/schema/safety tests. `assert_numerical_data_matches_reference` requires all expected columns (use `view="raw"` for raw FE), accepts reference or target names, and compares waveform time including negative pre-trigger values. Only MOKE's manifest-declared elapsed clocks may vary. `assert_golden_csv_matches` compares time by default; MOKE callers explicitly pass `time_columns=("time", "field_time")` for elapsed clocks. Keep waveform timing numerical. The uncommitted 2b MOKE golden calls have been adjusted to this explicit policy.
 
@@ -757,59 +757,28 @@ MOKE validation is staged: first source plus DMM into a benign electrical load a
 
 ### 13.1 Checkpoint 17: IV and MOKE physical validation record (PENDING)
 
-Status: **PENDING** (automated/virtual tests passing; physical hardware verification pending).  
-Reference document: `docs/physical_validation_iv_moke.md`.
+The record template is complete; physical validation remains **PENDING**.
+Use `docs/physical_validation_iv_moke.md` as the single detailed template for the
+Section 13 record fields, staged execution, observation log and sign-off.
 
-In accordance with Section 13, virtual and simulated test runs do not prove physical safety or constitute physical hardware validation. In the current execution environment, no physical VISA instruments were detected (`pyvisa.ResourceManager().list_resources()` returned `()`). Therefore, Checkpoint 17 remains explicitly marked **PENDING**.
+Gemini reported an empty VISA discovery result; no actual hardware execution is
+recorded. This discovery result is not proof that all interfaces were searched.
+Historical virtual/software results are not physical evidence.
 
-The required physical execution record template, safety requirements, and staged validation protocols are established below and in `docs/physical_validation_iv_moke.md`.
+Before execution, the operator must establish and record bench-specific limits,
+acceptance criteria and their basis. No universal voltage/current accuracy,
+residual-field threshold or Stop latency is imposed by this template. Record the
+actual instruments, supported drivers, wiring, calibration and tested commit.
+The example MOKE calibration is illustrative and cannot validate physical field.
 
-#### Record Fields (to be populated upon physical execution)
-- **Date and tester**: PENDING (to be recorded by laboratory operator upon physical execution).
-- **Instruments & firmware**:
-  - *IV*: Keithley 2400 SourceMeter (GPIB/Serial/USB address, serial/asset number, firmware version).
-  - *MOKE Source*: Sourcemeter / bipolar electromagnet power supply (address, asset ID, firmware).
-  - *MOKE Detector*: DMM (Agilent 34410A, Keithley 2000, or Keithley 193a; address, asset ID, firmware).
-  - *MOKE Field Reader (optional)*: Digital gaussmeter / secondary DMM (address, asset ID, firmware).
-  - *Monitoring*: Independent bench DMM / calibrated oscilloscope for output verification.
-- **Wiring/load and measurement geometry**:
-  - *IV*: 4-wire (Kelvin) or 2-wire connection to known benign calibration load (e.g. 1 kΩ precision resistor) followed by semiconductor diode / DUT.
-  - *MOKE*: Staged wiring starting with benign electrical load (Stage 1), then moving to electromagnet coil with established pole geometry (in-plane / out-of-plane).
-- **Driver and repository commit**:
-  - Commit: `6b8cd96` (or later commit on `measuremnt-standarization`).
-  - VISA implementation: NI-VISA / Keysight VISA backend.
-- **Configured limits and compliance**:
-  - *IV*: Voltage limits `[-5.0 V, +5.0 V]`, current compliance `10 mA`, power limit `0.5 W`.
-  - *MOKE*: Voltage/current limits according to magnet coil rating, field compliance, ramp parameters (`max_output_step <= 0.1 V`, `ramp_delay >= 0.05 s`).
-- **Physical interlock and manual emergency procedure**:
-  - Hardware emergency power-off / interlock switch verified prior to energization.
-  - Operator manual cutoff procedure documented if software safing is interrupted.
-- **Commanded-versus-observed output/readback**:
-  - Verification with independent oscilloscope / DMM that commanded voltage matches physical terminal voltage within specified tolerance (e.g. ±0.1% + 1 mV).
-  - Verification that 0 V setpoint outputs 0.000 V (residual < 1 mV).
-- **Stop and window-close latency**:
-  - Measured latency from clicking GUI "Stop" or calling `runner.request_stop()` until output ramps to 0 V and disables (target < 500 ms for benign ramp).
-  - Measured latency for `WM_DELETE_WINDOW` to cleanly join worker and confirm safety.
-- **Injected/read timeout behavior**:
-  - Disconnect transport cable during sweep; confirm engine transitions to `FAILED` with `UNSAFE` status, retains connections, and alerts operator without crashing GUI.
-- **Observed final output-enable state and residual output/field**:
-  - Physical voltmeter / gaussmeter confirms output relay is open / output disabled (`:OUTP OFF`) and residual field is within baseline noise (< 1 G / < 1 mV).
-- **Pass/fail result and anomalies**:
-  - Complete observation of any hardware anomalies, communication retries, or unexpected transients.
+Distinguish acquisition failure from shutdown failure: a detector error can end
+FAILED with SAFE shutdown; connections can then close after worker exit. UNSAFE
+shutdown retains connections and defers normal closure. Observe physical output
+independently and record whether an interlock is visible to software.
 
-#### Staged MOKE Validation Protocol (Mandatory)
-1. **Stage 1: Benign Electrical Load**:
-   - Connect Keithley 2400 (or equivalent source) and DMM across a benign resistive dummy load (e.g., 100 Ω, 10 W resistor) with an oscilloscope monitoring the terminals.
-   - Run calibrated MOKE sweep.
-   - Verify smooth, paced transitions without overshoot; verify zero-ramp and output disable on completion and abort.
-2. **Stage 2: Magnet and Amplifier Integration**:
-   - Connect to electromagnet coil power amplifier with physical thermal and current interlocks engaged.
-   - Verify calibrated field calculations against independent Hall probe.
-   - Verify that Stop button cleanly ramps magnet current to zero and disables output.
-3. **Stage 3: Full Optical Bench Integration**:
-   - Align laser, polarizer, analyzer, and photodetector.
-   - Run in-plane and out-of-plane sweeps on a known magnetic thin film standard (e.g., standard NiFe or CoFeB).
-   - Verify live display (raw, last cycle, cycle average) and CSV publication.
+Keep checkpoint 17 PENDING until dated physical execution and sign-off exist.
+The plan permits later offline work, but this handoff stops before checkpoint 18
+until the user requests it.
 
 ## 14. Definition of done
 

@@ -1,26 +1,28 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 17 is complete (PENDING hardware execution). Next is
-**checkpoint 18 only: in-memory hysteresis processing**, following the
-measurement standardization plan. Validate and commit checkpoint 18 separately.
+Continue on `measuremnt-standarization`. The checkpoint 17 record template and
+review corrections are complete. Physical validation remains **PENDING**.
+Do not start checkpoint 18 until the user requests it. Later offline work is
+permitted by the plan without marking physical validation complete.
 
-## Checkpoint 17 IV/MOKE physical validation record (PENDING)
+## Checkpoint 17 documentation review corrections
 
-- Hardware validation status: **PENDING**.
-- Execution environment: Headless CI / development machine (`pyvisa.ResourceManager().list_resources()`
-  returned empty `()`). Physical instruments are not attached.
-- In accordance with Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md`, virtual benches
-  and software mocks do not prove physical safety. Physical checkpoints stay marked
-  `PENDING` until a dated record of actual hardware execution is completed.
-- Offline work is explicitly permitted to continue: Section 1 notes "Hardware checkpoints
-  are independent manual release gates, not a reason to stop offline work on other families."
-- Documented physical execution record template, safety requirements, staged MOKE
-  validation protocol (Stage 1 benign load, Stage 2 magnet/amplifier, Stage 3 optical bench),
-  and remaining hardware checklist in `MEASUREMENT_STANDARDIZATION_PLAN.md` Section 13.1
-  and `docs/physical_validation_iv_moke.md`.
-- Automated test validation: Full repository suite with Matplotlib Agg:
-  **1249 passed, 1 skipped, 2 xfailed** in 26.53s on Python 3.13.2.
-
+- Require actual bench-specific calibration for physical field validation;
+  `example_calibration.csv` is illustrative only.
+- Removed invented numerical acceptance limits and fixed hardware prescriptions.
+  The operator records supported instruments, setup limits, tolerances and their
+  basis before execution. Stop timing accounts for ramp settings and I/O timeouts.
+- Separate acquisition failure with successful SAFE shutdown from UNSAFE shutdown.
+  Only the latter requires connections to remain available for safety recovery.
+- Do not assume interlock state is reported to software, output-disable commands
+  prove relay position, or failed staging always leaves recoverable data.
+- Section 13.1 links to the single detailed record template in
+  `docs/physical_validation_iv_moke.md`, avoiding conflicting protocol copies.
+- Gemini's empty VISA discovery result is recorded as reported, not as proof that
+  no physical instruments exist. Actual hardware execution and sign-off are PENDING.
+- Documentation-only review: checked the diff and consistency with the current
+  shutdown and GUI ownership implementation. No new test suite or hardware run.
+  Prior software validation at `6b8cd96`: 1249 passed, 1 skipped, 2 xfailed with Agg.
 
 ## Checkpoint 16 review corrections
 

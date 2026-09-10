@@ -1,117 +1,70 @@
 # IV and MOKE Physical Validation Record (Checkpoint 17)
 
-Status: **PENDING**  
-Date: 2026-09-10  
-Repository Commit: `6b8cd9682a715acef7d37b551bc18dcc33914359` (branch `measuremnt-standarization`)  
-Execution Environment: Headless/Automated CI environment (Windows 11, Python 3.13.2)  
+Physical validation: **PENDING**. The template is complete; physical execution is not.
 
-> [!IMPORTANT]
-> **Automated and virtual tests do not prove physical safety.**  
-> In accordance with Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md`, virtual benches and software mocks validate interface contracts, thread coordination, data schemas, and mathematical algorithms, but they do NOT substitute for physical hardware validation.  
-> Physical instruments were not detected in this environment (`pyvisa.ResourceManager().list_resources()` returned `()`). Therefore, Checkpoint 17 remains explicitly marked **PENDING** until actual physical testing is conducted on laboratory hardware.
+- Template prepared: 2026-09-10. Physical execution date and operator: **PENDING**.
+- Software reference: `6b8cd9682a715acef7d37b551bc18dcc33914359` on `measuremnt-standarization`. Record the exact tested commit when executing.
+- Gemini reported that `pyvisa.ResourceManager().list_resources()` returned `()`. This describes that discovery result; it does not prove no instruments exist or that every interface was searched.
 
----
+Automated and virtual tests do not prove physical safety. Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md` requires actual dated execution.
 
-## 1. Physical Hardware Requirements and Specification
+## 1. Bench setup and acceptance criteria
 
-To satisfy Checkpoint 17, physical execution must be carried out on laboratory hardware meeting the specifications below, and this record must be updated with actual measured data, dates, and operator signatures.
+The operator must complete these fields before execution. This template supplies no universal numerical tolerances or instrument certification.
 
-### 1.1 IV Sweep Hardware Setup
-- **Sourcemeter**: Keithley 2400 (or certified Keithley 2400-compatible SMU)
-  - Asset / Serial Number: *PENDING*
-  - Firmware Revision: *PENDING*
-  - Interface: GPIB / RS-232 / USB-to-Serial
-- **Calibration Load**:
-  - Known benign resistive standard (e.g. 1.000 kΩ ± 0.1% metal-film resistor)
-  - Verification diode / test device (e.g. 1N4148 silicon diode)
-- **Monitoring Equipment**:
-  - Calibrated 6.5-digit DMM or dual-channel digital storage oscilloscope (DSO) placed across output terminals to observe transitions independently.
+| Required record | Value |
+|---|---|
+| Operator, execution date, repository commit and driver versions | PENDING |
+| Source, detector, optional field reader: model, serial/asset ID, firmware, address and supported driver/adapter | PENDING |
+| Independent monitoring equipment and measurement uncertainty | PENDING |
+| Wiring, source channel, load ratings and geometry | PENDING |
+| Source mode, range, compliance, ramp step/delay, dwell and transport timeouts | PENDING |
+| Amplifier/magnet ratings, established limits and interlock | PENDING |
+| Manual emergency procedure and approved fault-injection method | PENDING |
+| Calibration identity, measured points, units, valid range and geometry | PENDING |
+| Acceptance limits and their basis in specifications, calibration uncertainty and bench requirements | PENDING |
 
-### 1.2 MOKE Measurement Hardware Setup
-- **Electromagnet Current/Voltage Source**:
-  - Keithley 2400 or certified bipolar magnet power supply
-  - Asset / Serial Number: *PENDING*
-  - Firmware Revision: *PENDING*
-- **Detector DMM**:
-  - Agilent 34410A, Keithley 2000, or Keithley 193a
-  - Asset / Serial Number: *PENDING*
-  - Firmware Revision: *PENDING*
-- **Field Reader (Optional / Measured-field mode)**:
-  - Calibrated digital Gaussmeter with analog or digital readback
-  - Asset / Serial Number: *PENDING*
-- **Optical Bench & Magnet System**:
-  - Laser diode source, polarizer, analyzer, photodiode detector
-  - Electromagnet coil with known calibration curve (`example_calibration.csv` or bench-specific calibration)
-  - Physical thermal interlock on coil and amplifier heat sink
+Physical field validation requires a measured calibration for the actual source/amplifier/magnet setup and geometry. `Measurements/MOKE/example_calibration.csv` is explicitly illustrative and is **not a hardware calibration**. Any synthetic mapping used for dummy-load software checks must be identified as such and cannot support a field-accuracy claim.
 
----
+Confirm support in the chosen driver/adapter. The current MOKE GUI uses a separate DMM and voltage-to-field conversion for physical measured-field input; a generic digital gaussmeter is not automatically interchangeable with that path.
 
-## 2. Staged Validation Protocol (Mandatory)
+## 2. Staged execution
 
-Per Section 13 of the standardization plan, MOKE hardware validation must be staged to prevent hardware damage from uncontrolled field/current transitions:
+Complete the benign electrical stage before amplifier/magnet testing, as required by Section 13. All setup values and numerical acceptance limits remain PENDING until established for the bench.
 
-### Stage 1: Benign Electrical Dummy Load (Source + DMM + Oscilloscope)
-- **Procedure**:
-  1. Terminate the sourcemeter into a benign resistive load (e.g. 100 Ω, 10 W power resistor or 1 kΩ load) rather than the electromagnet coil.
-  2. Connect the DMM input across the load (or a separate sense resistor) to simulate the detector.
-  3. Monitor the source output on an independent oscilloscope.
-  4. Run a multi-cycle MOKE sweep with `output_min = -2.0 V`, `output_max = 2.0 V`, `max_output_step = 0.1 V`, `ramp_delay = 0.05 s`.
-- **Validation Criteria**:
-  - Smooth, monotonic voltage transitions without voltage spikes or inductive ringing.
-  - Zero-ramp returns output voltage to 0.000 V (within ±1 mV) upon completion.
-  - Pressing **STOP** triggers an immediate abort, halts forward steps, ramps output to 0 V, and opens the output relay (`:OUTP OFF`).
-  - Window close request (`WM_DELETE_WINDOW`) defers closure until the worker terminates and safing is confirmed `SAFE`.
+1. **IV/MOKE benign electrical load:** use a known, suitably rated load, source and detector with independent output monitoring (oscilloscope for MOKE transitions). Record commanded versus observed outputs, compliance, ramp transitions, completion, Stop and window-close behavior.
+2. **MOKE amplifier/magnet:** use established limits, interlock and manual emergency procedure. Record calibrated and measured-field results using the actual calibration and independent field observations. Record final source output, output-enable state and residual field separately.
+3. **MOKE optical bench:** record sample, geometry, detector settings and expected reference response. Verify raw, last-cycle and average displays, responsiveness and published data. Detector voltage alone does not establish calibrated Kerr rotation.
 
-### Stage 2: Magnet and Bipolar Amplifier Integration
-- **Procedure**:
-  1. Verify physical interlocks: over-temperature cutoff and maximum current limit.
-  2. Connect source to bipolar amplifier / magnet coil.
-  3. Place a calibrated Hall probe in the pole gap.
-  4. Run calibrated-field sweep and measured-field sweep.
-- **Validation Criteria**:
-  - Commanded field matches Hall probe readback across the full sweep range within calibration tolerance.
-  - Paced ramping respects coil inductance limits without tripping amplifier fault protection.
-  - Deliberate simulated fault (e.g. disconnecting DMM cable or tripping interlock) engages attempt-all safing, disables source output, retains connections for inspection, and alerts the operator.
+Stop requests cooperative cancellation. Record time to stop acquisition, complete shutdown and release connections separately. Shutdown timing depends on configured ramp settings, in-flight instrument calls and timeouts; there is no universal 500 ms requirement or immediate-abort guarantee. Independently observe physical output: an output-disable command alone does not prove relay position or zero residual field.
 
-### Stage 3: Full Optical Bench Integration
-- **Procedure**:
-  1. Energize laser, optical path, and photodiode detector.
-  2. Mount a standard reference magnetic thin film (e.g. 20 nm NiFe or CoFeB).
-  3. Execute in-plane and out-of-plane loops through the MOKE GUI.
-- **Validation Criteria**:
-  - Expected hysteresis loop shape, coercive field, and Kerr rotation observed.
-  - Live GUI display shows real-time raw points, last completed cycle, and cycle average without UI freezing.
-  - Final CSV publication succeeds with standard 1-row metadata, valid units, and no file collisions.
+## 3. Fault behavior and observation log
 
----
+Use the bench-approved fault-injection method, beginning on a benign load. Record the fault, primary error, each shutdown attempt, `RunState`, `SafetyStatus`, physical output and connection ownership.
 
-## 3. Physical Validation Checklist & Observation Log (PENDING)
+- A detector/read failure can produce `FAILED` with successful `SAFE` shutdown. GUI-owned connections may then be released after worker exit.
+- Required shutdown action failures produce `UNSAFE`: retain connections for recovery and defer normal window closing. Output disable is attempted; delivery cannot be guaranteed through a failed source transport.
+- A physical interlock is not automatically a software error source. Record its detection path, if any, and actual hardware/software observations.
+- Stop before instrument I/O can produce `ABORTED` with `NOT_NEEDED` safety.
 
-The following checklist must be completed and signed by the test operator before Checkpoint 17 can transition from `PENDING` to `COMPLETED`:
+| Check | Acceptance criterion | Evidence / result | Status |
+|---|---|---|---|
+| IV readback and compliance | Operator-defined limits and documented basis | PENDING | PENDING |
+| IV/MOKE Stop and window-close timing | Bench-specific budget; worker-exit and safety gates respected | PENDING | PENDING |
+| MOKE ramp transitions and residual electrical output | Bench-specific transient and residual-output limits | PENDING | PENDING |
+| Output-enable state and residual field | Independent observations against bench-specific limits | PENDING | PENDING |
+| Calibrated versus measured field | Actual calibration range and uncertainty-based tolerance | PENDING | PENDING |
+| Acquisition failure with successful shutdown | Error reported; connections releasable after worker exit and SAFE | PENDING | PENDING |
+| Shutdown failure / source transport failure | UNSAFE reported; connections retained; recovery recorded | PENDING | PENDING |
+| Interlock / manual emergency procedure | Bench-defined physical behavior and software observations | PENDING | PENDING |
+| Optical response, geometry and averages | Reference response and agreement with raw-data processing | PENDING | PENDING |
+| CSV publication and recovery | Standard schema; actual failure stage and remaining files recorded | PENDING | PENDING |
 
-| Item # | Verification Parameter | Target Specification | Observed Physical Result | Status |
-|---|---|---|---|---|
-| 1 | **IV Output Voltage Accuracy** | Commanded vs. DMM readback within ±0.1% + 1 mV across ±5 V | *Pending bench execution* | PENDING |
-| 2 | **IV Current Compliance Limit** | Current clamp activates within ±1% of compliance setpoint (e.g. 10 mA) | *Pending bench execution* | PENDING |
-| 3 | **IV Stop Button Latency** | Output voltage reaches 0 V and `:OUTP OFF` within < 500 ms of Stop click | *Pending bench execution* | PENDING |
-| 4 | **IV Window Close Coordination** | Window close during active sweep waits for zero-ramp and worker exit | *Pending bench execution* | PENDING |
-| 5 | **IV Transport Fault Safing** | Cable disconnect mid-sweep transitions to `FAILED`, flags `UNSAFE`, alerts user | *Pending bench execution* | PENDING |
-| 6 | **MOKE Stage 1 Waveform Quality** | Oscilloscope verifies smooth paced ramping without overshoot on dummy load | *Pending bench execution* | PENDING |
-| 7 | **MOKE Stage 1 Residual Output** | Final output voltage <= 1 mV, output relay open (`:OUTP OFF`) | *Pending bench execution* | PENDING |
-| 8 | **MOKE Stage 2 Field Accuracy** | Calibrated field vs. Hall probe readback within ±2% of full scale | *Pending bench execution* | PENDING |
-| 9 | **MOKE Stage 2 Emergency Cutoff** | Manual emergency cutoff immediately de-energizes coil without software lockup | *Pending bench execution* | PENDING |
-| 10 | **MOKE Stage 3 Loop Fidelity** | Standard reference sample reproduces expected hysteresis parameters | *Pending bench execution* | PENDING |
-| 11 | **MOKE Multi-cycle Averaging** | Published CSV cycle average matches processed raw data | *Pending bench execution* | PENDING |
-| 12 | **Staging Path Recovery** | Deliberate filesystem write-protect retains uncorrupted raw staging file | *Pending bench execution* | PENDING |
+Recovery checks must distinguish publication failure after staging from inability to create/write staging. A write-protected destination does not by itself guarantee a complete recoverable file. Verify the files that actually remain.
 
----
+## 4. Evidence and next action
 
-## 4. Sign-Off & Status Summary
-
-- **Current Status**: **PENDING**
-- **Automated / Headless Test Results**:
-  - Full repository test suite (Agg backend): **1249 passed, 1 skipped, 2 xfailed** in 26.53s on Python 3.13.2.
-  - All unit, GUI, runner, session, persistence, and mathematical simulation tests are fully passing.
-- **Next Steps**:
-  - Physical execution will be scheduled on available laboratory hardware.
-  - As permitted by Section 1 ("Hardware checkpoints are independent manual release gates, not a reason to stop offline work on other families"), offline work proceeds to **Checkpoint 18** (In-memory hysteresis processing).
+- Historical software validation at `6b8cd96`: **1249 passed, 1 skipped, 2 xfailed** in 26.53s with Matplotlib Agg. This is not a new test run or physical validation.
+- Physical traces, files, anomalies, pass/fail decisions and operator sign-off: **PENDING**.
+- Keep checkpoint 17 PENDING until actual execution and its record are complete. This template does not authorize hardware operation or advance implementation.
+- Stop at this handoff; do not start checkpoint 18 until requested by the user. The plan allows later offline work while physical validation remains pending.
