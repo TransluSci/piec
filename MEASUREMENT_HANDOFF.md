@@ -1,8 +1,40 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 15 is complete. Next is
-**checkpoint 16 only: MOKE GUI interaction/ownership hardening**, following the
-measurement standardization plan. Validate and commit checkpoint 16 separately.
+Continue on `measuremnt-standarization`. Checkpoint 16 is complete. Next is
+**checkpoint 17 only: IV/MOKE physical record**, following the
+measurement standardization plan. Validate and commit checkpoint 17 separately.
+
+## Checkpoint 16 MOKE GUI interaction and ownership hardening
+
+- Single hardware writer rule: callbacks (`refresh_instruments`, `browse_calibration`,
+  `run_measurement`) reject hardware commands/queries or calibration modifications
+  while a measurement is active (`is_measuring`).
+- Connection ownership & deferred teardown: GUI-created instruments are tracked in
+  `_instruments` and closed strictly after worker thread termination, terminal event
+  delivery, and confirmed hardware safety (`SAFE` or `NOT_NEEDED`).
+- Unsafe shutdown retention: If shutdown fails (`UNSAFE`), instrument connections are
+  retained open for diagnosis/recovery, normal window closing is deferred, and connections
+  are only released if a subsequent safe retry succeeds before window destruction.
+- Window close coordination: `WM_DELETE_WINDOW` requests cooperative stop via
+  `runner.request_close()`, defers window destruction, and polls until the worker
+  has cleanly terminated with confirmed safety.
+- Stop-before-start zero-I/O abort: Immediate stop requests transition cleanly to
+  `ABORTED` with `NOT_NEEDED` safety without executing any hardware commands, releasing
+  connections cleanly.
+- Terminal recovery paths: On save failure, recoverable staging paths are extracted
+  from `TerminalEvent.record.metadata["recoverable_staging_paths"]` and reported to
+  the console.
+- Pre-run control safety: Controls like trace toggles, geometry combobox, STOP, and
+  redraw safely handle `_last_snapshot` and `runner` being None/unset before the first run.
+- Dynamic geometry title updates: Bound geometry combobox selection to redraw current
+  snapshot, updating the plot title dynamically.
+- Setup validation errors: Invalid inputs (e.g. inverted min/max output) display an error
+  dialog and abort before creating a runner or leaving dangling instruments.
+- Added 8 comprehensive regression tests in `tests/test_moke_gui.py` (13 passed).
+  Focused MOKE suites: **96 passed**. Full test suite (with Agg backend):
+  **1239 passed, 1 skipped, 2 xfailed** in 24.30s on Python 3.13.2.
+  Physical hardware and the opt-in SMB path remain unverified.
+
 
 ## Checkpoint 15 review corrections
 

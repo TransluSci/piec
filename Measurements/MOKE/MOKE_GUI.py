@@ -159,6 +159,7 @@ class MokeMeasurementApp(MeasurementApp):
             self.static_frame, 4, "Geometry:", ["in-plane", "out-of-plane"],
             DEFAULTS["geometry"],
         )
+        self.geometry_entry.bind("<<ComboboxSelected>>", lambda e: self._redraw_current())
         self.calibration_entry = self._labeled_entry(
             self.static_frame, 5, "Calibration CSV:",
             DEFAULTS["calibration_path"], width=32,
@@ -241,6 +242,9 @@ class MokeMeasurementApp(MeasurementApp):
         self.stop_button.pack(side="left", padx=5)
 
     def browse_calibration(self):
+        if getattr(self, "is_measuring", False):
+            print("Cannot change calibration while a measurement is active.")
+            return
         filename = filedialog.askopenfilename(
             title="Select field calibration",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
@@ -249,6 +253,9 @@ class MokeMeasurementApp(MeasurementApp):
             self._set_entry(self.calibration_entry, filename)
 
     def refresh_instruments(self):
+        if getattr(self, "is_measuring", False):
+            print("Cannot refresh instruments while a measurement is active.")
+            return
         resources = self.get_visa_resources()
         addresses = ["VIRTUAL"] + resources
         current_source = self.source_address_entry.get()
@@ -425,7 +432,7 @@ class MokeMeasurementApp(MeasurementApp):
         self._instruments = []
 
     def stop_measurement(self):
-        if self.experiment is not None and self.is_measuring:
+        if getattr(self, "is_measuring", False) and getattr(self, "runner", None) is not None:
             self.status_label.config(text="Stopping and returning output to zero...")
             self.stop_button.config(state="disabled")
             self.runner.request_stop()
@@ -446,6 +453,22 @@ class MokeMeasurementApp(MeasurementApp):
                         self._terminal_event = event
                         if event.final_snapshot is not None:
                             self._plot_snapshot(event.final_snapshot)
+                        print(
+                            f"Measurement finished with state {event.state.value}, "
+                            f"safety {event.safety.status.value}"
+                        )
+                        if event.filename:
+                            print(f"Data saved to: {event.filename}")
+                        elif event.partial_filename:
+                            print(f"Partial data saved to: {event.partial_filename}")
+
+                        recovery_paths = (
+                            event.record.metadata.get("recoverable_staging_paths", ())
+                            if event.record is not None else ()
+                        )
+                        if recovery_paths:
+                            print(f"Recoverable data staging paths: {recovery_paths}")
+
                         if event.primary_error_message:
                             messagebox.showerror("MOKE measurement failed", event.primary_error_message)
             except queue.Empty:
@@ -455,12 +478,16 @@ class MokeMeasurementApp(MeasurementApp):
                 event = self._terminal_event
                 self._terminal_event = None
                 self.is_measuring = False
-                self.stop_button.config(state="disabled")
-                self.status_label.config(text=f"{event.state.value}: safety {event.safety.status.value}")
+                if hasattr(self, "stop_button") and self.stop_button is not None:
+                    self.stop_button.config(state="disabled")
+                if hasattr(self, "status_label") and self.status_label is not None:
+                    self.status_label.config(text=f"{event.state.value}: safety {event.safety.status.value}")
                 if self.runner.can_close():
                     self._close_instruments()
-                    self.run_button.config(state="normal")
+                    if hasattr(self, "run_button") and self.run_button is not None:
+                        self.run_button.config(state="normal")
             if self._close_when_safe and self.runner.can_close():
+                self._close_instruments()
                 self._finish_close()
                 return
         if self.root.winfo_exists():
@@ -469,27 +496,31 @@ class MokeMeasurementApp(MeasurementApp):
     def _plot_snapshot(self, snapshot):
         self._last_snapshot = snapshot
         self.ax.clear()
-        x_column = snapshot.field_column or "field_calibrated"
+        x_column = getattr(snapshot, "field_column", None) or "field_calibrated"
         y_column = "detector_voltage"
 
-        units = getattr(self.experiment, "column_units", {}) if self.experiment is not None else {}
+        units = getattr(self.experiment, "column_units", {}) if getattr(self, "experiment", None) is not None else {}
         x_unit = units.get(x_column)
         y_unit = units.get(y_column, "V")
 
         x_label = f"{x_column} ({x_unit})" if x_unit else (x_column or "field")
         y_label = f"{y_column} ({y_unit})" if y_unit else y_column
 
-        if self.show_raw.get() and snapshot.raw is not None and not snapshot.raw.empty:
+        show_raw = getattr(self, "show_raw", None)
+        show_last = getattr(self, "show_last", None)
+        show_average = getattr(self, "show_average", None)
+
+        if (show_raw is None or show_raw.get()) and getattr(snapshot, "raw", None) is not None and not snapshot.raw.empty:
             self.ax.plot(
                 snapshot.raw[x_column], snapshot.raw[y_column],
                 color="#888888", alpha=0.45, linewidth=1, label="real-time raw",
             )
-        if self.show_last.get() and snapshot.last_cycle is not None and not snapshot.last_cycle.empty:
+        if (show_last is None or show_last.get()) and getattr(snapshot, "last_cycle", None) is not None and not snapshot.last_cycle.empty:
             self.ax.plot(
                 snapshot.last_cycle[x_column], snapshot.last_cycle[y_column],
                 color="#4C9AFF", linewidth=2, label="last complete cycle",
             )
-        if self.show_average.get() and snapshot.cycle_average is not None and not snapshot.cycle_average.empty:
+        if (show_average is None or show_average.get()) and getattr(snapshot, "cycle_average", None) is not None and not snapshot.cycle_average.empty:
             self.ax.plot(
                 snapshot.cycle_average[x_column],
                 snapshot.cycle_average[y_column],
@@ -497,21 +528,24 @@ class MokeMeasurementApp(MeasurementApp):
             )
         self.ax.set_xlabel(x_label)
         self.ax.set_ylabel(y_label)
-        self.ax.set_title(f"MOKE loop: {self.geometry_entry.get()}")
+        geometry = self.geometry_entry.get() if getattr(self, "geometry_entry", None) is not None else "in-plane"
+        self.ax.set_title(f"MOKE loop: {geometry}")
         if self.ax.lines:
             self.ax.legend()
-        self.canvas.draw_idle()
+        if getattr(self, "canvas", None) is not None:
+            self.canvas.draw_idle()
 
     def _redraw_current(self):
-        if hasattr(self, "_last_snapshot"):
+        if getattr(self, "_last_snapshot", None) is not None:
             self._plot_snapshot(self._last_snapshot)
 
     def on_closing(self):
-        if self.runner is not None:
+        if getattr(self, "runner", None) is not None:
             self._close_when_safe = True
             self.runner.request_close()
             if not self.runner.can_close():
-                self.status_label.config(text="Waiting for worker exit and confirmed hardware safety...")
+                if hasattr(self, "status_label") and self.status_label is not None:
+                    self.status_label.config(text="Waiting for worker exit and confirmed hardware safety...")
                 return
         self._close_instruments()
         self._finish_close()
