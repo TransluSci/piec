@@ -73,6 +73,7 @@ Suggested implementation prompt:
 | 21 | Completed | Hardened FE GUI (`FEMeasurementApp`) interaction and ownership across HysteresisLoop and ThreePulsePund. Enforced parameter validation strictly before instrument instantiation/connection. Enforced virtual selection pairing (rejection of mixed virtual/physical and empty addresses). Enforced single hardware writer rule (busy state blocks concurrent runs, VISA refresh, and dynamic parameter/measurement switching). Debounced Stop-before-start zero-I/O abort. Enforced cooperative active close with deferred window destruction, and retained open connections on unsafe shutdown. Drained display queue to avoid lag and mapped in-memory plot quantities with unit-derived axis labels. Added 43 comprehensive headless tests in `tests/test_measurement_fe_gui.py`. Targeted FE suite: 207 passed; full test suite with Agg: 1540 passed, 1 skipped, 1 xfailed in 31.58s on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly PENDING. |
 | 22 | PENDING | Physical hardware testing unavailable in execution environment; FE physical record remains explicitly PENDING. |
 | 23/23a (implemented early; original commit mislabeled 21) | Reviewed adapter implementation | Implemented AMR setup-role adapters (`FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, `AMRSetupProfile`) with default preservation of manual lock-in settings (`readout_configuration="preserve"`), internal/external excitation, linear/table/native field modes, tolerance verification across zero/negative fields, and attempt-all safing. Repaired `AMR-FIELD-001` in `convert_field_to_voltage` and added `convert_voltage_to_field`. Added 37 comprehensive contract and virtual driver tests in `tests/test_amr_contract.py`. Full suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2. Checkpoint 17 physical validation remains PENDING. |
+| 24a | Completed | Standardized `MagnetoTransport` onto `BaseMeasurement` shared lifecycle, runner and session execution, excitation safing validation, attempt-all safe shutdown with connection retention, `stepper` and `voltage_calibration` parameters with backward-compatible aliases, target contract validation; full suite: 1564 passed, 1 skipped, 1 xfailed. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly PENDING. |
 
 
 Checkpoint 16 review completed: geometry choices now restore independent session-local
@@ -161,6 +162,16 @@ Standardized `convert_angle_to_steps` and `convert_steps_to_angle`. Added 37 com
 and virtual driver integration tests in `tests/test_amr_contract.py`. `AMR-ANGLE-001` remains marked
 `xfail` until Checkpoint 24b. Full test suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s
 on Python 3.13.2. Checkpoint 17 physical validation remains explicitly **PENDING**.
+
+Checkpoint 24a completed: standardized `MagnetoTransport` onto `BaseMeasurement`
+shared lifecycle with zero constructor I/O, `stepper` and `voltage_calibration`
+standardized parameters (and backward-compatible aliases `arduino` and `voltage_callibration`),
+AMRSetupProfile setup role coordination, excitation safing validation before energizing,
+attempt-all safe shutdown with connection retention on UNSAFE, and MeasurementRunner
+integration. Manifest updated with `MagnetoTransport` in `migrated_families`.
+Added 18 unit/lifecycle/fault tests in `tests/test_measurement_magneto_transport.py`.
+Full test suite with Agg: **1564 passed, 1 skipped, 1 xfailed** (`AMR-ANGLE-001`) in 31.43s
+on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly **PENDING**. Checkpoint **24b only** is next.
 
 ## 1. Purpose and non-negotiable constraints
 
@@ -822,7 +833,7 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 22 | PENDING | FE physical record: physical hardware testing unavailable in execution environment; record remains explicitly PENDING. |
 | 23 | AMR setup-role adapters | Working four-instrument profile, default preservation of manual lock-in settings, internal/external excitation; separate command/readback calibrations; linear/table/native-field command modes; optional digital-gaussmeter or analog-DMM readback; units, limits, zero/negative-field tolerance and isolated role tests |
 | 23a | Repair/retire placeholder field conversion (AMR-FIELD-001) | Default 10000 Oe/V gives 100 Oe -> 0.01 V; replace the strict expected failure with passing field-adapter tests |
-| 24a | MagnetoTransport lifecycle and consumers | Standard API/options/controls and owner-scoped helpers |
+| 24a | Completed | Standardized `MagnetoTransport` onto `BaseMeasurement` shared lifecycle with zero constructor I/O, `stepper` and `voltage_calibration` parameters (and backward-compatible properties), AMRSetupProfile role delegation, excitation safing validation before energizing, attempt-all safe shutdown with connection retention on UNSAFE, and runner integration. Added 18 unit/lifecycle/fault tests in `tests/test_measurement_magneto_transport.py`. Full test suite with Agg: 1564 passed, 1 skipped, 1 xfailed. |
 | 24b | AMR acquisition/schema/persistence and consumers | Repair AMR-ANGLE-001 (extra endpoint motor step); physical positions and signals match every requested angle; replace the strict expected failure and faulty-observation regression with scientific goldens; Stop during dwell/motion, engine-owned partials and safe final outputs |
 | 24c | AMR notebook/GUI presentation integration | No acquisition-owned plotting; target metadata labels and offline examples |
 | 24d onward | Additional AMR electrical adapters, one signal mode per commit after the working four-instrument slice | Mode-specific data/units and truthful excitation; direct-resistance or voltage/current numerical fixtures, producer/GUI/consumer updates; no fabricated X/Y or assumed current |

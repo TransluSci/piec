@@ -102,20 +102,22 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=500.0,
             save_dir=str(tmp_path),
-            voltage_callibration=10000,
+            voltage_calibration=10000,
             live_plot=False,
         )
 
         assert mt.dmm is mocks["dmm"]
         assert mt.calibrator is mocks["calibrator"]
+        assert mt.stepper is mocks["arduino"]
         assert mt.arduino is mocks["arduino"]
         assert mt.lockin is mocks["lockin"]
         assert mt.field == 500.0
         assert mt.save_dir == str(tmp_path)
+        assert mt.voltage_calibration == 10000
         assert mt.voltage_callibration == 10000
         assert mt.data is None
         assert mt.filename is None
@@ -135,7 +137,7 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=200.0,
             live_plot=False,
@@ -156,7 +158,7 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=100.0,
             live_plot=False,
@@ -176,10 +178,10 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=1000.0,
-            voltage_callibration=10000,
+            voltage_calibration=10000,
             live_plot=False,
         )
 
@@ -200,10 +202,10 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=1000.0,
-            voltage_callibration=10000,
+            voltage_calibration=10000,
             live_plot=False,
         )
 
@@ -218,7 +220,7 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=100.0,
             live_plot=False,
@@ -232,7 +234,7 @@ class TestMagnetoTransportCompatibility:
         mt = MagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
-            arduino=mocks["arduino"],
+            stepper=mocks["arduino"],
             lockin=mocks["lockin"],
             field=100.0,
             live_plot=False,

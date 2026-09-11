@@ -1,9 +1,23 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 21 (FE GUI interaction/ownership hardening) is complete.**
-Next: **checkpoint 24a only, MagnetoTransport lifecycle and consumers**, as numbered in the Section 13 roadmap.
+Continue on `measuremnt-standarization`. **Checkpoint 24a (MagnetoTransport lifecycle and consumers) is complete.**
+Next: **checkpoint 24b only, AMR acquisition/schema/persistence and consumers**, as numbered in the Section 12 roadmap.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
+
+## Checkpoint 24a: MagnetoTransport lifecycle and consumers
+
+- **BaseMeasurement Lifecycle & Zero Constructor I/O**: `MagnetoTransport` in `piec.measurement.magneto_transport` subclasses `BaseMeasurement`, implementing the shared lifecycle hooks: `_validate_options`, `_configure_instruments`, `_capture_data` (delegating to subclass or session), `_safe_shutdown`, `_create_snapshot`, `request_stop()`, and `request_pause()`. `__init__` performs zero hardware communication or file I/O.
+- **Target Interface & Schema**: Adheres to target schema `amr` version 1, ordered columns `("angle", "field", "x", "y")`, and canonical declared JSON metadata units `{"angle": "deg", "field": "Oe", "x": "V", "y": "V"}`.
+- **Standardized Constructor Parameters & Backward-Compatible Aliases**: Constructor uses standardized names `stepper` and `voltage_calibration` (rejecting obsolete parameter names `arduino` and `voltage_callibration` from `MagnetoTransport.__init__` per manifest target contract while exposing backward-compatible properties `self.arduino = self.stepper` and `self.voltage_callibration = self.voltage_calibration`). Keyword-only settings follow the shared engine standard.
+- **AMRSetupProfile Role Integration**: Wraps or instantiates `AMRSetupProfile` compositing `FieldSource`, `FieldReader`, `TransportReadout`, and `OrientationController`. Exposes clean setup role properties (`field_source`, `field_reader`, `transport_readout`, `orientation_controller`).
+- **Readout Configuration Policy**: Preserves manual lock-in settings by default (`readout_configuration="preserve"`). Honors explicit run options `options={"readout_configuration": "configure"}` or `options={"configure_lockin": True}`, temporarily updating profile configuration for the run without mutating unrelated settings.
+- **Excitation Safing Validation**: Validates the declared excitation safing policy before energizing the magnet or excitation. If `require_excitation_safing=True` is configured and no verified shutdown action is available, configuration aborts before output energization.
+- **Attempt-All Safe Shutdown & Connection Retention**: `_safe_shutdown` demagnetizes/zeros the field source and executes excitation shutdown via setup profile roles, recording actions through `ShutdownAttemptRecorder`. Unconfirmed excitation shutdowns or role errors escalate to `SafetyStatus.UNSAFE` while preserving open instrument connections for physical recovery.
+- **Consumer & Compatibility Support**: `AMR` subclass unmigrated signature `(dmm=None, calibrator=None, arduino=None, lockin=None, ...)` is preserved and forwards `stepper=arduino` and `voltage_calibration=voltage_callibration` to `super().__init__` until Checkpoint 24b. Legacy methods `initialize()`, `shut_off()`, `set_field()`, `analyze()`, and `plot_results()` remain operational.
+- **Validation**: Added 18 comprehensive unit, lifecycle, fault, and runner tests in `tests/test_measurement_magneto_transport.py`. Manifest updated with `MagnetoTransport` in `migrated_families`. Full test suite with Agg: **1564 passed, 1 skipped, 1 xfailed** (`AMR-ANGLE-001`) in 31.43s on Python 3.13.2.
+- **Physical Validation**: Checkpoints 17 (IV/MOKE) and 22 (FE) remain explicitly **PENDING**.
+- **Next Step**: Stop after checkpoint 24a. Proceed with **checkpoint 24b only: AMR acquisition/schema/persistence and consumers** once authorized. Repair `AMR-ANGLE-001` (extra endpoint motor step) during 24b.
 
 ## Checkpoint 21 review corrections
 
