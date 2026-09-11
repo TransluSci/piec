@@ -202,9 +202,15 @@ Excitation current is validated on assignment and accepts zero/signed drive;
 reference configuration validates atomically, non-vector X/Y arrays are rejected,
 and reported phase agrees with X/Y. Regression tests cover instance/global sample
 isolation and fallback precedence. Driver reset preserves hooks; setup-owned
-closure/material/RNG state is not implicitly reset. See the current handoff for
-validation results. Next is checkpoint 28b, one virtual-driver family per commit. Additional AMR
-electrical adapters and VirtualBench stay separate. Physical 17/22/26 stay PENDING.
+closure/material/RNG state is not implicitly reset.
+Checkpoint 28b completed: generic per-instance virtual hooks for the DMM family (`VirtualDMM`).
+Supports `voltage_reader` / `reader_hook` injection with strict precedence over deprecated
+global `mag_sample` fallback, material logic externalized, scalar float voltage returns in V,
+IEEE 754 non-finite overload preservation, rejection of non-scalar sequences, unchanged error
+propagation without retry, exact-once invocation with signature binding (ac/coupling kwargs and
+positional-only ac), instance isolation protecting `VirtualInstrument._shared_mag_sample`,
+and driver reset ownership documented. Next is checkpoint 28c, one virtual-driver family per commit.
+Additional AMR electrical adapters and VirtualBench stay separate. Physical 17/22/26 stay PENDING.
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.
 
@@ -917,7 +923,8 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 26 | PENDING | AMR physical record: physical hardware testing unavailable in execution environment; record remains explicitly PENDING. |
 | 27 | Completed | Role-specific simulation contracts: explicit physical units, frozen `LoadResponse`, `DeterministicTimebase`, seeded reset protocol, voltage/current-source electrical load contracts with compliance clamping (`ResistorLoad`, `DiodeLoad`, `CapacitiveLoad`), and material contracts (`FieldResponsiveMaterialContract`, `AngleDependentResistanceContract`, `WaveformResponsiveMaterialContract`). 33 contract tests in `tests/test_simulation_contracts.py`; full suite: 1657 passed, 1 skipped. |
 | 28a | Completed | Generic per-instance virtual hooks for Lock-in family (`VirtualLockin`): `xy_reader` / `transport_hook` injection, precedence over global fallback, material decoupling, plain tuple (X, Y) response, declared units, reset preservation, and instance isolation. 28 tests in `tests/test_virtual_lockin_hook.py`; full suite: 1725 passed, 1 skipped. |
-| 28b onward | Generic per-instance virtual hooks, remaining driver families one family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
+| 28b | Completed | Generic per-instance virtual hooks for DMM family (`VirtualDMM`): `voltage_reader` / `reader_hook` injection, precedence over global fallback, material decoupling, scalar float V response, overload preservation, non-scalar rejection, error preservation without retries, declared units, reset ownership, and instance isolation. 37 tests in `tests/test_virtual_dmm_hook.py`. |
+| 28c onward | Generic per-instance virtual hooks, remaining driver families one family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
 | 29 | VirtualBench | Routing, reset isolation, deterministic noise/time and two-bench concurrency |
 | 30a–30d | Migrate IV/MOKE/FE/AMR simulation fixtures one family per commit | Physical/virtual schemas agree; preserve applicable generic-driver fallback tests |
 | 31 | Retire internal global-sample use after consumers migrate | Keep external generic-driver fallback unless separately authorized to remove it |

@@ -54,6 +54,27 @@ or undefined at zero current.
   Reset does not reset a closure's RNG, time or material: that state is owned by the
   setup and must be reset there. A future VirtualBench will coordinate those resets.
 
+## Driver virtual hooks: DMM family (checkpoint 28b)
+
+- `VirtualDMM` (DMM driver family) supports generic per-instance hook injection via
+  `voltage_reader` or `reader_hook` (in constructor, via property, or via `set_voltage_reader`).
+- Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.
+  When an explicit hook is injected, `mag_sample` is not accessed.
+- The generic driver contains no sample-, sensor-, or material-specific logic; physical modeling
+  remains external to the driver (in the hook closure or material contract).
+- The hook receives coupling parameters if declared: accepts zero arguments, keyword `ac` or `coupling`,
+  or positional-only `ac` or `coupling`. Callables with unavailable signatures follow the zero-argument contract.
+- Invocation is selected by signature binding before calling the hook exactly once. Hook exceptions
+  propagate unchanged without retries or fallback invocation.
+- Returns scalar `float` voltages in Volts. Preserves IEEE 754 non-finite numbers (`inf`, `-inf`, `nan`)
+  for DMM hardware overload emulation (per Checkpoint 6 contract). Rejects non-scalar collections
+  (`tuple`, `list`, multi-element or non-0d `ndarray`) with `TypeError`.
+- `reset()` restores default driver-owned configuration (`sense_func="VOLT"`, `coupling="DC"`,
+  `sense_mode="2W"`, `sense_range=None`, `autorange=True`, `integration_time=1.0`) while preserving
+  the injected hook. Instance assignments to `dmm.mag_sample` do not pollute global shared sample state.
+- Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
+  that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents

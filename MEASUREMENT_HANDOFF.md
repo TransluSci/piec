@@ -1,9 +1,31 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28a (generic per-instance virtual hooks: Lock-in family) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28b (generic per-instance virtual hooks: DMM family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28b: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28c: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28b report (authoritative)
+
+- **Status**: **Completed**. Selected driver family: **DMM (`VirtualDMM`)**.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/dmm/virtual_dmm.py`):
+  - **Hook Injection**: Added `voltage_reader` and `reader_hook` (alias) constructor parameters, method injectors `set_voltage_reader(hook)`, `set_reader_hook(hook)`, and properties `voltage_reader`, `reader_hook`.
+  - **Strict Precedence**: Explicit per-instance injection takes strict precedence over the deprecated shared `mag_sample` fallback in `get_voltage()`. If `voltage_reader` is injected, it is evaluated directly and `mag_sample` is not accessed.
+  - **Material Decoupling**: Generic `VirtualDMM` contains no sample-, magnetic-, or sensor-specific logic; physical modeling remains entirely external to the driver in the hook closure or material contract.
+  - **Scalar Voltage & Units**: Returns scalar `float` voltages in Volts. Preserves IEEE 754 non-finite values (`inf`, `-inf`, `nan`) for DMM hardware overload emulation (per Checkpoint 6 contract). Rejects non-scalar collections (`tuple`, `list`, non-0d `ndarray`) with `TypeError`. Exposed `declared_units` mapping `{"voltage": "V"}`.
+  - **Error Propagation & Dispatch**: Hook dispatch inspects signatures before invoking the hook exactly once; hook exceptions (`RuntimeError`, `TypeError`, etc.) propagate unchanged without retries or fallback invocation. Supports 0-argument callables, `ac` and `coupling` keyword arguments, and positional-only `ac`/`coupling` parameters.
+  - **State & Reset Ownership**: `reset()` restores default driver-owned configuration (`sense_func="VOLT"`, `coupling="DC"`, `sense_mode="2W"`, `sense_range=None`, `autorange=True`, `integration_time=1.0`) while preserving the injected hook intact. Setup-owned state (closures, external material models, clocks, RNG) is owned by the test fixture / VirtualBench and not reset by driver reset. Added instance-level `mag_sample` property descriptor so instance assignments never mutate global `VirtualInstrument._shared_mag_sample`.
+- **Validation**:
+  - Dedicated hook test suite: 37 tests in `tests/test_virtual_dmm_hook.py` passed in 0.95s.
+  - Focused DMM contract test suite: 79 tests in `tests/test_dmm_contract.py` passed in 1.95s.
+  - Focused Lock-in hook test suite: 46 tests in `tests/test_virtual_lockin_hook.py` passed in 0.89s.
+  - Focused simulation contracts: 33 tests in `tests/test_simulation_contracts.py` passed in 0.62s.
+  - Full repository test suite: **1780 passed, 1 skipped** in 65.66s on Python 3.13.2. Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly.
 
 ## Checkpoint 28a report (authoritative)
 
