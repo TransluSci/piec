@@ -644,6 +644,16 @@ Do not add a fictitious `read_waveform()` requirement to every oscilloscope driv
 
 ### 9.5 General AMR setups and the existing four-instrument profile
 
+**24b review corrections:** snapshots now bound raw_window (default 100 points)
+while terminal data and persistence retain full acquisition. All requested and
+quantized motor positions are preflighted; descending sweeps are supported.
+Settling occurs once in a cancellable wait; blocking driver motion still requires
+the driver to return before Stop can finish. Stop during averaging discards the
+unfinished point without extra reads. GUI/notebook no-op shutdown callbacks were
+removed; a real declared policy is required before physical execution. AMR no
+longer accepts save_dir/live_plot/plot_config. Next is 24c presentation/runner
+integration, followed by checkpoint 25's detailed GUI ownership audit.
+
 **24a review corrections:** public MagnetoTransport is isolated from private
 unmigrated AMR support. No legacy direct I/O methods or parameter aliases are on
 the public base. Excitation shutdown validation is mandatory before any run;

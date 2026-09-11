@@ -76,6 +76,16 @@ The codebase is structured around a parent class `MagnetoTransport` and a specif
 
 ## How to Use the Notebook
 
+The notebook requires an explicitly defined `excitation_shutdown_handler` that
+performs the bench's shutdown action and raises on failure. Do not substitute a
+no-op for physical hardware. Manual lock-in settings are preserved by default;
+X/Y are measured voltages, not inferred sample resistance.
+
+AMR uses `output_dir`; plotting is a consumer responsibility. Live `raw_window`
+snapshots are bounded, while terminal `data` contains the complete result.
+The current GUI requires an installed `excitation_shutdown_handler` before Run
+and awaits checkpoint 24c runner/presentation integration and checkpoint 25 audit.
+
 The Jupyter Notebook (`notebooks/amr.ipynb`) provides a step-by-step interface for running experiments, especially useful for debugging or manual control.
 
 1.  **Imports**: Load necessary drivers and the `AMR` class.

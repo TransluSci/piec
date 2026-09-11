@@ -498,29 +498,28 @@ class OrientationController:
         self.current_angle: float = 0.0
         self.total_steps_moved: int = 0
 
-    def move_to_angle(self, target_angle: float) -> float:
+    def plan_move(self, target_angle: float, current_angle=None):
+        """Validate a requested move without I/O; return steps and quantized position."""
+        target = _finite(target_angle, "target_angle")
+        current = self.current_angle if current_angle is None else _finite(current_angle, "current_angle")
+        steps = convert_angle_to_steps(target - current, self.steps_per_revolution)
+        achieved = current + convert_steps_to_angle(steps, self.steps_per_revolution)
+        if self.angle_limits is not None:
+            low, high = self.angle_limits
+            if not low <= target <= high:
+                raise ValueError(f"target_angle {target} is outside angle_limits {self.angle_limits}")
+            if not low <= achieved <= high:
+                raise ValueError(f"Quantized angle {achieved} is outside angle_limits {self.angle_limits}")
+        return steps, achieved
+
+    def move_to_angle(self, target_angle: float, *, settle: bool = True) -> float:
         """
         Move stepper motor to target angle in degrees.
 
         Returns:
             float: Updated actual commanded angle.
         """
-        target_f = float(target_angle)
-        if not math.isfinite(target_f):
-            raise ValueError(f"target_angle must be finite, got {target_angle!r}")
-
-        if self.angle_limits is not None:
-            if target_f < self.angle_limits[0] or target_f > self.angle_limits[1]:
-                raise ValueError(
-                    f"target_angle {target_f} is outside angle_limits {self.angle_limits}"
-                )
-
-        delta_angle = target_f - self.current_angle
-        # Compute steps needed
-        steps = convert_angle_to_steps(delta_angle, self.steps_per_revolution)
-        achieved = self.current_angle + convert_steps_to_angle(steps, self.steps_per_revolution)
-        if self.angle_limits is not None and not self.angle_limits[0] <= achieved <= self.angle_limits[1]:
-            raise ValueError(f"Quantized angle {achieved} is outside angle_limits {self.angle_limits}")
+        steps, achieved = self.plan_move(target_angle)
         if steps != 0:
             direction = self.cw_direction if steps > 0 else self.ccw_direction
             num_steps = abs(steps)
@@ -533,7 +532,7 @@ class OrientationController:
             self.current_angle += actual_delta
             self.total_steps_moved += steps
 
-        if self.settling_time > 0:
+        if settle and self.settling_time > 0:
             time.sleep(self.settling_time)
 
         return self.current_angle

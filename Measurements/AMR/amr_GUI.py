@@ -222,6 +222,10 @@ class AMRApp(MeasurementApp):
             print("Measurement already in progress...")
             return
 
+        shutdown_handler = getattr(self, "excitation_shutdown_handler", None)
+        if not callable(shutdown_handler):
+            print("AMR setup requires an excitation_shutdown_handler that performs and verifies the bench shutdown action.")
+            return
         print("Running AMR measurement...")
 
         # Get addresses
@@ -285,13 +289,13 @@ class AMRApp(MeasurementApp):
             lockin=lockin,
             field=field,
             angle_step=angle_step,
-            total_angle=int(total_angle),
+            total_angle=total_angle,
             amplitude=amplitude,
             frequency=frequency,
             measure_time=measure_time,
             sensitivity=sensitivity,
-            save_dir=save_dir,
-            shutdown_handler=lambda: None,
+            output_dir=save_dir or None,
+            shutdown_handler=shutdown_handler,
         )
 
         self.is_measuring = True

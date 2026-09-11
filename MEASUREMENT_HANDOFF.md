@@ -5,7 +5,46 @@ Next: **checkpoint 24c only, AMR notebook/GUI presentation integration**, as num
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
 
-## Checkpoint 24b: AMR acquisition, schema, persistence, and consumers
+## Checkpoint 24b review corrections (authoritative)
+
+- Validation: full suite with Agg **1581 passed, 1 skipped** in 31.00s.
+  No physical hardware validation was performed.
+- Live snapshots use `raw_window`, bounded by `raw_window_points` (default 100).
+  Full acquired data remains in the engine and terminal `data` view. The golden's
+  scientific values are unchanged; start-angle, quantized angle basis and averaging
+  time metadata are now explicit.
+- Every requested and achievable motor position is checked before energizing.
+  Sweeps include the final endpoint in either direction without an extra motor
+  step. The angle column is commanded/quantized position, not an encoder reading.
+- AMR bypasses the adapter's blocking settle and performs one cancellable wait
+  using the larger of measurement and profile settle times. A hardware step call
+  itself remains blocking until the driver returns; do not claim instant motor
+  cancellation. Stop during averaging drops the unfinished point and prevents
+  extra reads. Earlier completed points survive faults; failure CSV publication
+  follows the engine's explicit save_partial=True policy.
+- Removed save_dir/live_plot/plot_config compatibility parameters from AMR.
+  Use output_dir and render snapshots outside acquisition. Configuration metadata
+  for a supplied profile uses its declared readout amplitude/frequency, not the
+  AMR constructor defaults.
+- Removed fabricated no-op excitation shutdown callbacks from GUI/notebook.
+  The current GUI refuses Run before opening drivers until an explicit
+  excitation_shutdown_handler is installed. The notebook requires an explicit
+  excitation_shutdown_handler variable. This is deliberate: no-op callbacks
+  must not certify physical safing. The GUI remains pending presentation/runner
+  integration and ownership hardening; do not label it production-ready.
+
+Gemini: implement **24c only: AMR notebook/GUI presentation integration**. Use
+MeasurementRunner, bounded raw_window updates and the authoritative terminal data
+view; plot in the Tk/main thread with metadata-derived units. Provide an explicit
+setup path for a real excitation shutdown policy; a simulation-only policy must
+be restricted to virtual instruments. Preserve manual lock-in settings. Handle
+errors, Stop/Pause and connection retention through the runner; never leave a
+daemon hardware worker or claim SAFE after a no-op handler. Fix remaining
+notebook/GUI consumers and documentation, run relevant and full tests, commit
+separately, update the handoff, and stop for review. Keep checkpoint 25's detailed
+interaction/ownership audit separate and physical 17/22 PENDING.
+
+## Original checkpoint 24b report (superseded by review corrections above)
 
 - **Standardized AMR Lifecycle & Base Migration**: Modernized `AMR` in `src/piec/measurement/magneto_transport.py` to directly subclass the public `MagnetoTransport` (and `BaseMeasurement`), inheriting the unified execution lifecycle (`run_experiment`, `session`, `configure_instruments`, `capture_data`, `safe_shutdown`, `request_stop`, `request_pause`, `snapshot`). Zero constructor I/O or file writes in `__init__`.
 - **Target Schema & Plain Columns**: Emits canonical schema `amr` version 1 with lowercase columns `('angle', 'field', 'x', 'y')` and canonical declared units `{'angle': 'deg', 'field': 'Oe', 'x': 'V', 'y': 'V'}`. Optional `field_measured` and `field_time` follow when readback is requested.

@@ -159,7 +159,6 @@ class TestAMRCompatibility:
             sensitivity="50uv/pa",
             output_dir=tmp_path,
             voltage_calibration=10000,
-            live_plot=False,
             shutdown_handler=shutdown,
         )
 
@@ -219,7 +218,6 @@ class TestAMRCompatibility:
             frequency=13,
             sensitivity="100uv/pa",
             output_dir=tmp_path,
-            live_plot=False,
             shutdown_handler=shutdown,
         )
 
@@ -256,7 +254,6 @@ class TestAMRCompatibility:
                 settling_time=0.0,
                 sensitivity="50uv/pa",
                 output_dir=tmp_path,
-                live_plot=False,
                 shutdown_handler=shutdown,
             )
             df = amr.run_experiment(save=True)
@@ -309,8 +306,7 @@ class TestAMRCompatibility:
                 settling_time=0.0,
                 sensitivity="50uv/pa",
                 output_dir=tmp_path,
-                live_plot=False,
-                shutdown_handler=shutdown,
+                    shutdown_handler=shutdown,
             )
             amr.run_experiment(save=False)
 
@@ -364,8 +360,7 @@ class TestAMRCompatibility:
                 measure_time=0.01,
                 settling_time=0.0,
                 output_dir=tmp_path,
-                live_plot=False,
-                shutdown_handler=shutdown,
+                    shutdown_handler=shutdown,
             )
             amr.run_experiment(save=True)
 
@@ -406,7 +401,6 @@ class TestAMRCompatibility:
             measure_time=0.01,
             settling_time=0.0,
             output_dir=tmp_path,
-            live_plot=False,
             shutdown_handler=shutdown,
         )
 
@@ -441,7 +435,6 @@ class TestAMRCompatibility:
             measure_time=0.01,
             settling_time=0.0,
             output_dir=tmp_path,
-            live_plot=False,
             shutdown_handler=shutdown,
         )
 
@@ -518,7 +511,7 @@ class TestAMRConsumerInventory:
         for arg in (
             "dmm", "calibrator", "stepper", "lockin", "field",
             "angle_step", "total_angle", "amplitude", "frequency",
-            "measure_time", "sensitivity", "save_dir", "shutdown_handler"
+            "measure_time", "sensitivity", "output_dir", "shutdown_handler"
         ):
             assert f"{arg}=" in content, f"Missing {arg} in GUI AMR instantiation"
 

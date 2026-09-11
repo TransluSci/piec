@@ -88,7 +88,6 @@ class AMR(MagnetoTransport):
         sensitivity: str = "50uv/pa",
         settling_time: float = 1.0,
         output_dir: Optional[Union[str, Path]] = None,
-        save_dir: Optional[Union[str, Path]] = None,
         voltage_calibration: float = 10000.0,
         profile: Optional[AMRSetupProfile] = None,
         metadata: Optional[Mapping[str, Any]] = None,
@@ -98,23 +97,22 @@ class AMR(MagnetoTransport):
         external_source_owner: Optional[str] = None,
         field_settling_time: float = 0.0,
         record_field_readback: bool = False,
-        live_plot: bool = False,
-        plot_config: Optional[Dict[str, str]] = None,
+        raw_window_points: int = 100,
     ) -> None:
         """
         Initialize AMR measurement without performing hardware I/O.
         """
         self.angle_step = float(angle_step)
-        if not math.isfinite(self.angle_step) or self.angle_step <= 0:
-            raise ValueError(f"angle_step must be a positive finite number, got {angle_step!r}")
+        if not math.isfinite(self.angle_step) or self.angle_step == 0:
+            raise ValueError(f"angle_step must be a nonzero finite number, got {angle_step!r}")
 
         self.start_angle = float(start_angle)
         if not math.isfinite(self.start_angle):
             raise ValueError(f"start_angle must be finite, got {start_angle!r}")
 
         self.total_angle = float(total_angle)
-        if not math.isfinite(self.total_angle) or self.total_angle < self.start_angle:
-            raise ValueError(f"total_angle must be >= start_angle and finite, got {total_angle!r}")
+        if not math.isfinite(self.total_angle) or (self.total_angle - self.start_angle) * self.angle_step < 0:
+            raise ValueError(f"total_angle must be finite and follow the angle_step direction, got {total_angle!r}")
 
         self.amplitude = float(amplitude)
         if not math.isfinite(self.amplitude) or self.amplitude <= 0:
@@ -134,15 +132,12 @@ class AMR(MagnetoTransport):
         if not math.isfinite(self.settling_time) or self.settling_time < 0:
             raise ValueError(f"settling_time must be non-negative and finite, got {settling_time!r}")
 
-        self.record_field_readback = bool(record_field_readback)
-        self.live_plot = bool(live_plot)
-        self.plot_config = dict(plot_config or {"x": "angle", "y": "x"})
-
-        out_path: Optional[Path] = None
-        if output_dir is not None:
-            out_path = Path(output_dir)
-        elif save_dir is not None:
-            out_path = Path(save_dir)
+        if type(record_field_readback) is not bool:
+            raise ValueError("record_field_readback must be bool")
+        self.record_field_readback = record_field_readback
+        if type(raw_window_points) is not int or raw_window_points <= 0:
+            raise ValueError("raw_window_points must be a positive integer")
+        self.raw_window_points = raw_window_points
 
         if profile is None and calibrator is not None and stepper is not None and lockin is not None:
             from .adapters.amr import AMRSetupProfile
@@ -159,7 +154,7 @@ class AMR(MagnetoTransport):
                 amplitude=self.amplitude,
                 frequency=self.frequency,
                 sensitivity=self.sensitivity,
-                settling_time=self.settling_time,
+                settling_time=0.0,
                 shutdown_handler=shutdown_handler,
                 external_source_owner=external_source_owner,
             )
@@ -170,6 +165,8 @@ class AMR(MagnetoTransport):
         unit = profile.field_source.field_unit if profile else "Oe"
         info.update(
             angle_step=self.angle_step,
+            start_angle=self.start_angle,
+            angle_basis="commanded_quantized",
             total_angle=self.total_angle,
             field=field_val,
             field_unit=unit,
@@ -183,7 +180,7 @@ class AMR(MagnetoTransport):
             stepper=stepper,
             lockin=lockin,
             field=field_val,
-            output_dir=out_path,
+            output_dir=output_dir,
             profile=profile,
             voltage_calibration=voltage_calibration,
             metadata=info,
@@ -194,6 +191,12 @@ class AMR(MagnetoTransport):
             field_settling_time=field_settling_time,
         )
 
+        self.measurement_metadata.update(
+            amplitude=self.transport_readout.amplitude if self.transport_readout else self.amplitude,
+            frequency=self.transport_readout.frequency if self.transport_readout else self.frequency,
+            measure_time=self.measure_time,
+        )
+
         # AMR primary schema uses 4 canonical columns unless field readback columns are explicitly requested
         if not self.record_field_readback:
             canonical_units = {"angle": "deg", "field": unit, "x": "V", "y": "V"}
@@ -202,28 +205,30 @@ class AMR(MagnetoTransport):
             self.ordered_columns = ("angle", "field", "x", "y")
 
     def _compute_angles(self) -> List[float]:
-        """Compute quantized measurement angles from start_angle to total_angle."""
-        step = self.angle_step
-        total = self.total_angle
-        start = self.start_angle
-
-        num_steps = int(round((total - start) / step))
-        if math.isclose(start + num_steps * step, total, rel_tol=1e-5, abs_tol=1e-5):
-            return [round(start + i * step, 6) for i in range(num_steps + 1)]
+        """Requested angles including the exact final endpoint, in either direction."""
+        count = abs((self.total_angle - self.start_angle) / self.angle_step)
+        if not math.isfinite(count) or count > 1_000_000:
+            raise ValueError("Sweep exceeds one million intervals")
+        angles = [self.start_angle + i * self.angle_step for i in range(math.floor(count) + 1)]
+        if math.isclose(angles[-1], self.total_angle, rel_tol=0, abs_tol=1e-10):
+            angles[-1] = self.total_angle
         else:
-            angles = []
-            curr = start
-            while curr < total - 1e-9:
-                angles.append(round(curr, 6))
-                curr += step
-            if not any(math.isclose(a, total, abs_tol=1e-5) for a in angles):
-                angles.append(round(total, 6))
-            return angles
+            angles.append(self.total_angle)
+        return angles
+
+    def _validate_options(self, options):
+        super()._validate_options(options)
+        # Validate every quantized move before excitation/field configuration.
+        current = self.orientation_controller.current_angle
+        for target in self._compute_angles():
+            _, current = self.orientation_controller.plan_move(target, current)
 
     def _measure_signals(self) -> Dict[str, float]:
         """Measure lock-in signals, averaging over measure_time with cooperative pause/stop."""
         duration = self.measure_time
         dt = 0.1
+        if self._coordinator.is_stop_requested:
+            return {}
         if duration <= 0:
             return self.transport_readout.read_signals()
 
@@ -240,8 +245,8 @@ class AMR(MagnetoTransport):
             if not self._wait(min(dt, max(0.001, duration - elapsed)), pause=True):
                 break
 
-        if not x_list:
-            return self.transport_readout.read_signals()
+        if not x_list or self._coordinator.is_stop_requested:
+            return {}
         return {"x": float(np.mean(x_list)), "y": float(np.mean(y_list))}
 
     def _capture_data(
@@ -271,10 +276,10 @@ class AMR(MagnetoTransport):
                 break
 
             # Rotate stepper motor to exact target angle
-            self.orientation_controller.move_to_angle(target_angle)
+            self.orientation_controller.move_to_angle(target_angle, settle=False)
 
             # Settle post-motion
-            if not self._wait(self.settling_time, pause=True):
+            if not self._wait(max(self.settling_time, self.orientation_controller.settling_time), pause=True):
                 break
 
             # Check stop/pause before measuring
@@ -282,7 +287,7 @@ class AMR(MagnetoTransport):
                 break
 
             signals = self._measure_signals()
-            if self._coordinator.is_stop_requested and not signals:
+            if self._coordinator.is_stop_requested or not signals:
                 break
 
             row: Dict[str, Any] = {
@@ -304,6 +309,8 @@ class AMR(MagnetoTransport):
                 measured, _ = self.field_reader.read_field()
                 self.field_reader.verify_field(self.field, measured)
 
+            if self._coordinator.is_stop_requested:
+                break
             rows.append(row)
 
             # Update in-progress views and emit snapshot
@@ -311,7 +318,7 @@ class AMR(MagnetoTransport):
             self._raw_data = current_df.copy()
             self._data = current_df.copy()
             snapshot = self.publish_snapshot(
-                views={"raw": current_df},
+                views={"raw_window": current_df.tail(self.raw_window_points)},
                 completed_steps=step_idx + 1,
                 total_steps=total_steps,
             )
