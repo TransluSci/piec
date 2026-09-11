@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Optional
 import numpy as np
 
-from piec.simulation.contracts import AngleDependentResistanceContract, VoltageResponse
+from piec.simulation.contracts import AngleDependentResistanceContract
 
 
 class MagneticSample(AngleDependentResistanceContract):
@@ -34,6 +34,8 @@ class MagneticSample(AngleDependentResistanceContract):
             start_time: Initial simulation time in seconds.
         """
         super().__init__(seed=seed, start_time=start_time)
+        if not all(np.isfinite(v) for v in (r_base, amr_ratio, phi_offset)) or r_base <= 0 or amr_ratio <= -1:
+            raise ValueError("sample parameters must be finite with positive resistance")
         self.r_base = float(r_base)
         self.amr_ratio = float(amr_ratio)
         self.phi_offset = float(phi_offset)
@@ -63,7 +65,7 @@ class MagneticSample(AngleDependentResistanceContract):
         """Reset angle, field, timebase, and random number generator."""
         self._current_angle = 0.0
         self._current_field = 0.0
-        self._timebase.reset(start_time=kwargs.get("start_time", 0.0))
+        self._timebase.reset(start_time=kwargs.get("start_time", self._initial_time))
         effective_seed = seed if seed is not None else self._initial_seed
         self.seed(effective_seed)
 
@@ -85,6 +87,8 @@ class MagneticSample(AngleDependentResistanceContract):
         Returns:
             float: Simulated resistance in Ohms.
         """
+        if not all(np.isfinite(v) for v in (angle if angle is not None else self.current_angle, field if field is not None else self.current_field)):
+            raise ValueError("angle and field must be finite")
         if time is not None:
             self._timebase.set_time(time)
         theta_val = angle if angle is not None else self._current_angle
@@ -103,18 +107,18 @@ class MagneticSample(AngleDependentResistanceContract):
 
     def get_voltage_response(
         self,
-        current_v: float = 1.0,
+        excitation_current: float,
         angle: Optional[float] = None,
         field: Optional[float] = None,
         time: Optional[float] = None,
-    ) -> VoltageResponse:
+    ) -> tuple[float, float]:
         """
         Simulate a lock-in voltage response in Volts.
 
         Returns:
-            VoltageResponse: Unpackable 2-tuple (X, Y) that also acts as float (X) for backward compatibility.
+            Tuple (X, Y) in V for an ideal resistive sample in phase with the reference.
         """
+        if not np.isfinite(excitation_current):
+            raise ValueError("excitation_current must be finite and specified in A")
         r = self.get_resistance(angle=angle, field=field, time=time)
-        v_x = r * 1e-6 * float(current_v)
-        v_y = v_x / 10.0
-        return VoltageResponse(v_x, v_y)
+        return (r * float(excitation_current), 0.0)

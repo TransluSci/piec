@@ -20,9 +20,22 @@ from dataclasses import dataclass, field
 from enum import Enum
 import math
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+
+
+def _freeze_state(value):
+    """Detach and freeze state containers so a response remains a snapshot."""
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_state(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return tuple(_freeze_state(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze_state(item) for item in value)
+    if value is None or isinstance(value, (str, bool, int, float, np.generic)):
+        return value
+    raise TypeError("state values must be scalars or supported containers")
 
 
 # ============================================================================
@@ -62,40 +75,9 @@ class LoadResponse:
             raise ValueError(f"current must be finite, got {self.current}")
         if not math.isfinite(self.time):
             raise ValueError(f"time must be finite, got {self.time}")
-
-
-class VoltageResponse(float):
-    """
-    Simulated lock-in dual-channel voltage response (X, Y) in Volts.
-
-    Subclasses float so legacy callers doing float(v) or arithmetic operations receive
-    the in-phase X component directly, while callers unpacking as a tuple (x, y = v)
-    or indexing (v[0], v[1]) receive both X and Y channels.
-    """
-
-    x: float
-    y: float
-
-    def __new__(cls, x: float, y: Optional[float] = None) -> VoltageResponse:
-        x_val = float(x)
-        y_val = float(y) if y is not None else x_val / 10.0
-        val = super().__new__(cls, x_val)
-        val.x = x_val
-        val.y = y_val
-        return val
-
-    def __iter__(self):
-        yield self.x
-        yield self.y
-
-    def __getitem__(self, idx: int) -> float:
-        return (self.x, self.y)[idx]
-
-    def __len__(self) -> int:
-        return 2
-
-    def __repr__(self) -> str:
-        return f"VoltageResponse(x={self.x:.6e}, y={self.y:.6e})"
+        if self.time < 0:
+            raise ValueError("time must be non-negative")
+        object.__setattr__(self, "state", _freeze_state(self.state))
 
 
 # ============================================================================
@@ -128,18 +110,22 @@ class DeterministicTimebase:
         """
         if not math.isfinite(delta_t) or delta_t < 0.0:
             raise ValueError("delta_t must be a finite non-negative number")
-        self._current_time += float(delta_t)
+        self.set_time(self._current_time + float(delta_t))
         return self._current_time
 
     def set_time(self, time: float) -> None:
         """Explicitly set the simulation time in seconds."""
         if not math.isfinite(time) or time < 0.0:
             raise ValueError("time must be a finite non-negative number")
+        if time < self._current_time:
+            raise ValueError("time cannot move backwards; use reset")
         self._current_time = float(time)
 
     def reset(self, start_time: float = 0.0) -> None:
         """Reset the simulation clock to the specified start time."""
-        self.set_time(start_time)
+        if not math.isfinite(start_time) or start_time < 0:
+            raise ValueError("start_time must be a finite non-negative number")
+        self._current_time = float(start_time)
 
 
 class SimulationRole(ABC):
@@ -154,8 +140,8 @@ class SimulationRole(ABC):
 
     def __init__(self, seed: Optional[int] = None, start_time: float = 0.0) -> None:
         self._timebase = DeterministicTimebase(start_time=start_time)
-        self._initial_seed = seed
-        self._rng = np.random.default_rng(seed)
+        self._initial_time = float(start_time)
+        self.seed(seed)
 
     @property
     @abstractmethod
@@ -187,8 +173,8 @@ class SimulationRole(ABC):
 
     def seed(self, seed: Optional[int]) -> None:
         """Re-seed the internal random number generator."""
-        self._initial_seed = seed
-        self._rng = np.random.default_rng(seed)
+        self._initial_seed = np.random.SeedSequence(seed).entropy
+        self._rng = np.random.default_rng(self._initial_seed)
 
 
 # ============================================================================
@@ -265,6 +251,13 @@ class ElectricalLoadContract(SimulationRole, ABC):
         if not math.isfinite(compliance) or compliance <= 0.0:
             raise ValueError(f"compliance must be a finite positive number, got {compliance}")
 
+    def _evaluation_time(self, mode, time):
+        if mode not in (LoadMode.VOLTAGE_SOURCE, LoadMode.CURRENT_SOURCE):
+            raise ValueError(f"unsupported load mode: {mode}")
+        t = self.timebase.current_time if time is None else float(time)
+        self.timebase.set_time(t)
+        return t
+
 
 # ============================================================================
 # 4. Standard Concrete Electrical Loads
@@ -293,6 +286,8 @@ class ResistorLoad(ElectricalLoadContract):
             raise ValueError(f"resistance must be a positive finite number, got {resistance}")
         if not math.isfinite(noise_std) or noise_std < 0.0:
             raise ValueError(f"noise_std must be non-negative, got {noise_std}")
+        if not math.isfinite(temp_coeff) or not math.isfinite(nominal_temp) or nominal_temp <= 0:
+            raise ValueError("temperature coefficient must be finite and nominal temperature positive")
         self._nominal_resistance = float(resistance)
         self._noise_std = float(noise_std)
         self._temp_coeff = float(temp_coeff)
@@ -314,12 +309,15 @@ class ResistorLoad(ElectricalLoadContract):
         """Set device temperature in Kelvin."""
         if not math.isfinite(temp_k) or temp_k <= 0.0:
             raise ValueError(f"temperature must be positive, got {temp_k}")
+        r = self._nominal_resistance * (1 + self._temp_coeff * (temp_k - self._nominal_temp))
+        if not math.isfinite(r) or r <= 0:
+            raise ValueError("temperature produces non-positive or non-finite resistance")
         self._current_temp = float(temp_k)
 
     def reset(self, seed: Optional[int] = None, **kwargs: Any) -> None:
         """Reset temperature, timebase, and RNG."""
         self._current_temp = self._nominal_temp
-        self._timebase.reset(start_time=kwargs.get("start_time", 0.0))
+        self._timebase.reset(start_time=kwargs.get("start_time", self._initial_time))
         effective_seed = seed if seed is not None else self._initial_seed
         self.seed(effective_seed)
 
@@ -331,7 +329,7 @@ class ResistorLoad(ElectricalLoadContract):
         time: Optional[float] = None,
     ) -> LoadResponse:
         self._validate_inputs(stimulus, compliance)
-        t = self._timebase.current_time if time is None else float(time)
+        t = self._evaluation_time(mode, time)
         r = self.effective_resistance
 
         if mode == LoadMode.VOLTAGE_SOURCE:
@@ -405,6 +403,7 @@ class DiodeLoad(ElectricalLoadContract):
         r_series: float = 0.0,
         temp_k: float = 300.0,
         noise_std: float = 0.0,
+        voltage_noise_std: float = 0.0,
         seed: Optional[int] = None,
         start_time: float = 0.0,
     ) -> None:
@@ -418,7 +417,12 @@ class DiodeLoad(ElectricalLoadContract):
         if not math.isfinite(temp_k) or temp_k <= 0.0:
             raise ValueError(f"temp_k must be positive, got {temp_k}")
 
+        if not math.isfinite(noise_std) or noise_std < 0:
+            raise ValueError("noise_std must be finite and non-negative")
         self._is_sat = float(is_sat)
+        if not math.isfinite(voltage_noise_std) or voltage_noise_std < 0:
+            raise ValueError("voltage_noise_std must be finite and non-negative")
+        self._voltage_noise_std = float(voltage_noise_std)
         self._n = float(n)
         self._r_series = float(r_series)
         self._temp_k = float(temp_k)
@@ -431,7 +435,7 @@ class DiodeLoad(ElectricalLoadContract):
         return self._vt
 
     def reset(self, seed: Optional[int] = None, **kwargs: Any) -> None:
-        self._timebase.reset(start_time=kwargs.get("start_time", 0.0))
+        self._timebase.reset(start_time=kwargs.get("start_time", self._initial_time))
         effective_seed = seed if seed is not None else self._initial_seed
         self.seed(effective_seed)
 
@@ -439,31 +443,24 @@ class DiodeLoad(ElectricalLoadContract):
         """Solve for current given applied voltage across diode + series resistance."""
         nvt = self._n * self._vt
         if self._r_series == 0.0:
-            arg = min(v_applied / nvt, 40.0)
+            arg = min(v_applied / nvt, 700.0)
             return float(self._is_sat * np.expm1(arg))
 
-        # Newton-Raphson iteration for non-zero series resistance
-        i = 0.0
-        for _ in range(20):
-            vd = v_applied - i * self._r_series
-            arg = min(vd / nvt, 40.0)
-            f = i - self._is_sat * float(np.expm1(arg))
-            df = 1.0 + (self._is_sat * self._r_series / nvt) * math.exp(arg)
-            delta = f / df
-            i -= delta
-            if abs(delta) < 1e-12:
-                break
-        return i
+        # Solve in junction-voltage coordinates: the monotonic residual has
+        # a bounded bracket and cannot suffer the old fixed-iteration failure.
+        from scipy.optimize import brentq
+        def residual(vd):
+            return vd + self._r_series * self._is_sat * math.expm1(min(vd / nvt, 700)) - v_applied
+        upper = min(v_applied, nvt * math.log1p(v_applied / (self._r_series * self._is_sat))) if v_applied > 0 else 0.0
+        lower = 0.0 if v_applied > 0 else v_applied
+        vd = brentq(residual, lower, upper, xtol=1e-14)
+        return self._is_sat * math.expm1(vd / nvt)
 
     def _voltage_from_current(self, i_applied: float) -> float:
-        """Compute terminal voltage given forward or reverse current."""
-        nvt = self._n * self._vt
-        # If current is below or equal to -I_s, clamp to deep reverse
+        """Inverse Shockley relation; no finite voltage exists below -I_s."""
         if i_applied <= -self._is_sat:
-            return -100.0  # Large reverse voltage
-        ratio = i_applied / self._is_sat
-        vd = nvt * math.log1p(ratio)
-        return vd + i_applied * self._r_series
+            return -math.inf
+        return self._n * self._vt * math.log1p(i_applied / self._is_sat) + i_applied * self._r_series
 
     def evaluate(
         self,
@@ -473,18 +470,21 @@ class DiodeLoad(ElectricalLoadContract):
         time: Optional[float] = None,
     ) -> LoadResponse:
         self._validate_inputs(stimulus, compliance)
-        t = self._timebase.current_time if time is None else float(time)
+        t = self._evaluation_time(mode, time)
 
         if mode == LoadMode.VOLTAGE_SOURCE:
             v_target = stimulus
-            i_ideal = self._current_from_voltage(v_target)
+            v_limit = self._voltage_from_current(compliance)
+            v_floor = self._voltage_from_current(-compliance)
+            v_limited = max(v_floor, min(v_target, v_limit))
+            i_ideal = self._current_from_voltage(v_limited)
             noise = float(self._rng.normal(0.0, self._noise_std)) if self._noise_std > 0.0 else 0.0
-            i_actual = i_ideal + noise
+            i_actual = max(-compliance, min(compliance, i_ideal + noise))
 
-            compliance_tripped = abs(i_actual) >= compliance
+            compliance_tripped = v_limited != v_target
             if compliance_tripped:
-                i_actual = math.copysign(compliance, i_actual)
-                v_actual = self._voltage_from_current(i_actual)
+                i_actual = math.copysign(compliance, v_target)
+                v_actual = v_limited
             else:
                 v_actual = v_target
 
@@ -501,7 +501,7 @@ class DiodeLoad(ElectricalLoadContract):
         elif mode == LoadMode.CURRENT_SOURCE:
             i_target = stimulus
             v_ideal = self._voltage_from_current(i_target)
-            noise = float(self._rng.normal(0.0, self._noise_std * 100.0)) if self._noise_std > 0.0 else 0.0
+            noise = float(self._rng.normal(0.0, self._voltage_noise_std)) if self._voltage_noise_std > 0.0 else 0.0
             v_actual = v_ideal + noise
 
             compliance_tripped = abs(v_actual) >= compliance
@@ -528,6 +528,11 @@ class CapacitiveLoad(ElectricalLoadContract):
     """
     Simulated stateful capacitive load tracking stored charge Q and voltage over time.
 
+    Evaluation requires a strictly later timestamp. Backward Euler integration
+    reports interval-average terminal current and end-step leakage. Accuracy
+    requires time steps that resolve the circuit dynamics; no sub-step waveform
+    or instantaneous compliance-transition timing is modeled.
+
     Current-voltage relationship:
         I(t) = C * dV/dt + V / R_leak
         V(t) = V(t_0) + (1/C) * integral(I(t) dt)
@@ -548,6 +553,8 @@ class CapacitiveLoad(ElectricalLoadContract):
             raise ValueError(f"leakage_resistance must be positive, got {leakage_resistance}")
         self._c = float(capacitance)
         self._r_leak = float(leakage_resistance)
+        if not math.isfinite(initial_voltage):
+            raise ValueError("initial_voltage must be finite")
         self._initial_voltage = float(initial_voltage)
         self._voltage = float(initial_voltage)
         self._last_time = float(start_time)
@@ -563,7 +570,7 @@ class CapacitiveLoad(ElectricalLoadContract):
         return self._c * self._voltage
 
     def reset(self, seed: Optional[int] = None, **kwargs: Any) -> None:
-        start_t = kwargs.get("start_time", 0.0)
+        start_t = kwargs.get("start_time", self._initial_time)
         self._timebase.reset(start_time=start_t)
         self._voltage = self._initial_voltage
         self._last_time = float(start_t)
@@ -578,63 +585,33 @@ class CapacitiveLoad(ElectricalLoadContract):
         time: Optional[float] = None,
     ) -> LoadResponse:
         self._validate_inputs(stimulus, compliance)
-        t = self._timebase.current_time if time is None else float(time)
-        dt = max(t - self._last_time, 1e-9)
-
+        t = self._evaluation_time(mode, time)
+        dt = t - self._last_time
+        if dt <= 0:
+            raise ValueError("capacitive evaluation requires a strictly later time")
+        # Backward Euler: I = C * (V_new - V_old) / dt + V_new / R.
+        # Responses report interval-average current with end-step leakage.
+        # This stable discretization conserves charge under either compliance mode.
+        conductance = self._c / dt + 1.0 / self._r_leak
+        history = self._c / dt * self._voltage
         if mode == LoadMode.VOLTAGE_SOURCE:
-            v_target = stimulus
-            dv = v_target - self._voltage
-            i_cap = self._c * (dv / dt)
-            i_leak = v_target / self._r_leak
-            i_total = i_cap + i_leak
-
-            compliance_tripped = abs(i_total) >= compliance
-            if compliance_tripped:
-                i_actual = math.copysign(compliance, i_total)
-                # Capacitor voltage charges as far as compliant current permits
-                dv_permitted = (i_actual - i_leak) * (dt / self._c)
-                self._voltage += dv_permitted
-            else:
-                i_actual = i_total
-                self._voltage = v_target
-
-            self._last_time = t
-            apparent_r = self._voltage / i_actual if i_actual != 0.0 else float("inf")
-            return LoadResponse(
-                voltage=self._voltage,
-                current=i_actual,
-                compliance_tripped=compliance_tripped,
-                time=t,
-                resistance=apparent_r,
-                state={"charge_coulombs": self.stored_charge},
-            )
-
-        elif mode == LoadMode.CURRENT_SOURCE:
-            i_target = stimulus
-            i_leak = self._voltage / self._r_leak
-            dv = (i_target - i_leak) * (dt / self._c)
-            v_new = self._voltage + dv
-
-            compliance_tripped = abs(v_new) >= compliance
-            if compliance_tripped:
-                self._voltage = math.copysign(compliance, v_new)
-                i_actual = self._voltage / self._r_leak
-            else:
-                self._voltage = v_new
-                i_actual = i_target
-
-            self._last_time = t
-            apparent_r = self._voltage / i_actual if i_actual != 0.0 else float("inf")
-            return LoadResponse(
-                voltage=self._voltage,
-                current=i_actual,
-                compliance_tripped=compliance_tripped,
-                time=t,
-                resistance=apparent_r,
-                state={"charge_coulombs": self.stored_charge},
-            )
+            requested_current = conductance * stimulus - history
+            tripped = abs(requested_current) >= compliance
+            current = max(-compliance, min(compliance, requested_current))
+            voltage = (current + history) / conductance
         else:
-            raise ValueError(f"unsupported load mode: {mode}")
+            requested_voltage = (stimulus + history) / conductance
+            tripped = abs(requested_voltage) >= compliance
+            voltage = max(-compliance, min(compliance, requested_voltage))
+            current = conductance * voltage - history
+        response = LoadResponse(
+            voltage=voltage, current=current, compliance_tripped=tripped,
+            time=t, resistance=voltage / current if current else float("inf"),
+            state={"charge_coulombs": self._c * voltage},
+        )
+        self._voltage = voltage
+        self._last_time = t
+        return response
 
 
 # ============================================================================
@@ -647,7 +624,7 @@ class FieldResponsiveMaterialContract(SimulationRole, ABC):
 
     Canonical declared units:
     - field: Oersteds (Oe)
-    - magnetization: Dimensionless normalized [-1, 1] or emu/cm^3
+    - magnetization: Dimensionless normalized [-1, 1]
     - time: Seconds (s)
     """
 
@@ -737,11 +714,11 @@ class AngleDependentResistanceContract(SimulationRole, ABC):
     @abstractmethod
     def get_voltage_response(
         self,
-        excitation_current: float = 1e-3,
+        excitation_current: float,
         angle: Optional[float] = None,
         field: Optional[float] = None,
         time: Optional[float] = None,
-    ) -> Union[VoltageResponse, Tuple[float, float]]:
+    ) -> Tuple[float, float]:
         """
         Simulate lock-in amplifier (X, Y) dual-channel response in Volts.
 
@@ -781,14 +758,14 @@ class WaveformResponsiveMaterialContract(SimulationRole, ABC):
     - voltage: Volts (V)
     - time: Seconds (s)
     - current: Amperes (A)
-    - polarization: Microcoulombs per square centimeter (uC/cm^2)
+    - polarization: Coulombs per square meter (C/m^2), the material model's native unit
     """
 
     _UNITS: Mapping[str, str] = MappingProxyType({
         "voltage": "V",
         "time": "s",
         "current": "A",
-        "polarization": "uC/cm^2",
+        "polarization": "C/m^2",
     })
 
     @property

@@ -48,7 +48,7 @@ class HystereticMagneticMaterial(FieldResponsiveMaterialContract):
             raise ValueError("polarity must be -1 or 1")
         self._states = np.full(len(self._thresholds), polarity, dtype=float)
         self._current_field = 0.0
-        self._timebase.reset(start_time=kwargs.get("start_time", 0.0))
+        self._timebase.reset(start_time=kwargs.get("start_time", self._initial_time))
         effective_seed = seed if seed is not None else self._initial_seed
         self.seed(effective_seed)
 
@@ -88,5 +88,8 @@ class HystereticMagneticMaterial(FieldResponsiveMaterialContract):
             times_arr = np.asarray(times, dtype=float)
             if times_arr.shape != fields_arr.shape:
                 raise ValueError("times and fields must have matching shapes")
+            if (not np.isfinite(times_arr).all() or np.any(np.diff(times_arr) < 0)
+                    or (times_arr.size and times_arr[0] < self.timebase.current_time)):
+                raise ValueError("times must be finite and non-decreasing from the current time")
             return np.array([self.apply_field(f, time=t) for f, t in zip(fields_arr, times_arr)])
         return np.array([self.apply_field(field) for field in fields_arr])

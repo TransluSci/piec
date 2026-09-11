@@ -20,7 +20,6 @@ from .contracts import (
     ScopeChannelHook,
     SimulationRole,
     StepperAngleHook,
-    VoltageResponse,
     WaveformResponsiveMaterialContract,
 )
 from .fe_material import (
@@ -54,6 +53,5 @@ __all__ = [
     "ScopeChannelHook",
     "SimulationRole",
     "StepperAngleHook",
-    "VoltageResponse",
     "WaveformResponsiveMaterialContract",
 ]

@@ -2,6 +2,36 @@
 
 This module provides tools for simulating various materials and their responses. It is primarily designed to support virtual instruments and testing scenarios where physical hardware is not available.
 
+## Role contracts (checkpoint 27)
+
+`contracts.py` defines electrical loads and material roles. Load inputs/outputs
+use V, A, Ohm and s. The FE material's native polarization is C/m^2; measurement
+output may convert to uC/cm^2 explicitly. `LoadResponse.state` is a detached,
+immutable snapshot of scalar/container state; apparent resistance can be infinite
+or undefined at zero current.
+
+- `reset()` restores constructor start time and the stored RNG seed, including
+  replay within an instance constructed without an explicit seed. Independent
+  unseeded instances need not agree. Use an explicit seed for cross-instance replay.
+- Absolute role timestamps cannot move backwards outside reset. FE waveform
+  timestamps are local to an acquisition; valid uniformly sampled waveforms
+  advance its clock by their duration.
+- `CapacitiveLoad` requires positive elapsed time. It uses backward Euler with
+  interval-average current and end-step leakage. Choose a timestep small enough
+  to resolve the circuit; it does not resolve sub-step compliance transitions.
+- `DiodeLoad` models Shockley conduction with optional series resistance, without
+  reverse breakdown. Reverse current beyond saturation reaches the supplied voltage
+  compliance limit. `noise_std` is A for voltage-source readback;
+  `voltage_noise_std` is V for current-source readback.
+- `MagneticSample.get_voltage_response(excitation_current=...)` requires current
+  in A and returns a plain `(X, Y)` tuple in V. The resistive model has Y=0;
+  there is no scalar/tuple compatibility wrapper or implicit excitation current.
+  The existing VirtualLockin fallback passes its declared simulation-only
+  `excitation_current` setting (default 1 uA). This is not a measured sample current
+  or a model of the physical lock-in output circuit.
+
+Per-instance driver hooks and VirtualBench wiring remain later checkpoints.
+
 ## Contents
 
 The core logic is implemented in `fe_material.py` and includes:

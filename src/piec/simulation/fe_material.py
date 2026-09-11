@@ -73,7 +73,7 @@ class Ferroelectric(Material, WaveformResponsiveMaterialContract):
         """Reset output voltage, time, timebase, and RNG."""
         self.output_voltage = None
         self.t = None
-        self._timebase.reset(start_time=kwargs.get("start_time", 0.0))
+        self._timebase.reset(start_time=kwargs.get("start_time", self._initial_time))
         effective_seed = seed if seed is not None else self._initial_seed
         self.seed(effective_seed)
 
@@ -285,7 +285,17 @@ class Ferroelectric(Material, WaveformResponsiveMaterialContract):
         the integrator — no np.gradient needed.  Otherwise the quasi-static
         branch-tracking path is used.
         """
-        self.t = t
+        v = np.asarray(v, dtype=float)
+        t = np.asarray(t, dtype=float)
+        if (v.ndim != 1 or t.shape != v.shape or len(t) < 2
+                or not np.isfinite(v).all() or not np.isfinite(t).all()
+                or np.any(np.diff(t) <= 0)):
+            raise ValueError("waveform requires matching finite 1D arrays and increasing times")
+        # The existing solver assumes uniform sampling; reject unsupported grids.
+        if not np.allclose(np.diff(t), t[1] - t[0], rtol=1e-6, atol=0):
+            raise ValueError("waveform time samples must be uniformly spaced")
+        # Waveform timestamps are local to each acquisition, not absolute clock time.
+        self.t = t.copy()
         fe   = self.material_dict['ferroelectric']
         elec = self.material_dict['electrode']
         area = elec['area']
@@ -332,6 +342,8 @@ class Ferroelectric(Material, WaveformResponsiveMaterialContract):
             active = self.output_voltage[n_prep:]
             active -= np.mean(active)          # modifies slice in-place
             self.output_voltage[:n_prep] = 0.0 # clean quiet baseline
+
+        self.timebase.advance(float(t[-1] - t[0]))
 
     def get_voltage_response(self):
         """Return (output_voltage, time) as measured across the 50 Ω resistor."""

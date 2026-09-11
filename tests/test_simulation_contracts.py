@@ -11,7 +11,7 @@ Validates Checkpoint 27 of MEASUREMENT_STANDARDIZATION_PLAN.md:
 - Field-responsive material contract (HystereticMagneticMaterial);
 - Angle-dependent resistance contract (MagneticSample);
 - Waveform-responsive material contract (Ferroelectric);
-- Backward compatibility of existing models and Level 2 virtual instrument interactions.
+- Explicit material contracts and updated virtual instrument consumers.
 """
 
 from __future__ import annotations
@@ -45,7 +45,6 @@ from piec.simulation import (
     ScopeChannelHook,
     SimulationRole,
     StepperAngleHook,
-    VoltageResponse,
     WaveformResponsiveMaterialContract,
 )
 
@@ -112,7 +111,7 @@ class TestDeclaredUnits:
         assert units["voltage"] == "V"
         assert units["time"] == "s"
         assert units["current"] == "A"
-        assert units["polarization"] == "uC/cm^2"
+        assert units["polarization"] == "C/m^2"
 
 
 # ============================================================================
@@ -449,25 +448,15 @@ class TestAngleDependentResistanceContract:
         r_180 = sample.get_resistance(angle=180.0)
         assert r_180 == pytest.approx(105.0, abs=0.1)
 
-    def test_voltage_response_dual_channel_and_float_compatibility(self):
+    def test_voltage_response_uses_explicit_current_and_resistive_phase(self):
         sample = MagneticSample(r_base=100.0, amr_ratio=0.02, seed=7)
-        resp = sample.get_voltage_response(current_v=1.0, angle=0.0)
-
-        # Must be an instance of VoltageResponse and float
-        assert isinstance(resp, VoltageResponse)
-        assert isinstance(resp, float)
-
-        # Legacy usage as float: float(resp) gives in-phase X component
-        v_float = float(resp)
-        assert 0.0 < v_float < 1.0
-
-        # Modern usage: unpacks as 2-tuple (X, Y)
-        x, y = resp
-        assert x == v_float
-        assert y == pytest.approx(x / 10.0)
-        assert len(resp) == 2
-        assert resp[0] == x
-        assert resp[1] == y
+        resistance = sample.get_resistance(angle=0)
+        sample.reset()
+        x, y = sample.get_voltage_response(excitation_current=0.002, angle=0)
+        assert x == pytest.approx(resistance * 0.002)
+        assert y == 0.0
+        with pytest.raises(TypeError):
+            sample.get_voltage_response()
 
 
 # ============================================================================

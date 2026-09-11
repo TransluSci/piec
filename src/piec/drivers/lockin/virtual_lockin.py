@@ -5,7 +5,12 @@ class VirtualLockin(VirtualInstrument, Lockin):
     """
     Virtual version of a Lock-in that returns data based on a shared magnetic sample.
     """
-    def __init__(self, address="VIRTUAL", **kwargs):
+    def __init__(self, address="VIRTUAL", *, excitation_current=1e-6, **kwargs):
+        """The fallback simulated circuit declares a 1 uA drive; this is not a measured current."""
+        import math
+        if not math.isfinite(excitation_current):
+            raise ValueError("excitation_current must be finite")
+        self.excitation_current = float(excitation_current)
         super().__init__(address=address, **kwargs)
 
     def idn(self):
@@ -24,9 +29,7 @@ class VirtualLockin(VirtualInstrument, Lockin):
         Simulation of SNAP? 1,2
         """
         if hasattr(self, 'mag_sample') and self.mag_sample:
-            v = self.mag_sample.get_voltage_response()
-            # Return X=v, Y=v/10 for semi-legit look
-            return (float(v), float(v/10))
+            return self.mag_sample.get_voltage_response(excitation_current=self.excitation_current)
         return (0.0001, 0.0002)
 
     def read_data(self) -> dict[str, float]:

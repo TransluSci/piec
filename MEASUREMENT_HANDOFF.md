@@ -2,10 +2,20 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 27 (role-specific simulation contracts) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 24d onward (additional AMR electrical adapters)** or **Checkpoint 28a onward (generic per-instance virtual hooks)** as directed by the user. Do not bundle them into past checkpoints.
+Next: **Checkpoint 28a: generic per-instance virtual hooks for one driver family only.** Read the roadmap, choose and record the first family, implement and validate it, commit separately, then stop for review. Additional electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
 
 ## Checkpoint 27 report (authoritative)
+
+### Follow-up review corrections
+
+- Removed the new `VoltageResponse` float compatibility wrapper and its compatibility test. The AMR material requires explicit `excitation_current` in A and returns plain `(X, Y)` in V, with Y=0 for an ideal resistor. Updated VirtualLockin's existing fallback consumer to pass its declared simulation current and forward both channels; generic hooks are not implemented yet.
+- Replaced the diode's fixed-iteration series solver with a bracketed solve, removed the invented -100 V reverse result, and enforced the supplied compliance limits. Current- and voltage-noise settings now have independent declared units.
+- Replaced unstable capacitor updates and invented 1 ns elapsed time with charge-conserving backward Euler integration. Strictly increasing evaluation times are required; reported current is an interval average with end-step leakage. Resolve dynamics with appropriate timesteps; no sub-step compliance timing is claimed.
+- Absolute clocks reject reversal/non-finite time/overflow. Reset restores constructor time and RNG replay, even within an initially unseeded instance. Invalid magnetic histories are checked before switching state.
+- Load response state is recursively detached/frozen. FE native polarization units are C/m^2, not uC/cm^2; waveform time grids are validated and local acquisition duration advances its clock.
+- Added numerical regressions covering forward/reverse diode operation, capacitor charge/compliance/leakage, reset and time semantics, snapshot immutability, FE input validation and virtual lock-in channel forwarding. See `src/piec/simulation/README.md` for contract semantics and limitations.
+- Corrective validation: full repository suite with Agg **1697 passed, 1 skipped in 62.49s**; `git diff --check` passed. Physical 17/22/26 remain PENDING.
 
 - **Status**: **Completed**. Role-specific simulation contracts implemented and tested.
 - **Physical Validation Matrix**:
@@ -14,7 +24,7 @@ Additional electrical adapters remain separate later work; do not bundle them in
   - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
 - **Role-Specific Simulation Contracts Delivered** (`src/piec/simulation/contracts.py`):
   - **Explicit Physical Units**: Declared unit mappings strictly adhering to SI / standard CGS-EMU (`V`, `A`, `Ohm`, `s`, `Oe`, `deg`). Frozen immutable `LoadResponse` dataclass with finite numeric validation.
-  - **Backward-Compatible Voltage Response**: `VoltageResponse(float)` subclass ensuring existing Level 2 virtual lock-in callers expecting a float scalar continue to function seamlessly while supporting tuple unpacking `(x, y)` in Volts.
+  - **Voltage Response**: Plain `(x, y)` tuple in V from an explicitly supplied excitation current in A. No new compatibility shim.
   - **Deterministic Time & RNG**: `SimulationRole` base abstract contract requiring `declared_units`, `reset(seed=None, **kwargs)`, `seed(seed)`, `timebase`, and `rng`. `DeterministicTimebase` providing monotonically increasing, controllable time advancement (`advance(delta_t)`, `set_time(t)`, `reset()`). Deterministic RNG sequences via `np.random.default_rng(seed)`.
   - **Two-Terminal Electrical Load Contracts**: `ElectricalLoadContract` with `LoadMode.VOLTAGE_SOURCE` and `LoadMode.CURRENT_SOURCE`, bidirectional compliance limiting, time, and internal state:
     - `ResistorLoad`: Linear resistor evaluating Ohm's law ($V = IR$, $I = V/R$) across both driving modes with compliance limiting ($I_{\text{comp}}$ in voltage mode, $V_{\text{comp}}$ in current mode), temperature coefficient support, and deterministic noise.
