@@ -8,11 +8,15 @@ Verifies:
   - Simulation-only policy restricted to all-virtual instruments;
   - Mandatory external excitation_shutdown_handler for physical instruments;
   - Zero tolerance for no-op callbacks (lambda: None);
+  - Restriction of simulation shutdown to VirtualLockin instances and exception propagation;
 - Manual lock-in setting preservation by default (initialize_lockin=False);
 - Main-thread plotting with metadata-derived units from column_units;
 - Bounded raw_window live display updates vs authoritative terminal data;
 - Cooperative Pause and Stop controls;
 - Open instrument connection retention and window close gating on UNSAFE shutdown;
+- Single ownership / busy guard blocking Run, Refresh, Autodetect, and Test Stepper during active or unsafe states;
+- Clean closure and release of connections when runner.can_close() allows it (including NOT_NEEDED pre-start aborts);
+- Immediate tracking of driver connections and complete cleanup of partial setup failures;
 - Save policy with placeholder / valid save_dir.
 """
 
@@ -26,6 +30,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from piec.drivers.lockin.srs830 import SRS830
+from piec.drivers.lockin.virtual_lockin import VirtualLockin
 from piec.measurement.contracts import RunState, SafetyAlertEvent, SafetyStatus, TerminalEvent
 from piec.measurement.amr import AMR
 from piec.measurement.runner import MeasurementRunner
@@ -150,10 +156,7 @@ def test_amr_gui_preconnection_validation(monkeypatch, bad_param, bad_val):
     monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
     app.dynamic_inputs[bad_param].get.return_value = bad_val
 
-    with patch.object(gui_mod, "VirtualDMM") as mock_dmm, \
-         patch.object(gui_mod, "VirtualCalibrator") as mock_cal, \
-         patch.object(gui_mod, "VirtualStepper") as mock_step, \
-         patch.object(gui_mod, "VirtualLockin") as mock_lock:
+    with patch.object(gui_mod, "VirtualDMM") as mock_dmm,          patch.object(gui_mod, "VirtualCalibrator") as mock_cal,          patch.object(gui_mod, "VirtualStepper") as mock_step,          patch.object(gui_mod, "VirtualLockin") as mock_lock:
         app.run_measurement()
         assert not mock_dmm.called
         assert not mock_cal.called
@@ -181,7 +184,7 @@ def test_amr_gui_requires_shutdown_handler_for_physical_instruments(monkeypatch)
 def test_amr_gui_simulation_shutdown_policy_for_virtual_instruments():
     """Verify all-virtual instruments automatically use _simulation_excitation_shutdown."""
     app = make_headless_amr_gui(excitation_shutdown_handler=None)
-    mock_lockin = MagicMock()
+    mock_lockin = MagicMock(spec=VirtualLockin)
     app._active_lockin = mock_lockin
 
     app._simulation_excitation_shutdown()
@@ -311,3 +314,135 @@ def test_amr_gui_save_policy(tmp_path):
         app_save.run_measurement()
         assert Path(app_save.experiment.output_dir) == Path(tmp_path)
         mock_start.assert_called_once_with(save=True, options={"configure_lockin": False})
+
+
+# ============================================================================
+# Fault Regressions for Review Feedback
+# ============================================================================
+
+def test_amr_gui_partial_setup_failure_cleans_up_earlier_connections(monkeypatch):
+    """Regression: if a later driver constructor fails, earlier connections are cleanly closed."""
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+
+    closed_instances = []
+
+    class MockDMM:
+        def __init__(self, *args, **kwargs):
+            pass
+        def close(self):
+            closed_instances.append(self)
+
+    class MockCalibrator:
+        def __init__(self, *args, **kwargs):
+            pass
+        def close(self):
+            closed_instances.append(self)
+
+    def failing_stepper(address):
+        raise RuntimeError("simulated stepper motor connection timeout")
+
+    monkeypatch.setattr(gui_mod, "VirtualDMM", MockDMM)
+    monkeypatch.setattr(gui_mod, "VirtualCalibrator", MockCalibrator)
+    monkeypatch.setattr(gui_mod, "VirtualStepper", failing_stepper)
+
+    app.run_measurement()
+
+    # DMM and Calibrator were created and then cleanly closed on stepper failure
+    assert len(closed_instances) == 2
+    assert len(app._instruments) == 0
+    assert app.runner is None
+
+
+def test_amr_gui_unsafe_state_blocks_refresh_autodetect_and_stepper_test(monkeypatch):
+    """Regression: unsafe shutdown leaves hardware retained, blocking Run, Refresh, Autodetect, and Test Stepper."""
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+
+    def failing_shutdown(recorder):
+        raise RuntimeError("simulated lockin excitation shutdown failure")
+
+    monkeypatch.setattr(AMR, "_safe_shutdown", failing_shutdown)
+
+    with patch("time.sleep", return_value=None):
+        app.run_measurement()
+        assert app.runner.join(timeout=5)
+        app._poll_runner()
+
+    # Hardware is retained in UNSAFE state
+    assert app.runner.safety_status == SafetyStatus.UNSAFE
+    assert len(app._instruments) == 4
+    assert app._busy() is True
+
+    # 1. Run is blocked
+    old_runner = app.runner
+    app.run_measurement()
+    assert app.runner is old_runner
+
+    # 2. Refresh is blocked
+    with patch.object(app, "get_visa_resources") as mock_resources:
+        app.refresh_instruments()
+        assert not mock_resources.called
+
+    # 3. Autodetect is blocked
+    with patch("piec.drivers.autodetect.autodetect") as mock_autodetect:
+        app.autodetect_instruments()
+        assert not mock_autodetect.called
+
+    # 4. Stepper test is blocked
+    with patch.object(gui_mod, "Geos_Stepper") as mock_stepper:
+        app.test_stepper()
+        assert not mock_stepper.called
+
+
+def test_amr_gui_pre_start_abort_releases_connections_for_not_needed():
+    """Regression: Stop-before-start results in NOT_NEEDED; GUI must release connections when can_close() permits."""
+    app = make_headless_amr_gui()
+    entered, release = threading.Event(), threading.Event()
+    original_entry = MeasurementRunner._worker_entry
+
+    def gated_entry(runner_self, *args):
+        entered.set()
+        assert release.wait(5)
+        original_entry(runner_self, *args)
+
+    with patch.object(MeasurementRunner, "_worker_entry", gated_entry):
+        app.run_measurement()
+    try:
+        assert entered.wait(5)
+        app.stop_measurement()
+        release.set()
+        assert app.runner.join(timeout=5)
+    finally:
+        release.set()
+
+    app._poll_runner()
+
+    assert app.runner.run_state == RunState.ABORTED
+    assert app.runner.safety_status == SafetyStatus.NOT_NEEDED
+    assert app.runner.can_close()
+    # All 4 instrument connections must be cleanly released!
+    assert len(app._instruments) == 0
+
+
+def test_amr_gui_simulation_shutdown_restricts_to_virtual_and_propagates_failures():
+    """Regression: simulation excitation shutdown is restricted to VirtualLockin and propagates failures."""
+    app = make_headless_amr_gui()
+
+    # 1. No active lockin raises RuntimeError
+    app._active_lockin = None
+    with pytest.raises(RuntimeError, match="no active lock-in"):
+        app._simulation_excitation_shutdown()
+
+    # 2. Non-virtual lockin raises TypeError (never certify physical lockin with simulation shutdown)
+    mock_physical = MagicMock(spec=SRS830)
+    app._active_lockin = mock_physical
+    with pytest.raises(TypeError, match="restricted to VirtualLockin"):
+        app._simulation_excitation_shutdown()
+
+    # 3. Virtual lockin error propagates rather than being swallowed
+    mock_virtual = MagicMock(spec=VirtualLockin)
+    mock_virtual.configure_reference.side_effect = IOError("bus failure during simulation shutdown")
+    app._active_lockin = mock_virtual
+    with pytest.raises(IOError, match="bus failure during simulation shutdown"):
+        app._simulation_excitation_shutdown()

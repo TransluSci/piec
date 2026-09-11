@@ -105,6 +105,22 @@ class AMRApp(MeasurementApp):
         # Periodic runner polling
         self._poll_id = self.root.after(50, self._poll_runner)
 
+    def _busy(self) -> bool:
+        """
+        Returns True if an operation is active, awaiting terminal delivery,
+        or if hardware ownership is locked due to an unclosed runner or retained unsafe state.
+        """
+        if getattr(self, "is_measuring", False):
+            return True
+        if getattr(self, "_awaiting_terminal", False):
+            return True
+        runner = getattr(self, "runner", None)
+        if runner is not None and not runner.can_close():
+            return True
+        if getattr(self, "_instruments", None):
+            return True
+        return False
+
     def setup_dynamic_inputs(self):
         """Initializes the measurement parameters and plot configuration."""
         # Dynamic Inputs - AMR parameters
@@ -169,8 +185,8 @@ class AMRApp(MeasurementApp):
         self.y_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
     def test_stepper(self):
-        if self.is_measuring:
-            print("ERROR: Cannot test stepper while measurement is running.")
+        if self._busy():
+            print("ERROR: Cannot test stepper while hardware is busy or in an unsafe state.")
             return
 
         addr = self.stepper_address_entry.get()
@@ -193,8 +209,8 @@ class AMRApp(MeasurementApp):
             print(f"ERROR: Stepper test failed: {e}")
 
     def refresh_instruments(self):
-        if self.is_measuring:
-            print("WARNING: Cannot refresh instruments while measurement is in progress.")
+        if self._busy():
+            print("WARNING: Cannot refresh instruments while hardware is busy or in an unsafe state.")
             return
 
         print("Refreshing VISA instruments...")
@@ -205,8 +221,8 @@ class AMRApp(MeasurementApp):
         self.lockin_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
 
     def autodetect_instruments(self):
-        if self.is_measuring:
-            print("WARNING: Cannot autodetect instruments while measurement is in progress.")
+        if self._busy():
+            print("WARNING: Cannot autodetect instruments while hardware is busy or in an unsafe state.")
             return
 
         print("Autodetecting instruments... this may take a moment.")
@@ -249,15 +265,18 @@ class AMRApp(MeasurementApp):
     def _simulation_excitation_shutdown(self):
         """Simulation-only excitation shutdown policy for virtual lock-in."""
         lockin = getattr(self, "_active_lockin", None)
-        if lockin is not None and hasattr(lockin, "configure_reference"):
-            try:
-                lockin.configure_reference(voltage=0.0)
-            except Exception:
-                pass
+        if lockin is None:
+            raise RuntimeError("Simulation excitation shutdown failed: no active lock-in instrument.")
+        if not isinstance(lockin, VirtualLockin):
+            raise TypeError(
+                f"Simulation excitation shutdown policy is restricted to VirtualLockin instances, "
+                f"got {type(lockin).__name__}."
+            )
+        lockin.configure_reference(voltage=0.0)
 
     def run_measurement(self):
-        if self.is_measuring or (self.runner is not None and not self.runner.can_close()):
-            print("Measurement already in progress...")
+        if self._busy():
+            print("Measurement already in progress or hardware retained in unsafe state...")
             return
 
         # Get addresses
@@ -328,29 +347,38 @@ class AMRApp(MeasurementApp):
 
         print("Running AMR measurement...")
 
-        # Initialize drivers
-        if dmm_addr.upper() == "VIRTUAL":
-            dmm = VirtualDMM(dmm_addr)
-        else:
-            dmm = Keithley193a(dmm_addr)
-            
-        if cal_addr.upper() == "VIRTUAL":
-            calibrator = VirtualCalibrator(cal_addr, voltage_callibration=float(DEFAULTS["voltage_calibration"]))
-        else:
-            calibrator = EDC522(cal_addr)
-            
-        if step_addr.upper() == "VIRTUAL":
-            stepper = VirtualStepper(step_addr)
-        else:
-            stepper = Geos_Stepper(step_addr)
-            
-        if lock_addr.upper() == "VIRTUAL":
-            lockin = VirtualLockin(lock_addr)
-        else:
-            lockin = SRS830(lock_addr)
-
-        self._active_lockin = lockin
-        self._instruments = [dmm, calibrator, stepper, lockin]
+        # Initialize drivers with immediate connection tracking and cleanup of partial failures
+        self._instruments = []
+        try:
+            if dmm_addr.upper() == "VIRTUAL":
+                dmm = VirtualDMM(dmm_addr)
+            else:
+                dmm = Keithley193a(dmm_addr)
+            self._instruments.append(dmm)
+                
+            if cal_addr.upper() == "VIRTUAL":
+                calibrator = VirtualCalibrator(cal_addr, voltage_callibration=float(DEFAULTS["voltage_calibration"]))
+            else:
+                calibrator = EDC522(cal_addr)
+            self._instruments.append(calibrator)
+                
+            if step_addr.upper() == "VIRTUAL":
+                stepper = VirtualStepper(step_addr)
+            else:
+                stepper = Geos_Stepper(step_addr)
+            self._instruments.append(stepper)
+                
+            if lock_addr.upper() == "VIRTUAL":
+                lockin = VirtualLockin(lock_addr)
+            else:
+                lockin = SRS830(lock_addr)
+            self._instruments.append(lockin)
+            self._active_lockin = lockin
+        except Exception as error:
+            messagebox.showerror("Driver initialization error", str(error))
+            print(f"Driver initialization error: {error}")
+            self._close_instruments()
+            return
 
         # Instantiate experiment
         try:
@@ -551,14 +579,13 @@ class AMRApp(MeasurementApp):
                 self._awaiting_terminal = False
                 self.is_measuring = False
                 self.cleanup_controls()
-                if event.safety.status == SafetyStatus.SAFE and self.runner.can_close():
+                if self.runner.can_close():
                     self._close_instruments()
                 else:
                     print("Retaining open connections due to non-safe status or runner close gate.")
 
             if (self._closing or self._close_when_safe) and self.runner.can_close() and not self._awaiting_terminal:
-                if self.runner.safety_status == SafetyStatus.SAFE:
-                    self._close_instruments()
+                self._close_instruments()
                 self._finish_close()
                 return
 
@@ -592,7 +619,7 @@ class AMRApp(MeasurementApp):
                 if hasattr(self, "status_label") and self.status_label is not None:
                     self.status_label.config(text="Waiting for worker exit and confirmed safety...")
                 return
-        if self.runner is None or self.runner.safety_status == SafetyStatus.SAFE:
+        if self.runner is None or self.runner.can_close():
             self._close_instruments()
         self._finish_close()
 

@@ -1,11 +1,26 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 24c (AMR notebook/GUI presentation integration) is complete.**
-Next: **checkpoint 24d onward / 25 (AMR additional adapters / GUI interaction hardening)**, as numbered in the roadmap.
+Continue on `measuremnt-standarization`. **Checkpoint 24c (AMR notebook/GUI presentation integration) review corrections are complete.**
+Next: **checkpoint 25 (detailed GUI ownership audit / interaction hardening)** / **checkpoint 24d (additional AMR adapters)**, as numbered in the roadmap.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
 
-## Checkpoint 24c report (authoritative)
+## Checkpoint 24c review corrections (authoritative)
+
+- Validation: full suite with Agg **1601 passed, 1 skipped** in 46.85s on Python 3.13.2.
+  Focused AMR/Magneto suite (195 tests) passed in 18.74s; GUI suite (20 tests) passed in 17.42s.
+  No physical hardware validation was performed (checkpoints 17 and 22 remain PENDING).
+- **Driver Setup Failure Cleanup**: In `AMRApp.run_measurement()`, opened instruments are immediately tracked into `self._instruments` as each driver is instantiated. If any subsequent driver constructor raises an exception, all earlier opened connections are cleanly closed via `self._close_instruments()` in an exception handler before returning, preventing resource leaks.
+- **Unified Hardware Ownership / Busy Guard**: Implemented `_busy()` in `AMRApp` checking `is_measuring`, `_awaiting_terminal`, `not runner.can_close()`, and `bool(self._instruments)`. This single guard is enforced across `run_measurement()`, `refresh_instruments()`, `autodetect_instruments()`, and `test_stepper()`, preventing operations when connections are retained under `SafetyStatus.UNSAFE`.
+- **Pre-Start Abort Connection Release**: Terminal event handling and window closing logic now evaluate `self.runner.can_close()` instead of strictly requiring `SafetyStatus.SAFE`. When a run is stopped before start (`SafetyStatus.NOT_NEEDED` under `RunState.ABORTED`), instrument connections are safely closed and released. If a run results in `SafetyStatus.UNSAFE`, `can_close()` remains False, retaining connections for manual bench inspection.
+- **Strict Simulation Excitation Shutdown**: `_simulation_excitation_shutdown()` checks `isinstance(lockin, VirtualLockin)` at runtime (raising `TypeError` if a physical lock-in is encountered and `RuntimeError` if missing), and allows exceptions to propagate directly rather than silently catching and swallowing them.
+- **Fault Regressions**: Added 4 dedicated tests in `tests/test_measurement_amr_gui.py` verifying:
+  1. Partial driver setup failure immediately closes earlier opened connections;
+  2. Retained unsafe state blocks Run, Refresh, Autodetect, and Test Stepper;
+  3. Pre-start abort (`NOT_NEEDED`) releases connections when `runner.can_close()` permits;
+  4. Simulation shutdown strictly enforces `VirtualLockin` instances and propagates failures.
+
+## Original checkpoint 24c report (superseded by review corrections above)
 
 - **MeasurementRunner Integration**: Modernized `AMRApp` in `Measurements/AMR/amr_GUI.py` to coordinate acquisition through `MeasurementRunner(self.experiment)` instead of unmanaged `threading.Thread`. Guarantees non-daemon background thread execution (`daemon=False`), preventing thread abandonment while hardware outputs are active.
 - **Bounded Live Updates & Authoritative Terminal Data**: GUI polling drains `self.runner.display_queue` on the main thread, extracting the bounded `raw_window` view (bounded by `raw_window_points`, default 100) to keep rendering overhead constant. Upon receiving `TerminalEvent` from `self.runner.control_queue`, the GUI renders the complete authoritative dataset from `event.final_snapshot.get_view('data')` or `event.data`. Removed legacy CSV-file polling via `standard_csv_to_metadata_and_data`.
