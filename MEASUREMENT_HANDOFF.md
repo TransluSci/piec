@@ -1,12 +1,31 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 25 (detailed AMR GUI ownership and interaction audit) is complete.**
-Next: **checkpoint 24d onward / 26 (additional AMR electrical adapters / AMR physical record)**, as numbered in the roadmap.
+Continue on `measuremnt-standarization`. **Checkpoint 26 (AMR physical validation record: PENDING) is complete.**
+All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
+Next: **checkpoint 24d onward / 27 (additional AMR electrical adapters / role-specific simulation contracts)**, as numbered in the roadmap.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
-Checkpoint 22 is the FE physical record; without hardware execution record it
-remains PENDING. Checkpoint 17 also remains explicitly PENDING.
 
-## Checkpoint 25 report (authoritative)
+## Checkpoint 26 report (authoritative)
+
+- **Status**: **PENDING**. The protocol template is complete; physical execution is not.
+- **Physical Environment Discovery**: `pyvisa.ResourceManager().list_resources()` returned `()`. No physical VISA instruments (stepper motor, electromagnet calibrator, field readback DMM, lock-in amplifier) were discovered in this automated software environment.
+- **Physical Safety Principle**: In accordance with Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md`, virtual drivers and headless test suites (1621 tests passing) validate interface contracts, schema conformity, thread coordination, and numerical algorithms, but they do NOT prove physical hardware safety. Checkpoint 26 remains explicitly marked **PENDING** until actual physical testing is conducted on laboratory hardware.
+- **Dedicated Protocol & Record Documents**:
+  - `docs/physical_validation_amr.md`: Authoritative physical validation record and 4-stage protocol for AMR (Checkpoint 26).
+  - `docs/physical_validation_fe.md`: Authoritative physical validation record and 4-stage protocol for Ferroelectric testing (Checkpoint 22).
+  - `docs/physical_validation_iv_moke.md`: Authoritative physical validation record and staged protocol for IV & MOKE (Checkpoint 17).
+- **Staged AMR Validation Protocol** (per Section 13: "AMR validates motion and field roles independently before combining them"):
+  - **Stage 1: Motion Role Validation (Orientation Controller Alone)**: Evaluates stepper motor / rotation stage without magnetic field or sample excitation. Verifies angular scaling (`steps_per_degree`), forward and reverse angular sweeps, stop latency, serial timeout handling, and confirms repair of defect `AMR-ANGLE-001` (motor halts at final commanded angle with zero extra steps).
+  - **Stage 2: Field Role Validation (Field Source + Field Readback Alone)**: Evaluates electromagnet power supply (calibrator) and field readback DMM / Hall probe without sample excitation or motion. Verifies voltage-to-field calibration factor (`AMR-FIELD-001` repair: $10000\text{ Oe/V}$ produces $0.01\text{ V}$ for $100\text{ Oe}$), bipolar zero-crossing across negative fields, and attempt-all de-energization safing to 0 Oe.
+  - **Stage 3: Transport Readout & Excitation Safing Role Validation (Lock-In Alone)**: Evaluates lock-in amplifier terminated into a known benign standard resistor. Verifies default preservation of front-panel manual settings (`initialize_lockin=False`, `readout_configuration="preserve"`), execution of declared physical excitation shutdown policy (amplitude drops to $0.000\text{ V}$), and retention of open connections on simulated shutdown failure (`SafetyStatus.UNSAFE`).
+  - **Stage 4: Integrated Low-Field AMR Measurement**: Reference thin-film AMR sample (e.g. 20 nm NiFe stripe) mounted in electromagnet pole gap. $0^\circ \to 180^\circ$ rotation sweep at $H = 100\text{ Oe}$. Verifies bounded `raw_window` display updates, authoritative terminal delivery, atomic CSV publication under canonical schema `amr` v1 with metadata units (`deg`, `Oe`, `V`, `V`), and characteristic $\cos^2(\theta)$ anisotropic curve.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Validation**: Full repository test suite with Agg backend: **1621 passed, 1 skipped** in 62.07s on Python 3.13.2. Zero failures, zero xfails.
+
+## Checkpoint 25 report
 
 - Validation: full suite with Agg **1621 passed, 1 skipped** in 62.07s on Python 3.13.2.
   Focused AMR/Magneto suite (215 tests) passed in 34.69s; GUI suite (35 tests) passed in 26.91s.

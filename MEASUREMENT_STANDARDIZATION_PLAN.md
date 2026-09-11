@@ -74,6 +74,10 @@ Suggested implementation prompt:
 | 22 | PENDING | Physical hardware testing unavailable in execution environment; FE physical record remains explicitly PENDING. |
 | 23/23a (implemented early; original commit mislabeled 21) | Reviewed adapter implementation | Implemented AMR setup-role adapters (`FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, `AMRSetupProfile`) with default preservation of manual lock-in settings (`readout_configuration="preserve"`), internal/external excitation, linear/table/native field modes, tolerance verification across zero/negative fields, and attempt-all safing. Repaired `AMR-FIELD-001` in `convert_field_to_voltage` and added `convert_voltage_to_field`. Added 37 comprehensive contract and virtual driver tests in `tests/test_amr_contract.py`. Full suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2. Checkpoint 17 physical validation remains PENDING. |
 | 24a | Completed | Standardized `MagnetoTransport` onto `BaseMeasurement` shared lifecycle, runner and session execution, excitation safing validation, attempt-all safe shutdown with connection retention, `stepper` and `voltage_calibration` parameters with backward-compatible aliases, target contract validation; full suite: 1564 passed, 1 skipped, 1 xfailed. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly PENDING. |
+| 24b | Completed | Migrated AMR acquisition, schema `amr` v1 with plain columns ('angle', 'field', 'x', 'y') and declared units, BaseMeasurement lifecycle, and consumers onto standardized MagnetoTransport base. Repaired defect AMR-ANGLE-001 (eliminated extra post-measurement motor step; motor endpoint strictly matches commanded angle). Preserved manual lock-in settings by default and enforced mandatory declared excitation shutdown policy before energizing. Atomic engine-owned publication and cooperative controls (Stop-before-start, pause/resume, in-flight Stop). Removed _LegacyMagnetoTransport and obsolete API tests. Full test suite with Agg backend: **1571 passed, 1 skipped** in 32.72s on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly **PENDING**. |
+| 24c | Completed | Migrated AMR GUI (AMRApp in Measurements/AMR/amr_GUI.py) onto MeasurementRunner, non-daemon background execution, bounded live updates from display queue raw_window view, authoritative terminal data view from final_snapshot or data, and main-thread plotting with metadata-derived units from experiment.column_units ('angle (deg)', 'field (Oe)', 'x (V)', 'y (V)'). Preserved manual front-panel lock-in settings by default (initialize_lockin=False). Provided explicit setup path for real excitation shutdown: simulation-only policy (_simulation_excitation_shutdown) zeros reference voltage on virtual lock-in for all-virtual setups, while physical setups strictly require an explicit excitation_shutdown_handler before initializing drivers. Zero tolerance for no-op callbacks. Open instrument connections are retained on SafetyStatus.UNSAFE, and window close is deferred until worker exit and verified safety. Updated Measurements/AMR/AMR_testing.ipynb with explicit simulation excitation shutdown handler and metadata-derived dual-channel plotting. Updated manifest.json and test_measurement_amr_compatibility.py consumer inventory. Added 16 comprehensive tests in tests/test_measurement_amr_gui.py. Full test suite with Agg: **1597 passed, 1 skipped** in 44.45s on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly **PENDING**. |
+| 25 | Completed | AMR GUI interaction/ownership hardening: settings/preflight validation (addresses, sweep direction, limits, sensitivity), Run/Pause/Stop/close coordination through common runner, startup failure handling (validation vs active ownership retention), terminal-before-worker-exit gating, UNSAFE connection retention & run button locking, auxiliary action resilience (stepper test, autodetect, refresh). Targeted GUI: 35 passed; focused: 215 passed; full repo suite: **1621 passed, 1 skipped** in 62.07s on Python 3.13.2. Checkpoints 17, 22, and 26 physical validations remain explicitly **PENDING**. |
+| 26 | PENDING | AMR physical record: physical hardware testing is unavailable in execution environment (`pyvisa.ResourceManager().list_resources()` returned `()`); protocol template, staged execution procedures, and checklist documented in Section 13.3 and `docs/physical_validation_amr.md`. Record remains explicitly **PENDING**. Checkpoints 17, 22, and 26 physical validations are all PENDING. |
 
 
 Checkpoint 16 review completed: geometry choices now restore independent session-local
@@ -176,6 +180,11 @@ on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain ex
 Checkpoint 24b completed: migrated AMR acquisition, schema amr v1 with plain columns ('angle', 'field', 'x', 'y') and declared units, BaseMeasurement lifecycle, and consumers onto standardized MagnetoTransport base. Repaired defect AMR-ANGLE-001 (eliminated extra post-measurement motor step; motor endpoint strictly matches commanded angle). Preserved manual lock-in settings by default and enforced mandatory declared excitation shutdown policy before energizing. Atomic engine-owned publication and cooperative controls (Stop-before-start, pause/resume, in-flight Stop). Removed _LegacyMagnetoTransport and obsolete API tests. Full test suite with Agg backend: **1571 passed, 1 skipped** in 32.72s on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly **PENDING**.
 
 Checkpoint 24c completed: migrated AMR GUI (AMRApp in Measurements/AMR/amr_GUI.py) onto MeasurementRunner, non-daemon background execution, bounded live updates from display queue raw_window view, authoritative terminal data view from final_snapshot or data, and main-thread plotting with metadata-derived units from experiment.column_units ('angle (deg)', 'field (Oe)', 'x (V)', 'y (V)'). Preserved manual front-panel lock-in settings by default (initialize_lockin=False). Provided explicit setup path for real excitation shutdown: simulation-only policy (_simulation_excitation_shutdown) zeros reference voltage on virtual lock-in for all-virtual setups, while physical setups strictly require an explicit excitation_shutdown_handler before initializing drivers. Zero tolerance for no-op callbacks. Open instrument connections are retained on SafetyStatus.UNSAFE, and window close is deferred until worker exit and verified safety. Updated Measurements/AMR/AMR_testing.ipynb with explicit simulation excitation shutdown handler and metadata-derived dual-channel plotting. Updated manifest.json and test_measurement_amr_compatibility.py consumer inventory. Added 16 comprehensive tests in tests/test_measurement_amr_gui.py. Full test suite with Agg: **1597 passed, 1 skipped** in 44.45s on Python 3.13.2. Checkpoint 17 and Checkpoint 22 physical validations remain explicitly **PENDING**. Checkpoint **24d onward / 25** is next.
+
+Checkpoint 25 completed: completed detailed AMR GUI interaction and ownership audit in `Measurements/AMR/amr_GUI.py`. Overrode `save_settings()` and `load_settings()` to persist `initialize_lockin_var` without frame corruption. Added preflight validation rejecting blank/whitespace addresses, simulation excitation shutdown on physical VISA resources, sweep direction mismatch (`total_angle * angle_step < 0`), step counts $> 1,000,000$, non-positive amplitude/frequency, negative measure time, and empty sensitivity. Driver and experiment setup errors cleanly close opened instruments and reset status to `"Idle"`. Runner start failure retains active ownership in `self._instruments` and keeps `_busy()` True if `not runner.can_close()`. Coordinated Run/Pause/Stop/close lifecycle through common runner, debounced Stop and Pause buttons, deferred window close until worker exit and verified safe shutdown, and blocked close on unclosed connections. Enforced terminal delivery prior to worker exit and retained open connections on `SafetyStatus.UNSAFE` (locking `run_button` and alerting operator). Added 15 new interaction and ownership audit tests in `tests/test_measurement_amr_gui.py` (total 35 tests, all passing). Full test suite with Agg backend: **1621 passed, 1 skipped** in 62.07s on Python 3.13.2. Checkpoints 17, 22, and 26 physical validations remain explicitly **PENDING**.
+
+Checkpoint 26 recorded: AMR physical validation record is **PENDING** as physical VISA instruments are unavailable in this execution environment (`pyvisa.ResourceManager().list_resources()` returned `()`). Documented physical execution record template, acceptance criteria, 4-stage validation protocol (Stage 1: Stepper motor alone & AMR-ANGLE-001 endpoint check, Stage 2: Field source + readback alone & AMR-FIELD-001 calibration, Stage 3: Lock-in alone & manual settings preservation / excitation shutdown, Stage 4: Integrated low-field AMR measurement on reference sample), and observation log in Section 13.3 and `docs/physical_validation_amr.md`. All physical validation records (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
+
 
 ## 1. Purpose and non-negotiable constraints
 
@@ -881,7 +890,7 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 24c | Completed | AMR notebook/GUI presentation integration: MeasurementRunner lifecycle, bounded raw_window live display, authoritative terminal data view, metadata-derived axis labels, simulation vs physical excitation shutdown policy, manual lock-in preservation by default, open connection retention on UNSAFE, notebook simulation safing & unit plotting. Full suite with Agg: 1597 passed, 1 skipped. |
 | 24d onward | Additional AMR electrical adapters, one signal mode per commit after the working four-instrument slice | Mode-specific data/units and truthful excitation; direct-resistance or voltage/current numerical fixtures, producer/GUI/consumer updates; no fabricated X/Y or assumed current |
 | 25 | Completed | AMR GUI interaction/ownership hardening: settings/preflight validation (addresses, sweep direction, limits, sensitivity), Run/Pause/Stop/close coordination through common runner, startup failure handling (validation vs active ownership retention), terminal-before-worker-exit gating, UNSAFE connection retention & run button locking, auxiliary action resilience (stepper test, autodetect, refresh). Targeted GUI: 35 passed; focused: 215 passed; full repo suite: 1621 passed, 1 skipped in 62.07s. |
-| 26 | AMR physical record | Separate role tests then low-field integrated result or PENDING |
+| 26 | PENDING | AMR physical record: physical hardware testing unavailable in execution environment; record remains explicitly PENDING. |
 | 27 | Role-specific simulation contracts | Units, reset, deterministic time/RNG and voltage/current-source electrical loads |
 | 28a onward | Generic per-instance virtual hooks, one driver family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
 | 29 | VirtualBench | Routing, reset isolation, deterministic noise/time and two-bench concurrency |
@@ -934,6 +943,48 @@ independently and record whether an interlock is visible to software.
 Keep checkpoint 17 PENDING until dated physical execution and sign-off exist.
 The plan permits later offline work, but this handoff stops before checkpoint 18
 until the user requests it.
+
+### 13.2 Checkpoint 22: Ferroelectric (FE) physical validation record (PENDING)
+
+The record template is complete; physical validation remains **PENDING**.
+Use `docs/physical_validation_fe.md` as the single detailed template for the
+Section 13 record fields, staged execution, observation log and sign-off.
+
+Physical AWG, oscilloscope, and amplifier instruments were not discovered in this
+automated environment (`pyvisa.ResourceManager().list_resources()` returned `()`).
+Virtual and headless test suites pass (207 focused FE tests, 43 GUI tests) but do not
+substitute for physical hardware validation.
+
+Per Section 13: "FE begins at low amplitude into an explicitly known impedance."
+Hardware validation is staged:
+1. Low amplitude ($V \le 1.0\text{ V}$) into a benign linear capacitor standard ($C \approx 10\text{ nF}$) in series with a precision shunt resistor ($50\text{ }\Omega$). Verifies strict trigger ordering (arm scope -> enable AWG output -> trigger AWG), WaveformReader channel routing and finite numerical validation, linear dielectric response ($P_r \approx 0$, $V_c \approx 0$), and attempt-all AWG output safing (`:OUTP OFF`).
+2. Three-pulse PUND on linear capacitor standard to verify pulse sequence timing, polarities, auto_timeshift alignment, and cancellation of switching vs non-switching displacement ($\Delta P \approx 0$).
+3. Reference ferroelectric capacitor (PZT, BFO, HZO) integration with established voltage/current limits and manual emergency procedures. Verifies in-memory `process_hysteresis` and `process_pund` data extraction, multi-artifact plot staging (`_PV.png`, `_IV.png`, `_trace.png`, `_dPvst.png`), and canonical schema publication (`hysteresis` v1, `three_pulse_pund` v1).
+4. Fault handling: scope trigger timeout, communication failure, and attempt-all safing with `SafetyStatus.UNSAFE` connection retention.
+
+Keep checkpoint 22 PENDING until dated physical execution and sign-off exist.
+
+### 13.3 Checkpoint 26: AMR physical validation record (PENDING)
+
+The record template is complete; physical validation remains **PENDING**.
+Use `docs/physical_validation_amr.md` as the single detailed template for the
+Section 13 record fields, staged execution, observation log and sign-off.
+
+Physical stepper motor, electromagnet calibrator, field readback DMM, and lock-in
+amplifier instruments were not discovered in this automated environment
+(`pyvisa.ResourceManager().list_resources()` returned `()`). Virtual and headless
+test suites pass (215 focused AMR/Magneto tests, 35 GUI tests) but do not substitute
+for physical hardware validation.
+
+Per Section 13: "AMR validates motion and field roles independently before combining them."
+Hardware validation is staged:
+1. Motion role alone: Stepper motor / orientation controller verification without magnetic field or sample excitation. Verifies angular scaling, forward/reverse directional handling, stop latency, and confirms repair of defect `AMR-ANGLE-001` (zero extra motor step; endpoint strictly matches commanded angle).
+2. Field role alone: Calibrator / electromagnet power supply and field readback DMM / Hall probe without sample excitation or motion. Verifies voltage-to-field calibration (`AMR-FIELD-001` repair: $10000\text{ Oe/V}$ gives $0.01\text{ V}$ for $100\text{ Oe}$), bipolar zero-crossing, and attempt-all de-energization safing to $0\text{ Oe}$.
+3. Transport readout & excitation safing role alone: Lock-in amplifier into a known benign resistor standard (e.g. 1 kΩ). Verifies preservation of front-panel manual settings by default (`initialize_lockin=False`, `readout_configuration="preserve"`), execution of declared physical excitation shutdown policy (amplitude drops to $0.000\text{ V}$), and retention of open connections on simulated shutdown failure (`SafetyStatus.UNSAFE`).
+4. Integrated low-field AMR measurement: Reference thin-film AMR sample (e.g. 20 nm NiFe stripe) mounted in electromagnet gap. $0^\circ \to 180^\circ$ rotation sweep at $H = 100\text{ Oe}$. Verifies bounded `raw_window` display updates, authoritative terminal delivery, atomic CSV publication under canonical schema `amr` v1 with declared units (`deg`, `Oe`, `V`, `V`), and characteristic $\cos^2(\theta)$ anisotropic magnetoresistance curve.
+
+Keep checkpoint 26 PENDING until dated physical execution and sign-off exist.
+All physical validation checkpoints (17, 22, and 26) are explicitly marked **PENDING**.
 
 ## 14. Definition of done
 
