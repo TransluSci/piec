@@ -190,6 +190,15 @@ Checkpoint 26 recorded: AMR physical validation record is **PENDING** as physica
 
 ## 1. Purpose and non-negotiable constraints
 
+Checkpoint 28c follow-up review: calibrator hooks report effective electrical
+outputs, zero inactive quantities and zero both on crowbar/off/reset; crowbar
+notifications retain the electrical mode. Hook failures leave output state
+unconfirmed (`None`) until a successful command, with unchanged errors and no
+retries. Variadic hooks receive the commanded value and invalid enable inputs
+are rejected before mutation. See the current handoff for regression results.
+Next is checkpoint 28d, one additional driver family only. Physical 17/22/26
+remain PENDING.
+
 Checkpoint 28b review corrections: DMM hooks receive all declared coupling/ac
 settings, including combined and mixed positional-only/keyword signatures, without
 retrying hook errors or silently keeping a DC default during AC acquisition.

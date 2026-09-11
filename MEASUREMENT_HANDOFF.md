@@ -7,6 +7,14 @@ Additional electrical adapters remain separate later work; do not bundle them in
 
 ## Checkpoint 28c report (authoritative)
 
+### Review corrections
+
+- Crowbar notifications retain the active electrical mode (voltage/current), report effective value zero and set both electrical keyword outputs to zero. Inactive voltage/current keywords no longer expose stale setpoints after switching modes. Stored settings remain available through getters and are restored on output enable.
+- Hook failures propagate unchanged after exactly one call and leave `output_on` / `_output_enabled` as `None` (unconfirmed), including failures during output-off, crowbar and reset. A subsequent successful command restores confirmed state. Do not treat unconfirmed state as a successful shutdown or roll it back to a guessed physical state.
+- Pure variadic hooks receive the commanded value. Invalid output-enable settings are rejected before changing state; finite real numeric command scalars are supported.
+- Added regressions for both source modes, crowbar, inactive-output keywords, failure/recovery, variadic dispatch and invalid enable values.
+- Corrective validation: full suite with Agg **1848 passed, 1 skipped in 63.19s**; `git diff --check` passed. Physical 17/22/26 remain PENDING. Next is checkpoint 28d only, one additional driver family; extra AMR adapters and VirtualBench stay separate.
+
 - **Status**: **Completed**. Selected driver family: **DC Calibrator (`VirtualCalibrator`)**.
 - **Physical Validation Matrix**:
   - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)

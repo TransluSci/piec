@@ -84,6 +84,15 @@ or undefined at zero current.
 
 ## Driver virtual hooks: DC Calibrator family (checkpoint 28c)
 
+Output notifications describe effective output: `value` uses the active electrical
+mode, while `voltage`/`current` are zero for the inactive mode and both zero when
+disabled. Crowbar retains the previous electrical mode in its notification.
+Getters continue to expose stored setpoints, which can be restored by enabling output.
+If a hook fails, `output_on` and `_output_enabled` become `None` (unconfirmed).
+Errors propagate without retry; a subsequent successful command confirms state.
+This applies to reset and shutdown too: failure must not be interpreted as disabled
+output. Pure `*args` hooks receive the effective value as their first argument.
+
 - `VirtualCalibrator` (DC calibrator driver family) supports generic per-instance hook injection via
   `output_hook` or `field_hook` (in constructor, via property, or via `set_output_hook`).
 - Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.

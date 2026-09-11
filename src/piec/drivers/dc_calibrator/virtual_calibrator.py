@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import math
+from numbers import Real
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Optional
 
@@ -170,7 +171,7 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
             TypeError: If value is not numeric.
             ValueError: If value is non-finite or mode is unsupported.
         """
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
+        if not isinstance(value, Real) or isinstance(value, bool):
             raise TypeError(f"Input value must be numeric (int or float), got {type(value).__name__}")
         value_f = float(value)
         if not math.isfinite(value_f):
@@ -201,7 +202,7 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
             effective_val = value_f
 
         if self._output_hook is not None:
-            self._invoke_output_hook(self._output_hook, effective_val, norm_mode, self.state["output_on"])
+            self._notify_output_hook(effective_val, self.state["mode"], self.state["output_on"])
             return
 
         # Deprecated fallback to shared magnetic sample
@@ -217,6 +218,8 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
 
         Disabling output engages crowbar / zero output.
         """
+        if not isinstance(on, (bool, int)) or on not in (False, True):
+            raise TypeError("on must be a boolean or 0/1")
         on_bool = bool(on)
         self.state["output_on"] = on_bool
         self._output_enabled = on_bool
@@ -226,7 +229,7 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
         ) if on_bool else 0.0
 
         if self._output_hook is not None:
-            self._invoke_output_hook(self._output_hook, effective_val, self.state["mode"], on_bool)
+            self._notify_output_hook(effective_val, self.state["mode"], on_bool)
             return
 
         # Deprecated fallback to shared magnetic sample
@@ -235,6 +238,17 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
                 self.mag_sample.current_field = 0.0
             elif self.state["mode"] == "voltage":
                 self.mag_sample.current_field = effective_val * self._voltage_calibration
+
+    def _notify_output_hook(self, value: float, mode: str, output_on: bool) -> Any:
+        """Do not certify an applied output after a failed notification."""
+        try:
+            return self._invoke_output_hook(self._output_hook, value, mode, output_on)
+        except BaseException:
+            # The hook may have applied some or all of the command before failing.
+            # Neither the old state nor the requested state is confirmed.
+            self.state["output_on"] = None
+            self._output_enabled = None
+            raise
 
     def _invoke_output_hook(
         self,
@@ -254,8 +268,8 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
             "mode": mode,
             "output_on": output_on,
             "on": output_on,
-            "voltage": value if mode == "voltage" else self.state["voltage"],
-            "current": value if mode == "current" else self.state["current"],
+            "voltage": value if output_on and mode == "voltage" else 0.0,
+            "current": value if output_on and mode == "current" else 0.0,
         }
 
         params = list(sig.parameters.values())
@@ -287,6 +301,9 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
                     kwargs[p.name] = values[p.name]
 
         # 3. **kwargs
+        if (any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+                and not args and not kwargs):
+            args.append(value)
         if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
             kwargs.update({k: v for k, v in values.items() if k not in sig.parameters})
 
@@ -319,7 +336,7 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
         self._output_enabled = False
 
         if self._output_hook is not None:
-            self._invoke_output_hook(self._output_hook, 0.0, "voltage", False)
+            self._notify_output_hook(0.0, "voltage", False)
         elif hasattr(self, "mag_sample") and self.mag_sample is not None:
             self.mag_sample.current_field = 0.0
 

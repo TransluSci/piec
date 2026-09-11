@@ -369,6 +369,70 @@ class TestSignatureBindingAndErrorPropagation:
 # 5. Deterministic Reset and Instance Isolation
 # ============================================================================
 
+@pytest.mark.parametrize("mode", ["voltage", "current"])
+def test_crowbar_sends_zero_in_both_electrical_units(mode):
+    calls = []
+    cal = VirtualCalibrator(output_hook=lambda **data: calls.append(data))
+    cal.set_voltage(5.0)
+    cal.set_current(0.02)
+    cal.set_output(2.0, mode=mode)
+    cal.set_output(0, mode="crowbar")
+    assert calls[-1]["value"] == 0
+    assert calls[-1]["voltage"] == calls[-1]["current"] == 0
+    assert calls[-1]["mode"] == mode
+    assert calls[-1]["output_on"] is False
+    cal.output(True)
+    assert calls[-1]["value"] == 2.0
+
+
+def test_mode_switch_does_not_report_stale_inactive_output():
+    calls = []
+    cal = VirtualCalibrator(output_hook=lambda *, voltage, current: calls.append((voltage, current)))
+    cal.set_voltage(5)
+    cal.set_current(0.02)
+    assert calls == [(5, 0), (0, 0.02)]
+
+
+def test_variadic_output_hook_receives_the_command_value():
+    calls = []
+    cal = VirtualCalibrator(output_hook=lambda *args: calls.append(args))
+    cal.set_voltage(3)
+    cal.output(False)
+    assert calls == [(3,), (0,)]
+
+
+@pytest.mark.parametrize("operation", ["set", "off", "crowbar", "reset"])
+def test_failed_hook_marks_output_unconfirmed_until_successful_command(operation):
+    calls = []
+    error = RuntimeError("output update failed")
+    def fail(value):
+        calls.append(value)
+        raise error
+    cal = VirtualCalibrator(output_hook=lambda value: None)
+    cal.set_voltage(5)
+    cal.output_hook = fail
+    actions = {"set": lambda: cal.set_voltage(3), "off": lambda: cal.output(False),
+               "crowbar": lambda: cal.set_output(0, mode="crowbar"), "reset": cal.reset}
+    with pytest.raises(RuntimeError) as result:
+        actions[operation]()
+    assert result.value is error
+    assert len(calls) == 1
+    assert cal.get_state()["output_on"] is None
+    assert cal._output_enabled is None
+    cal.output_hook = lambda value: None
+    cal.output(False)
+    assert cal.get_state()["output_on"] is False
+
+
+@pytest.mark.parametrize("bad_on", ["off", "false", None, 2])
+def test_invalid_enable_setting_preserves_state(bad_on):
+    cal = VirtualCalibrator()
+    before = cal.get_state()
+    with pytest.raises(TypeError):
+        cal.output(bad_on)
+    assert cal.get_state() == before
+
+
 class TestDeterministicResetAndInstanceIsolation:
     """Reset ownership and isolation of state across instances."""
 
