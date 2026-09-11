@@ -1,9 +1,29 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 27 (role-specific simulation contracts) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28a (generic per-instance virtual hooks: Lock-in family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28a: generic per-instance virtual hooks for one driver family only.** Read the roadmap, choose and record the first family, implement and validate it, commit separately, then stop for review. Additional electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28b: generic per-instance virtual hooks for next driver family** (or Checkpoint 24d onward for additional AMR electrical adapters, as prioritized).
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28a report (authoritative)
+
+- **Status**: **Completed**. Selected driver family: **Lock-in (`VirtualLockin`)**.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/lockin/virtual_lockin.py`):
+  - **Hook Injection**: Added `xy_reader` and `transport_hook` (alias) constructor parameters, method injectors `set_xy_reader(hook)`, `set_transport_hook(hook)`, and properties `xy_reader`, `transport_hook`.
+  - **Strict Precedence**: Explicit per-instance injection takes precedence over the deprecated shared `mag_sample` fallback in `quick_read()`. If `xy_reader` is injected, it is evaluated directly and `mag_sample` is not accessed.
+  - **Material Decoupling**: Generic `VirtualLockin` contains no material-specific logic, magnetic formulas, angle/field calculations, or AMR equations; material modeling remains entirely external to the driver in the material/hook closure.
+  - **Excitation & Units**: Preserved explicit `excitation_current` in A with strict finite/positive validation. Forwarded `excitation_current` to hooks accepting it (keyword or single positional parameter). Exposed `declared_units` mapping `{"x": "V", "y": "V", "excitation_current": "A"}`.
+  - **Plain Tuple Response**: Validates and returns a plain `tuple[float, float]` in Volts; no compatibility wrappers, no scalar/float subclasses. Rejects non-sequence, wrong-length, non-convertible, or non-finite hook outputs with `TypeError` or `ValueError`.
+  - **State & Reset Determinism**: `reset()` restores constructor initial `excitation_current` and default reference settings while preserving the injected per-instance hook intact. Added instance-level `mag_sample` property to ensure instance assignments never pollute global `VirtualInstrument._shared_mag_sample`.
+- **Validation**:
+  - Dedicated hook test suite: 28 tests in `tests/test_virtual_lockin_hook.py` passed in 0.97s.
+  - Focused simulation and AMR suites: 194 passed in 27.15s.
+  - Full repository test suite with Agg backend: **1725 passed, 1 skipped** in 62.31s on Python 3.13.2. Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly.
 
 ## Checkpoint 27 report (authoritative)
 

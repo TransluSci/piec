@@ -30,7 +30,21 @@ or undefined at zero current.
   `excitation_current` setting (default 1 uA). This is not a measured sample current
   or a model of the physical lock-in output circuit.
 
-Per-instance driver hooks and VirtualBench wiring remain later checkpoints.
+## Driver virtual hooks (checkpoint 28a)
+
+- `VirtualLockin` (lock-in driver family) supports generic per-instance hook injection via
+  `xy_reader` or `transport_hook` (in constructor, via property, or via `set_xy_reader`).
+- Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.
+- The generic driver contains no sample-, magnetic-, or AMR-specific logic; material behavior
+  remains external to the driver.
+- Declared excitation current (in A) is forwarded to hooks that accept `excitation_current`
+  or a single positional argument; 0-argument hooks are supported as well.
+- Returns plain `(X, Y)` tuples in V without compatibility wrappers. Non-sequence, wrong-length,
+  or non-finite hook returns raise `TypeError` or `ValueError`.
+- `reset()` restores constructor excitation current and default settings while preserving the
+  injected hook. Instance assignments to `lockin.mag_sample` do not pollute global shared sample state.
+
+Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents
 
