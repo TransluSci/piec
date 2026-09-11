@@ -1,11 +1,52 @@
 # Measurement standardization handoff
 
 Continue on `measuremnt-standarization`. **Checkpoint 24a (MagnetoTransport lifecycle and consumers) is complete.**
-Next: **checkpoint 24b only, AMR acquisition/schema/persistence and consumers**, as numbered in the Section 12 roadmap.
+Next: **checkpoint 24b only, AMR acquisition/schema/persistence and consumers**, as numbered in the roadmap.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
 
-## Checkpoint 24a: MagnetoTransport lifecycle and consumers
+## Checkpoint 24a review corrections (authoritative)
+
+- Validation: full suite with Agg **1577 passed, 1 skipped, 1 xfailed** in
+  30.45s. No physical hardware validation was performed.
+- The public MagnetoTransport now lives in `_magneto_transport_base.py`, exported
+  through the existing public modules. It inherits the shared public execution,
+  session and shutdown methods without legacy I/O bypasses, setters or aliases.
+  The old AMR temporarily inherits private `_LegacyMagnetoTransport`; legacy
+  characterization tests target only that private path. Remove it in 24b as AMR
+  moves onto the public base. Do not restore aliases or direct hardware methods
+  on the standardized base to satisfy legacy tests.
+- Excitation shutdown handlers are mandatory before execution; the optional
+  `require_excitation_safing` bypass is removed. Field bounds/calibration and
+  strict run options are checked before lock-in excitation can be configured.
+  Unknown options, string/integer booleans, and conflicting configuration choices
+  are rejected. A supplied profile's readout policy is honored by default.
+- Instrument identification and field-reader exceptions propagate. The source
+  uses a declared cancellable `field_settling_time` (default zero; configure for
+  the bench), then verifies field. Fail-policy mismatches/nonfinite readings
+  stop acquisition; all shutdown roles are still attempted without closing
+  connections. Warn-policy finite mismatches retain their documented behavior.
+- Setup field units determine metadata, without assuming Oe for native/table
+  profiles. Optional `field_measured` and elapsed `field_time` columns follow X/Y.
+  Command and reader calibration identities/scales/tables remain separate in
+  metadata. Excitation settings are user-declared/unverified, not measured.
+- Pause acts before point acquisition with field retained; Stop wakes the pause
+  and ends acquisition with shared safing. Legacy mutable pause/abort flags are
+  absent from the public class. Explicit-profile and separate-instrument inputs
+  cannot be mixed into an inconsistent ownership configuration.
+
+Gemini: implement **24b only** on the public MagnetoTransport base. Preserve the
+four-instrument profile and manual lock-in settings; supply a real declared
+excitation shutdown policy before energizing. Migrate AMR acquisition, schema,
+persistence and affected consumers, repair AMR-ANGLE-001 with physical-position
+and numerical regressions, and delete `_LegacyMagnetoTransport` plus its obsolete
+API characterization tests when no consumers remain. Keep scientific goldens,
+bounded snapshots, cancellable dwell/motion, engine-owned partials and safing.
+Do not add a compatibility layer or measurement-owned per-point CSV writes.
+Validate, commit 24b separately, update this handoff, and stop for review.
+Physical checkpoints 17/22 remain PENDING.
+
+## Original checkpoint 24a report (superseded by review corrections above)
 
 - **BaseMeasurement Lifecycle & Zero Constructor I/O**: `MagnetoTransport` in `piec.measurement.magneto_transport` subclasses `BaseMeasurement`, implementing the shared lifecycle hooks: `_validate_options`, `_configure_instruments`, `_capture_data` (delegating to subclass or session), `_safe_shutdown`, `_create_snapshot`, `request_stop()`, and `request_pause()`. `__init__` performs zero hardware communication or file I/O.
 - **Target Interface & Schema**: Adheres to target schema `amr` version 1, ordered columns `("angle", "field", "x", "y")`, and canonical declared JSON metadata units `{"angle": "deg", "field": "Oe", "x": "V", "y": "V"}`.

@@ -10,7 +10,9 @@ Standardized for Checkpoint 24a of MEASUREMENT_STANDARDIZATION_PLAN.md:
 - Lock-in settings preservation by default (readout_configuration='preserve');
 - Validates excitation shutdown policy before energizing;
 - Attempt-all safe shutdown propagating failures to SafetyStatus.UNSAFE while retaining connections;
-- Backward compatibility for unmigrated subclasses (AMR) until Checkpoint 24b.
+- The public MagnetoTransport implementation is imported from _magneto_transport_base.
+- The private _LegacyMagnetoTransport supports only unmigrated AMR until 24b;
+  its old direct methods are not part of the standardized public base.
 """
 
 from __future__ import annotations
@@ -61,7 +63,7 @@ if TYPE_CHECKING:
     )
 
 
-class MagnetoTransport(BaseMeasurement):
+class _LegacyMagnetoTransport(BaseMeasurement):
     """
     Parent class for managing all magneto-transport measurements.
 
@@ -382,7 +384,7 @@ class MagnetoTransport(BaseMeasurement):
         If called directly on base MagnetoTransport outside an active session,
         raises AttributeError for legacy base compatibility.
         """
-        if type(self) is MagnetoTransport and self._active_session is None:
+        if type(self) is _LegacyMagnetoTransport and self._active_session is None:
             raise AttributeError("capture_data() must be defined in the child class specific to measurement")
         return super().capture_data(on_update=on_update)
 
@@ -490,197 +492,8 @@ class MagnetoTransport(BaseMeasurement):
         plt.tight_layout()
         plt.show()
 
-    # ------------------------------------------------------------------------
-    # BaseMeasurement Lifecycle Hooks
-    # ------------------------------------------------------------------------
-
-    def _validate_options(self, options: Optional[Mapping[str, Any]]) -> None:
-        """Validate run options before reservation or hardware I/O."""
-        super()._validate_options(options)
-        if options is not None and type(self) is MagnetoTransport:
-            valid_keys = {"configure_lockin", "readout_configuration", "require_excitation_safing"}
-            for key in options:
-                if key not in valid_keys:
-                    raise ValueError(f"Unknown option: {key}")
-
-            if "readout_configuration" in options:
-                cfg = str(options["readout_configuration"]).lower()
-                if cfg not in ("preserve", "configure"):
-                    raise ValueError(f"readout_configuration must be 'preserve' or 'configure', got {cfg!r}")
-
-        req_safing = (
-            options.get("require_excitation_safing")
-            if options and "require_excitation_safing" in options
-            else self.require_excitation_safing
-        )
-        if req_safing:
-            if self.profile is None or self.profile.transport_readout.shutdown_handler is None:
-                raise HardwareSafetyError(
-                    "Excitation shutdown handler required before energizing, but none declared"
-                )
-
-    def _configure_instruments(self, request: RunRequest) -> None:
-        """
-        Configure instruments during CONFIGURING phase with excitation safing validation before energizing.
-        """
-        opts = request.options or {}
-        req_safing = opts.get("require_excitation_safing", self.require_excitation_safing)
-        if req_safing:
-            if self.profile is None or self.profile.transport_readout.shutdown_handler is None:
-                raise HardwareSafetyError(
-                    "Excitation shutdown handler required before energizing, but none declared"
-                )
-
-        if self.profile is None:
-            raise ValueError("MagnetoTransport requires instruments or profile to execute")
-
-        if self._coordinator.is_stop_requested:
-            return
-
-        # Query IDNs if available on worker thread
-        for role_name, inst in (
-            ("dmm", self.dmm),
-            ("calibrator", self.calibrator),
-            ("arduino", self.arduino),
-            ("lockin", self.lockin),
-        ):
-            if inst is not None and hasattr(inst, "idn"):
-                try:
-                    self.measurement_metadata[role_name] = str(inst.idn())
-                except Exception:
-                    pass
-
-        # Handle lock-in configuration policy
-        cfg_mode = opts.get(
-            "readout_configuration",
-            getattr(self, "readout_configuration", "preserve"),
-        )
-        if "configure_lockin" in opts:
-            cfg_mode = "configure" if opts["configure_lockin"] else "preserve"
-        if (
-            cfg_mode == "configure"
-            and self.profile is not None
-            and self.profile.transport_readout is not None
-        ):
-            saved_mode = self.profile.transport_readout.readout_configuration
-            try:
-                self.profile.transport_readout.readout_configuration = "configure"
-                self.profile.transport_readout.configure()
-            finally:
-                self.profile.transport_readout.readout_configuration = saved_mode
-        # Note: If 'preserve' (default), NO configuration commands are sent to lock-in!
-
-        if self._coordinator.is_stop_requested:
-            return
-
-        # Energize magnetic field via field source
-        self.profile.field_source.set_field(self.field)
-        if self.profile.field_reader is not None:
-            try:
-                self.profile.field_reader.verify_field(self.field)
-            except Exception:
-                pass
-
-    def _capture_data(
-        self,
-        request: RunRequest,
-        on_update: Optional[Callable[[Any], None]] = None,
-    ) -> pd.DataFrame:
-        """
-        Acquire magneto-transport point.
-        """
-        if self._coordinator.is_stop_requested:
-            return pd.DataFrame(columns=self.ordered_columns)
-
-        if self.profile is None:
-            raise AttributeError("capture_data() must be defined in the child class specific to measurement")
-
-        angle = self.profile.orientation_controller.current_angle
-        field_val = (
-            self.profile.field_source.commanded_field
-            if self.profile.field_source.commanded_field is not None
-            else self.field
-        )
-        signals = self.profile.transport_readout.read_signals()
-
-        row = {
-            "angle": float(angle),
-            "field": float(field_val),
-            "x": float(signals["x"]),
-            "y": float(signals["y"]),
-        }
-        df = pd.DataFrame([row])
-        self._raw_data = df.copy()
-        self._data = df.copy()
-
-        snap = self.publish_snapshot(views={"raw": df}, completed_steps=1, total_steps=1)
-        if on_update is not None:
-            on_update(snap)
-
-        return df
-
-    def _safe_shutdown(
-        self, recorder: Optional[ShutdownAttemptRecorder] = None
-    ) -> SafetyReport:
-        """
-        Attempt-all shutdown across all setup roles.
-        Propagates any role error or unconfirmed shutdown to SafetyStatus.UNSAFE.
-        Retains instrument connections intact.
-        """
-        if recorder is None:
-            recorder = ShutdownAttemptRecorder()
-
-        if self.profile is not None:
-            recorder.record_action(
-                name="field_source_shutdown",
-                action_fn=self.profile.field_source.safe_shutdown,
-            )
-            recorder.record_action(
-                name="orientation_controller_shutdown",
-                action_fn=self.profile.orientation_controller.safe_shutdown,
-            )
-            recorder.record_action(
-                name="transport_readout_shutdown",
-                action_fn=self.profile.transport_readout.safe_shutdown,
-            )
-        elif self.calibrator is not None:
-            recorder.record_action(
-                name="calibrator_shut_off",
-                action_fn=self.shut_off,
-            )
-
-        return recorder.build_report()
-
-    def _analyze_data(
-        self, raw_data: pd.DataFrame, request: Optional[RunRequest] = None
-    ) -> pd.DataFrame:
-        """In-memory analysis hook (identity pass-through for base magneto-transport)."""
-        return raw_data.copy() if raw_data is not None else pd.DataFrame()
-
-    def run_experiment(
-        self,
-        *,
-        on_update: Optional[Callable[[Any], None]] = None,
-        save: bool = True,
-        save_partial: Optional[bool] = None,
-        options: Optional[Mapping[str, Any]] = None,
-        token: Optional[ReservationToken] = None,
-    ) -> pd.DataFrame:
-        """
-        Standard BaseMeasurement execution wrapper.
-        """
-        opts = dict(options or {})
-        return super().run_experiment(
-            token=token,
-            on_update=on_update,
-            save=save,
-            save_partial=save_partial,
-            options=opts,
-        )
-
-
 ### SPECIFIC WAVEFORM MEASUREMENT CLASSES ###
-class AMR(MagnetoTransport):
+class AMR(_LegacyMagnetoTransport):
     """
     Performs the AMR measurement using the lockin amplifier and the stepper motor.
 
@@ -895,3 +708,7 @@ def convert_voltage_to_field(voltage, voltage_calibration=10000.0) -> float:
     if not math.isfinite(cal_f) or cal_f <= 0:
         raise ValueError(f"voltage_calibration must be a positive finite number, got {voltage_calibration!r}")
     return v_f * cal_f
+
+
+# Public standardized class; legacy AMR stays isolated until checkpoint 24b.
+from ._magneto_transport_base import MagnetoTransport

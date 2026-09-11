@@ -642,6 +642,18 @@ Do not add a fictitious `read_waveform()` requirement to every oscilloscope driv
 
 ### 9.5 General AMR setups and the existing four-instrument profile
 
+**24a review corrections:** public MagnetoTransport is isolated from private
+unmigrated AMR support. No legacy direct I/O methods or parameter aliases are on
+the public base. Excitation shutdown validation is mandatory before any run;
+the require_excitation_safing bypass is removed. Field commands and strict options
+are validated before excitation configuration, reader/identification failures
+propagate, and all shutdown roles are attempted. Supplied profile policy and
+field units are preserved; optional measured-field/time data and separate
+calibration provenance are recorded. Pause before acquisition retains field;
+Stop wakes it. Checkpoint 24b must migrate AMR onto this base and remove private
+_LegacyMagnetoTransport and obsolete API characterization tests while retaining
+scientific and fault regressions. Physical 17/22 remain PENDING.
+
 Checkpoint 21 review corrections completed: FE measurement selection is locked
 while busy and queued selection events restore the active type. Failed startup
 without active ownership resets terminal-wait state and restores idle controls.

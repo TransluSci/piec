@@ -94,12 +94,15 @@ def create_mock_amr_instruments(
     }
 
 
+from piec.measurement.magneto_transport import _LegacyMagnetoTransport
+
+
 class TestMagnetoTransportCompatibility:
     """Characterize legacy MagnetoTransport base class behavior and hardware interactions."""
 
     def test_magneto_transport_constructor_and_attributes(self, tmp_path):
         mocks = create_mock_amr_instruments()
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],
@@ -134,7 +137,7 @@ class TestMagnetoTransportCompatibility:
 
     def test_magneto_transport_initialize_and_idn_queries(self):
         mocks = create_mock_amr_instruments(field=200.0)
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],
@@ -155,7 +158,7 @@ class TestMagnetoTransportCompatibility:
     def test_magneto_transport_initialize_tolerates_communication_error(self, capsys):
         mocks = create_mock_amr_instruments()
         mocks["dmm"].idn.side_effect = RuntimeError("Connection timed out")
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],
@@ -175,7 +178,7 @@ class TestMagnetoTransportCompatibility:
         # Expected voltage: 1000 / 10000 = 0.1V. DMM reads 0.1V -> actual field 1000 Oe
         mocks["dmm"].get_voltage.return_value = 0.100
 
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],
@@ -199,7 +202,7 @@ class TestMagnetoTransportCompatibility:
         # DMM reads 0.15V -> actual field 1500 Oe, 50% deviation (> 10% tolerance)
         mocks["dmm"].get_voltage.return_value = 0.150
 
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],
@@ -217,7 +220,7 @@ class TestMagnetoTransportCompatibility:
 
     def test_magneto_transport_shut_off_safing(self):
         mocks = create_mock_amr_instruments()
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],
@@ -231,7 +234,7 @@ class TestMagnetoTransportCompatibility:
 
     def test_magneto_transport_not_implemented_methods_raise(self):
         mocks = create_mock_amr_instruments()
-        mt = MagnetoTransport(
+        mt = _LegacyMagnetoTransport(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
             stepper=mocks["arduino"],

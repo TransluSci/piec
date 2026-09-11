@@ -142,7 +142,7 @@ class TestMagnetoTransportConstructorAndValidation:
 
         assert mt.field == 250.0
         assert mt.voltage_calibration == 5000.0
-        assert mt.voltage_callibration == 5000.0
+        assert not hasattr(mt, "voltage_callibration")
         assert mt.output_dir == tmp_path
         assert mt.profile is not None
         assert isinstance(mt.field_source, FieldSource)
@@ -154,7 +154,7 @@ class TestMagnetoTransportConstructorAndValidation:
         assert mt.transport_readout.instrument is mocks["lockin"]
         assert mt.orientation_controller.instrument is mocks["arduino"]
         assert mt.stepper is mocks["arduino"]
-        assert mt.arduino is mocks["arduino"]
+        assert not hasattr(mt, "arduino")
 
     def test_constructor_with_explicit_profile(self):
         v = create_virtual_instruments()
@@ -172,7 +172,7 @@ class TestMagnetoTransportConstructorAndValidation:
         assert mt.dmm is v["dmm"]
         assert mt.calibrator is v["calibrator"]
         assert mt.stepper is v["arduino"]
-        assert mt.arduino is v["arduino"]
+        assert not hasattr(mt, "arduino")
         assert mt.lockin is v["lockin"]
 
     def test_constructor_rejects_non_finite_field(self):
@@ -287,7 +287,6 @@ class TestExcitationSafingValidation:
             lockin=mocks["lockin"],
             field=500.0,
             output_dir=tmp_path,
-            require_excitation_safing=True,
             shutdown_handler=None,
         )
 
@@ -306,12 +305,11 @@ class TestExcitationSafingValidation:
             lockin=mocks["lockin"],
             field=300.0,
             output_dir=tmp_path,
-            require_excitation_safing=False,
             shutdown_handler=None,
         )
 
         with pytest.raises(HardwareSafetyError, match="Excitation shutdown handler required before energizing"):
-            mt.run_experiment(options={"require_excitation_safing": True}, save=False)
+            mt.run_experiment(save=False)
 
         assert mocks["calibrator"].set_output.call_count == 0
 
@@ -344,12 +342,11 @@ class TestSafeShutdownAndFaultHardening:
             lockin=mocks["lockin"],
             field=100.0,
             output_dir=tmp_path,
-            require_excitation_safing=False,
             shutdown_handler=None,
         )
 
         with pytest.raises(HardwareSafetyError, match="Hardware safety could not be verified"):
-            mt.run_experiment(save=False)
+            mt.safe_shutdown()
 
         assert mt.safety_status == SafetyStatus.UNSAFE
         # Attempt-all verified: field source and orientation shutdowns were still performed!
@@ -418,6 +415,7 @@ class TestCooperativeControls:
             lockin=mocks["lockin"],
             field=200.0,
             output_dir=tmp_path,
+            shutdown_handler=Mock(),
         )
 
         token = mt._reserve()
@@ -457,7 +455,7 @@ class TestSessionAndPersistence:
             assert mt.field_source.current_output == pytest.approx(0.05)
             df = sess.capture_data()
             assert len(df) == 1
-            assert list(df.columns) == ["angle", "field", "x", "y"]
+            assert list(df.columns) == ["angle", "field", "x", "y", "field_measured", "field_time"]
 
         assert mt.safety_status == SafetyStatus.SAFE
         assert shutdown.call_count == 1
@@ -484,8 +482,8 @@ class TestSessionAndPersistence:
         meta, data, units = read_measurement_csv(mt.filename)
         assert meta["measurement_schema"] == "amr"
         assert meta["measurement_schema_version"] == 1
-        assert list(data.columns) == ["angle", "field", "x", "y"]
-        assert units == {"angle": "deg", "field": "Oe", "x": "V", "y": "V"}
+        assert list(data.columns) == ["angle", "field", "x", "y", "field_measured", "field_time"]
+        assert units == {"angle": "deg", "field": "Oe", "x": "V", "y": "V", "field_measured": "Oe", "field_time": "s"}
 
 
 # ============================================================================
@@ -523,4 +521,4 @@ class TestMeasurementRunnerIntegration:
         assert event.safety.status == SafetyStatus.SAFE
         assert event.data is not None
         assert len(event.data) == 1
-        assert list(event.data.columns) == ["angle", "field", "x", "y"]
+        assert list(event.data.columns) == ["angle", "field", "x", "y", "field_measured", "field_time"]
