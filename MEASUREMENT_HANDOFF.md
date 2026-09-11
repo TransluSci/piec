@@ -1,9 +1,32 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28e (generic per-instance virtual hooks: Oscilloscope family) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28f (generic per-instance virtual hooks: AWG family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28f: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28g: generic per-instance virtual hooks for one next driver family only** (or next standardized checkpoint). Select and record the family/task, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28f report (authoritative)
+
+- **Status**: **Completed**. Selected driver family: **Arbitrary Waveform Generator (`VirtualAwg`)**.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/awg/virtual_awg.py`):
+  - **Hook Injection & Aliases**: Added `waveform_hook`, `apply_hook` (alias), and `trigger_hook` (alias) constructor parameters, method injectors `set_waveform_hook(hook)`, `set_apply_hook(hook)`, `set_trigger_hook(hook)`, and properties `waveform_hook`, `apply_hook`, `trigger_hook`. Passing `None` clears the hook and restores fallback; non-callables raise `TypeError`; conflicting hook aliases raise `ValueError`.
+  - **Strict Precedence**: Explicit per-instance injection takes strict precedence over the deprecated shared `sample` fallback in `_handle_trigger()`, `output_trigger()`, `trigger()`, `send_software_trigger()`, and SCPI `*TRG` / `:TRIG`. When an explicit hook is injected, `sample` is never accessed or mutated.
+  - **Material Decoupling**: Generic `VirtualAwg` contains no Landau model, prep points, PUND pulse sequences, or ferroelectric material logic; physical modeling remains entirely externalized to the hook closure or simulation model. The historical `self.sample.apply_waveform(v_prep, t_prep)` with 20 zero-volt prep points is retained strictly as deprecated global/instance fallback.
+  - **Signature Dispatch & Argument Binding**: Inspects signatures before calling the hook exactly once without retries; hook exceptions propagate unchanged without catch-and-retry masking. Binds generated waveform `v` and timeline `t` (positional or named `v`, `voltages`, `waveform`, `v_applied`, `data`, `t`, `times`, `timestamps`, `time`), `channel` (or `ch`), `freq` (or `frequency`), `duration`, single-argument `(v)`, positional-only `(v, t, /)`, `*args`, `**kwargs`, and zero-argument notification `()`. Positional-only parameters and optional defaults are cleanly preserved.
+  - **Declared Units & Input Validation Before Mutation**: Exposed `declared_units` mapping `{"voltage": "V", "frequency": "Hz", "time": "s"}`. Validates all configuration inputs before mutation: channel numbers (1-2), frequencies (positive finite floats), amplitudes (finite floats), DC offsets (finite floats), duty cycles / symmetries (finite floats in [0.0, 100.0]), pulse widths (positive finite floats), pulse delays (non-negative finite floats), waveform types, polarities ("NORM"/"INV"), trigger sources, levels, slopes, modes. Provides atomic configuration methods `configure_waveform`, `configure_pulse`, and `configure_trigger` that validate all arguments before committing state changes.
+  - **SCPI Command Dispatch & Queries**: Supports SCPI commands via `write()`: `*TRG`, `:TRIG`, `:TRIG:IMM`, `*RST`, `*CLS`, `:OUTP`. Supports SCPI queries via `query()`: `*IDN?`, `*OPC?`, `*ESR?`, `:OUTP?`, `:SOUR:FREQ?`, `:SOUR:VOLT?`.
+  - **State & Reset Ownership**: `reset()` restores default factory driver-owned configuration (default waveforms, frequencies, amplitudes, offsets, scales, all outputs OFF) while preserving the injected hook intact. Documented that setup-owned state (external models, timebase, clocks, RNG) is owned by the test fixture / VirtualBench and not reset by driver reset. Added instance-level `sample` property descriptor ensuring instance assignments never mutate global `VirtualInstrument._shared_fe_sample`.
+  - **Simulation Contracts**: Extended `src/piec/simulation/contracts.py` with `AwgWaveformHook = Callable[[Sequence[float], Sequence[float]], Any]`.
+- **Validation**:
+  - Dedicated hook test suite: 45 tests in `tests/test_virtual_awg_hook.py` passed in 1.13s.
+  - Focused simulation & virtual hook suites: 503 tests passed in 4.73s.
+  - Focused FE/PUND compatibility suites: 21 tests in `tests/test_measurement_fe_pund_compatibility.py` passed in 3.45s.
+  - Full repository test suite: **2022 passed, 1 skipped** in 63.98s on Python 3.13.2 (`MPLBACKEND=Agg`). Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly with 0 whitespace errors.
 
 ## Checkpoint 28e report (authoritative)
 

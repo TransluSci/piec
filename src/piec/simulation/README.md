@@ -175,6 +175,33 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
 - Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
   that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
 
+## Driver virtual hooks: Arbitrary Waveform Generator family (checkpoint 28f)
+
+- `VirtualAwg` (arbitrary waveform generator driver family) supports generic per-instance hook injection via
+  `waveform_hook`, `apply_hook`, or `trigger_hook` (in constructor, via property, or via `set_waveform_hook`).
+- Injected hooks take strict precedence over the deprecated global `sample` (ferroelectric) fallback.
+  When an explicit hook is injected, `sample` is never accessed or mutated.
+- The injected path adds no material-specific or ferroelectric logic; physical modeling
+  (such as Landau-Devonshire switching, prep points, PUND pulse sequences, or material response)
+  remains external in the hook closure or simulation model.
+- Hook receives generated synthetic waveforms and timing parameters via signature binding: accepts
+  `(v, t)`, `(v, t, channel)`, named parameters (`v`, `voltages`, `waveform`, `v_applied`, `data`, `t`, `times`,
+  `timestamps`, `time`, `channel`, `ch`, `freq`, `frequency`, `duration`), single-argument `(v)`,
+  positional-only `(v, t, /)`, variadic `*args`/`**kwargs`, and zero-argument notifications `()`. Unrelated
+  optional parameters retain their defaults.
+- Invocation is selected by signature binding before calling the hook exactly once. Hook exceptions
+  propagate unchanged without retries or fallback invocation.
+- Declared units are `{"voltage": "V", "frequency": "Hz", "time": "s"}`. Input configurations
+  (channel 1-2, positive finite frequency, finite amplitude, finite offset, valid duty cycle / symmetry
+  in [0.0, 100.0], positive pulse width and non-negative pulse delay, validated polarity/slopes/modes/sources)
+  are validated atomically before mutating driver state. Atomic methods `configure_waveform`,
+  `configure_pulse`, and `configure_trigger` reject invalid calls leaving driver state unchanged.
+- `reset()` restores default driver-owned configuration (default scales, frequencies, waveforms, channel states,
+  all outputs OFF) while preserving the injected hook intact. Instance assignments to `awg.sample` do not pollute
+  global shared sample state.
+- Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
+  that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents
