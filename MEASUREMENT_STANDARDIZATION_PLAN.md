@@ -233,7 +233,14 @@ Supports `output_hook` / `field_hook` injection with strict precedence over depr
 fallback, material logic externalized, commanded output binding (`value`, `mode`, `output_on`, `voltage`, `current`,
 `**kwargs`, and zero-arg), exact-once invocation without error retry, declared units (`{"voltage": "V", "current": "A"}`),
 input validation rejecting non-numeric and non-finite values while preserving previous state, instance isolation
-protecting `VirtualInstrument._shared_mag_sample`, and driver reset ownership documented. Next is checkpoint 28d,
+protecting `VirtualInstrument._shared_mag_sample`, and driver reset ownership documented.
+Checkpoint 28d completed: generic per-instance virtual hooks for the Stepper Motor family (`VirtualStepper`).
+Supports `angle_hook`, `position_hook`, and `step_hook` injection with strict precedence over deprecated global `mag_sample`
+fallback, external physics decoupling, motion parameter binding (`angle`, `total_angle`, `delta_angle`, `position`, `moving`,
+`*args`, `**kwargs`, zero-arg), exact-once invocation without error retry, declared units (`{"angle": "deg", "position": "steps"}`),
+input validation rejecting non-numeric, non-finite, and negative step counts while preserving state, motion tracking distinguishing
+stored settings from dynamic state (failed commands mark `moving=None` to prevent false shutdown confirmation), instance isolation
+protecting `VirtualInstrument._shared_mag_sample`, and driver reset ownership documented. Next is checkpoint 28e,
 one virtual-driver family per commit. Additional AMR electrical adapters and VirtualBench stay separate. Physical 17/22/26 stay PENDING.
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.
@@ -949,7 +956,8 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 28a | Completed | Generic per-instance virtual hooks for Lock-in family (`VirtualLockin`): `xy_reader` / `transport_hook` injection, precedence over global fallback, material decoupling, plain tuple (X, Y) response, declared units, reset preservation, and instance isolation. 28 tests in `tests/test_virtual_lockin_hook.py`; full suite: 1725 passed, 1 skipped. |
 | 28b | Completed | Generic per-instance virtual hooks for DMM family (`VirtualDMM`): `voltage_reader` / `reader_hook` injection, precedence over global fallback, material decoupling, scalar float V response, overload preservation, non-scalar rejection, error preservation without retries, declared units, reset ownership, and instance isolation. 37 tests in `tests/test_virtual_dmm_hook.py`. |
 | 28c | Completed | Generic per-instance virtual hooks for DC Calibrator family (`VirtualCalibrator`): `output_hook` / `field_hook` injection, precedence over global fallback, material decoupling, commanded output binding, error preservation without retries, declared units, reset ownership, and instance isolation. 46 tests in `tests/test_virtual_calibrator_hook.py`. |
-| 28d onward | Generic per-instance virtual hooks, remaining driver families one family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
+| 28d | Completed | Generic per-instance virtual hooks for Stepper Motor family (`VirtualStepper`): `angle_hook` / `position_hook` / `step_hook` injection, precedence over global fallback, external physics decoupling, motion parameter binding, unconfirmed shutdown on failure (`moving=None`), error preservation without retries, declared units, reset ownership, and instance isolation. 72 tests in `tests/test_virtual_stepper_hook.py`. |
+| 28e onward | Generic per-instance virtual hooks, remaining driver families one family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
 | 29 | VirtualBench | Routing, reset isolation, deterministic noise/time and two-bench concurrency |
 | 30a–30d | Migrate IV/MOKE/FE/AMR simulation fixtures one family per commit | Physical/virtual schemas agree; preserve applicable generic-driver fallback tests |
 | 31 | Retire internal global-sample use after consumers migrate | Keep external generic-driver fallback unless separately authorized to remove it |

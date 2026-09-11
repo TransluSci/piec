@@ -113,6 +113,35 @@ output. Pure `*args` hooks receive the effective value as their first argument.
 - Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
   that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
 
+## Driver virtual hooks: Stepper Motor family (checkpoint 28d)
+
+- `VirtualStepper` (stepper motor driver family) supports generic per-instance hook injection via
+  `angle_hook`, `position_hook`, or `step_hook` (in constructor, via property, or via `set_angle_hook`).
+- Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.
+  When an explicit hook is injected, `mag_sample` is never accessed or mutated.
+- The injected path adds no sample-, stage-, or material-specific logic; physical modeling
+  (such as stage orientation, sample rotation, AMR angle dependence, or Hall probes) remains external
+  in the hook closure or simulation model.
+- Hook receives commanded motion and position parameters via signature binding: accepts total angle
+  in degrees (positional or named `angle`, `total_angle`, `target_angle`, `value`, `total`), delta angle
+  (`delta_angle`, `delta`), step position (`position`, `total_steps`, `target_position`, `steps`),
+  and motion status `moving` (boolean). Positional-only, pure `*args`, `**kwargs`, and zero-argument hooks
+  are also supported.
+- Invocation is selected by signature binding before calling the hook exactly once. Hook exceptions
+  propagate unchanged without retries or fallback invocation.
+- Declared units are `{"angle": "deg", "position": "steps"}`. Step counts must be finite non-negative
+  integers; direction must be 1 (CW) or 0 / -1 (CCW); `steps_per_revolution` must be a positive integer.
+  Rejected commands leave driver state unchanged.
+- Distinguishes stored settings from effective motion state: `steps_per_revolution` and position setpoints
+  are stored settings. If a hook fails during any motion or shutdown command (`step`, `stop`, `halt`,
+  `set_position`, `set_zero`, `reset`), `moving` is marked `None` (unconfirmed). A failed command does not
+  falsely confirm shutdown or stopped state until a subsequent command succeeds.
+- `reset()` restores default driver-owned configuration (`position=0`, `angle=0.0 deg`, `moving=False`,
+  and initial `steps_per_revolution`) while preserving the injected hook. If a hook is injected, it is notified
+  of 0.0 deg output. Instance assignments to `stepper.mag_sample` do not pollute global shared sample state.
+- Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
+  that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents
