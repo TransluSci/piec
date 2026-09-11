@@ -1,9 +1,35 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28d (generic per-instance virtual hooks: Stepper Motor family) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28e (generic per-instance virtual hooks: Oscilloscope family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28e: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28f: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28e report (authoritative)
+
+- **Status**: **Completed**. Selected driver family: **Oscilloscope (`VirtualScope`)**.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/oscilloscope/virtual_oscilloscope.py`):
+  - **Hook Injection & Aliases**: Added `waveform_hook`, `channel_hook` (alias), and `data_hook` (alias) constructor parameters, method injectors `set_waveform_hook(hook)`, `set_channel_hook(hook)`, `set_data_hook(hook)`, and properties `waveform_hook`, `channel_hook`, `data_hook`. Passing `None` clears the hook and restores fallback; non-callables raise `TypeError`; conflicting hook aliases raise `ValueError`.
+  - **Strict Precedence**: Explicit per-instance injection takes strict precedence over the deprecated shared `sample` fallback in `get_data()` and `sample` property accesses. When an explicit hook is injected, `sample` is never accessed or mutated.
+  - **Material Decoupling**: Generic `VirtualScope` contains no ferroelectric- or material-specific logic; physical sample response simulation remains externalized to the hook callable or simulation model. The historical `self.sample.get_voltage_response()` is retained strictly as deprecated global/instance fallback.
+  - **Signature Dispatch & Argument Binding**: Inspects signatures before calling the hook exactly once without retries; hook exceptions propagate unchanged without catch-and-retry masking. Binds channel (int or str candidate), vertical scales (`vdiv`, `y_range`, `y_position`), horizontal scales (`tdiv`, `x_range`, `x_position`), `coupling`, `probe_attenuation`, `points`, `state`, `*args`, `**kwargs`, and zero-argument signatures. Positional-only parameters and optional defaults are cleanly preserved.
+  - **Declared Units & Input Validation Before Mutation**: Exposed `declared_units` mapping `{"voltage": "V", "time": "s"}`. Validates all configuration inputs before mutation: channel numbers (1-4), scale values (positive finite floats), position offsets (finite floats), coupling modes ("AC"/"DC"), probe attenuations (positive finite floats in [0.001, 10000.0]), trigger sources, levels, slopes, modes, sweeps, acquisition modes, and requested points (integer >= 2). Maintains 8-division scale consistency (`y_range = 8.0 * vdiv`, `x_range = 8.0 * tdiv`).
+  - **Output Normalization & Validation**: `get_data()` normalizes hook outputs into a canonical `pd.DataFrame` with standard `"Time"` and `"Voltage"` columns:
+    - `(voltages, times)` 2-tuples/lists (canonical format of `WaveformResponsiveMaterialContract`).
+    - Mappings/dicts containing time (`"time"`, `"t"`, `"timestamp"`) and voltage (`"voltage"`, `"v"`, `"volt"`, `"ch1"`, etc.) keys.
+    - `pd.DataFrame` with time and voltage columns.
+    - Validates non-empty datasets, matching lengths, and finite non-negative timestamps (`np.all(np.isfinite(times)) and np.all(times >= 0)`).
+  - **State & Reset Ownership**: `reset()` restores default driver-owned configuration (scales, positions, coupling, trigger, acquisition channels/modes/points) while preserving the injected hook intact. Documented that setup-owned state (external models, timebase, clocks, RNG) is owned by the test fixture / VirtualBench and not reset by driver reset. Added instance-level `sample` property descriptor ensuring instance assignments never mutate global `VirtualInstrument._shared_fe_sample`.
+- **Validation**:
+  - Dedicated hook test suite: 46 tests in `tests/test_virtual_oscilloscope_hook.py` passed in 1.34s.
+  - Focused simulation & virtual hook suites: 358 tests passed in 2.50s (`test_virtual_oscilloscope_hook.py`, `test_virtual_stepper_hook.py`, `test_virtual_calibrator_hook.py`, `test_virtual_dmm_hook.py`, `test_virtual_lockin_hook.py`, `test_waveform_reader.py`, `test_simulation_contracts.py`).
+  - Focused FE/PUND suites: 223 tests passed in 6.11s.
+  - Full repository test suite: **1977 passed, 1 skipped** in 62.18s on Python 3.13.2 (`MPLBACKEND=Agg`). Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly with 0 whitespace errors.
 
 ## Checkpoint 28d report (authoritative)
 

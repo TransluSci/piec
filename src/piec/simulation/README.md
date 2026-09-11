@@ -150,6 +150,31 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
 - Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
   that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
 
+## Driver virtual hooks: Oscilloscope family (checkpoint 28e)
+
+- `VirtualScope` (oscilloscope driver family) supports generic per-instance hook injection via
+  `waveform_hook`, `channel_hook`, or `data_hook` (in constructor, via property, or via `set_waveform_hook`).
+- Injected hooks take strict precedence over the deprecated global `sample` (ferroelectric) fallback.
+  When an explicit hook is injected, `sample` is never accessed or mutated.
+- The injected path adds no material-specific or ferroelectric logic; physical modeling
+  (such as dielectric polarization switching, PUND pulses, or photodiode signals) remains external
+  in the hook closure or simulation model.
+- Hook receives commanded acquisition parameters via signature binding: accepts `channel` (positional
+  or named `channel`, `ch`), horizontal scale `tdiv`, vertical scale `vdiv`, `x_range`, `y_range`,
+  `y_position`, `x_position`, `coupling`, `points`, and `state`. Positional-only, pure `*args`,
+  `**kwargs`, and zero-argument hooks are supported.
+- Invocation is selected by signature binding before calling the hook exactly once. Hook exceptions
+  propagate unchanged without retries or fallback invocation.
+- Declared units are `{"voltage": "V", "time": "s"}`. Input configurations (channel 1-4, positive finite scales,
+  bounds-checked positions and trigger levels, validated coupling/slopes/modes) are validated before mutating state.
+- Supports standardized waveform outputs: returns `pd.DataFrame` with `'Time'` and `'Voltage'` columns,
+  handling tuples `(voltages, times)`, dictionaries, and DataFrames. Mismatched lengths, empty arrays,
+  negative times, and non-finite timestamps are rejected.
+- `reset()` restores default driver-owned configuration (scales, trigger, channel states) while preserving
+  the injected hook intact. Instance assignments to `scope.sample` do not pollute global shared sample state.
+- Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
+  that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents
