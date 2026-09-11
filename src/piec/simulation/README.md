@@ -39,10 +39,20 @@ or undefined at zero current.
   remains external to the driver.
 - Declared excitation current (in A) is forwarded to hooks that accept `excitation_current`
   or a single positional argument; 0-argument hooks are supported as well.
+- Invocation is selected by signature binding before calling the hook exactly once.
+  Hook exceptions propagate unchanged. Callables with unavailable signatures follow
+  the zero-argument contract; wrap them in a Python function to receive current.
+- Excitation current accepts finite signed values and zero, including after construction.
+  Reference voltage and declared sample current are independent simulation settings;
+  converting oscillator output voltage to current requires an explicit external circuit model.
+- Reference configuration validates amplitude, frequency, source and phase before changing
+  state. `read_data()` derives phase in degrees from `atan2(Y, X)`.
 - Returns plain `(X, Y)` tuples in V without compatibility wrappers. Non-sequence, wrong-length,
   or non-finite hook returns raise `TypeError` or `ValueError`.
 - `reset()` restores constructor excitation current and default settings while preserving the
   injected hook. Instance assignments to `lockin.mag_sample` do not pollute global shared sample state.
+  Reset does not reset a closure's RNG, time or material: that state is owned by the
+  setup and must be reset there. A future VirtualBench will coordinate those resets.
 
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 

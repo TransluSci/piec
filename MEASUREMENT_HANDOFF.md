@@ -2,10 +2,19 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 28a (generic per-instance virtual hooks: Lock-in family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28b: generic per-instance virtual hooks for next driver family** (or Checkpoint 24d onward for additional AMR electrical adapters, as prioritized).
+Next: **Checkpoint 28b: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
 
 ## Checkpoint 28a report (authoritative)
+
+### Review corrections
+
+- Hook dispatch binds the call shape before invocation. Positional-only and optional positional current arguments work; hook exceptions propagate unchanged with no retry or fallback invocation.
+- Declared excitation current is validated on every assignment and accepts finite signed values and zero. Reference voltage does not imply a sample current without an explicit circuit model.
+- Reference configuration rejects invalid amplitude/frequency/source/phase atomically and avoids duplicate raw state keys. X/Y response validation rejects non-vector arrays; reported Theta is atan2(Y, X) in degrees.
+- Added regressions for unchanged exception identity, exactly-once invocation, positional signatures, zero/signed current, configuration atomicity, phase, hook precedence and two-instance/global fallback isolation.
+- The instance-local sample override is retained. A driver reset preserves hook identity and does not reset the setup-owned closure/material/RNG state; future bench wiring must own that operation.
+- Corrective validation: full suite with Agg **1743 passed, 1 skipped in 62.53s**; `git diff --check` passed. Physical 17/22/26 remain PENDING.
 
 - **Status**: **Completed**. Selected driver family: **Lock-in (`VirtualLockin`)**.
 - **Physical Validation Matrix**:
@@ -16,7 +25,7 @@ Additional electrical adapters remain separate later work; do not bundle them in
   - **Hook Injection**: Added `xy_reader` and `transport_hook` (alias) constructor parameters, method injectors `set_xy_reader(hook)`, `set_transport_hook(hook)`, and properties `xy_reader`, `transport_hook`.
   - **Strict Precedence**: Explicit per-instance injection takes precedence over the deprecated shared `mag_sample` fallback in `quick_read()`. If `xy_reader` is injected, it is evaluated directly and `mag_sample` is not accessed.
   - **Material Decoupling**: Generic `VirtualLockin` contains no material-specific logic, magnetic formulas, angle/field calculations, or AMR equations; material modeling remains entirely external to the driver in the material/hook closure.
-  - **Excitation & Units**: Preserved explicit `excitation_current` in A with strict finite/positive validation. Forwarded `excitation_current` to hooks accepting it (keyword or single positional parameter). Exposed `declared_units` mapping `{"x": "V", "y": "V", "excitation_current": "A"}`.
+  - **Excitation & Units**: Explicit `excitation_current` in A with finite validation on construction and assignment, including zero/signed drive. Forwarded to hooks accepting it (keyword or positional parameter). Exposed `declared_units` mapping `{"x": "V", "y": "V", "excitation_current": "A"}`.
   - **Plain Tuple Response**: Validates and returns a plain `tuple[float, float]` in Volts; no compatibility wrappers, no scalar/float subclasses. Rejects non-sequence, wrong-length, non-convertible, or non-finite hook outputs with `TypeError` or `ValueError`.
   - **State & Reset Determinism**: `reset()` restores constructor initial `excitation_current` and default reference settings while preserving the injected per-instance hook intact. Added instance-level `mag_sample` property to ensure instance assignments never pollute global `VirtualInstrument._shared_mag_sample`.
 - **Validation**:

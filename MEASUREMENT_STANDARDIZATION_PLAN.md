@@ -196,7 +196,14 @@ lock-in consumer, repaired diode solving/reverse compliance and capacitor charge
 integration, enforced clock/reset replay and immutable response state, and aligned
 FE native polarization units/time-grid validation. See the current handoff and
 `src/piec/simulation/README.md` for numerical semantics and limitations.
-Next is checkpoint 28a, one virtual-driver family per commit. Additional AMR
+Checkpoint 28a follow-up review repaired hook invocation so exceptions propagate
+unchanged without retries, including positional-only and optional-current hooks.
+Excitation current is validated on assignment and accepts zero/signed drive;
+reference configuration validates atomically, non-vector X/Y arrays are rejected,
+and reported phase agrees with X/Y. Regression tests cover instance/global sample
+isolation and fallback precedence. Driver reset preserves hooks; setup-owned
+closure/material/RNG state is not implicitly reset. See the current handoff for
+validation results. Next is checkpoint 28b, one virtual-driver family per commit. Additional AMR
 electrical adapters and VirtualBench stay separate. Physical 17/22/26 stay PENDING.
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.

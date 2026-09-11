@@ -46,11 +46,6 @@ class VirtualLockin(VirtualInstrument, Lockin):
             transport_hook: Alias for xy_reader.
             **kwargs: Additional options forwarded to VirtualInstrument.
         """
-        if not math.isfinite(excitation_current):
-            raise ValueError(f"excitation_current must be finite, got {excitation_current}")
-        if excitation_current <= 0:
-            raise ValueError(f"excitation_current must be positive and finite, got {excitation_current}")
-
         if xy_reader is not None and transport_hook is not None:
             if xy_reader is not transport_hook:
                 raise ValueError("Cannot specify both xy_reader and transport_hook with different callables")
@@ -77,6 +72,18 @@ class VirtualLockin(VirtualInstrument, Lockin):
     def declared_units(self) -> Mapping[str, str]:
         """Declared physical units for virtual lock-in quantities."""
         return self._DECLARED_UNITS
+
+    @property
+    def excitation_current(self) -> float:
+        """Declared simulated current in A; zero disables drive and sign sets polarity."""
+        return self._excitation_current
+
+    @excitation_current.setter
+    def excitation_current(self, value: float) -> None:
+        current = float(value)
+        if not math.isfinite(current):
+            raise ValueError("excitation_current must be finite")
+        self._excitation_current = current
 
     @property
     def xy_reader(self) -> Optional[Callable[..., Tuple[float, float]]]:
@@ -167,21 +174,37 @@ class VirtualLockin(VirtualInstrument, Lockin):
 
     def configure_reference(self, **kwargs: Any) -> None:
         """Configure reference channel settings (voltage, frequency, source, phase)."""
-        self.state.update(kwargs)
+        updated = self.state.copy()
         if "voltage" in kwargs and kwargs["voltage"] is not None:
-            self.state["reference_voltage"] = float(kwargs["voltage"])
+            voltage = float(kwargs["voltage"])
+            if not math.isfinite(voltage) or voltage < 0:
+                raise ValueError("amplitude must be non-negative and finite")
+            updated["reference_voltage"] = voltage
         if "frequency" in kwargs and kwargs["frequency"] is not None:
-            self.state["reference_frequency"] = float(kwargs["frequency"])
+            frequency = float(kwargs["frequency"])
+            if not math.isfinite(frequency) or frequency <= 0:
+                raise ValueError("frequency must be positive and finite")
+            updated["reference_frequency"] = frequency
         if "source" in kwargs and kwargs["source"] is not None:
-            self.state["reference_source"] = str(kwargs["source"]).lower()
+            source = str(kwargs["source"]).lower()
+            if source not in ("internal", "external"):
+                raise ValueError("source must be internal or external")
+            updated["reference_source"] = source
         if "phase" in kwargs and kwargs["phase"] is not None:
-            self.state["phase"] = float(kwargs["phase"])
+            phase = float(kwargs["phase"])
+            if not math.isfinite(phase):
+                raise ValueError("phase must be finite")
+            updated["phase"] = phase
+        for name in ("trig", "harmonic"):
+            if kwargs.get(name) is not None:
+                updated[name] = kwargs[name]
+        self.state = updated
 
     def set_amplitude(self, amplitude: float) -> None:
         """Set sine out reference amplitude in Volts."""
         amp = float(amplitude)
-        if not math.isfinite(amp):
-            raise ValueError("amplitude must be finite")
+        if not math.isfinite(amp) or amp < 0:
+            raise ValueError("amplitude must be non-negative and finite")
         self.state["reference_voltage"] = amp
 
     def get_amplitude(self) -> float:
@@ -237,37 +260,29 @@ class VirtualLockin(VirtualInstrument, Lockin):
         return (0.0001, 0.0002)
 
     def _invoke_hook(self, hook: Callable[..., Any]) -> Any:
-        """Invoke the injected hook, passing excitation_current if accepted."""
+        """Bind arguments before invoking once; never catch a hook's own errors."""
         try:
             sig = inspect.signature(hook)
-            params = sig.parameters
-            accepts_current = (
-                "excitation_current" in params
-                or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
-            )
         except (ValueError, TypeError):
-            accepts_current = False
-
-        if accepts_current:
-            return hook(excitation_current=self.excitation_current)
-
-        try:
-            required_pos = [
-                p for p in sig.parameters.values()
-                if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-                and p.default is inspect.Parameter.empty
-            ]
-            if len(required_pos) == 1:
-                return hook(self.excitation_current)
-        except Exception:
-            pass
-
-        return hook()
+            # Opaque callables follow the zero-argument reader contract.
+            return hook()
+        for args, kwargs in (
+            ((), {"excitation_current": self.excitation_current}),
+            ((self.excitation_current,), {}),
+            ((), {}),
+        ):
+            try:
+                sig.bind(*args, **kwargs)
+            except TypeError:
+                continue
+            return hook(*args, **kwargs)
+        raise TypeError("xy_reader must accept excitation_current or no arguments")
 
     @staticmethod
     def _validate_response(response: Any) -> Tuple[float, float]:
         """Validate and coerce response into a plain 2-tuple (X, Y) of finite floats."""
-        if not isinstance(response, (tuple, list, np.ndarray)) or len(response) != 2:
+        if (not isinstance(response, (tuple, list, np.ndarray))
+                or np.ndim(response) != 1 or len(response) != 2):
             raise TypeError(
                 f"Lock-in transport response must be a 2-element sequence (X, Y) in Volts, got {response!r}"
             )
@@ -291,7 +306,7 @@ class VirtualLockin(VirtualInstrument, Lockin):
         """
         x, y = self.quick_read()
         r = math.hypot(x, y)
-        theta = 0.0  # simplified
+        theta = math.degrees(math.atan2(y, x))
         return {"X": x, "Y": y, "R": r, "Theta": theta}
 
     def get_X(self) -> float:

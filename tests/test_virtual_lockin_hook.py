@@ -244,7 +244,7 @@ class TestResponseValidationAndErrors:
     """Validation of hook returns and constructor parameters."""
 
     def test_constructor_excitation_validation(self):
-        for invalid in [float("nan"), float("inf"), 0.0, -1e-6]:
+        for invalid in [float("nan"), float("inf")]:
             with pytest.raises(ValueError):
                 VirtualLockin(excitation_current=invalid)
 
@@ -263,10 +263,99 @@ class TestResponseValidationAndErrors:
         with pytest.raises((TypeError, ValueError)):
             lockin.quick_read()
 
-    def test_hook_exception_propagates_cleanly(self):
-        def failing_hook():
-            raise RuntimeError("Hardware communication timeout in hook")
 
-        lockin = VirtualLockin(xy_reader=failing_hook)
-        with pytest.raises(RuntimeError, match="Hardware communication timeout"):
-            lockin.quick_read()
+@pytest.mark.parametrize("error_type", [RuntimeError, TypeError])
+def test_positional_hook_error_is_preserved_and_not_retried(error_type):
+    calls = []
+    error = error_type("failure inside hook")
+    def reader(current):
+        calls.append(current)
+        raise error
+    lockin = VirtualLockin(xy_reader=reader)
+    with pytest.raises(error_type) as result:
+        lockin.quick_read()
+    assert result.value is error
+    assert calls == [lockin.excitation_current]
+
+
+def test_positional_only_current_and_optional_current_are_forwarded():
+    def reader(excitation_current, /):
+        return (excitation_current, 0)
+    lockin = VirtualLockin(excitation_current=0.002, xy_reader=reader)
+    assert lockin.quick_read() == (0.002, 0)
+    lockin.xy_reader = lambda current=42: (current, 0)
+    assert lockin.quick_read() == (0.002, 0)
+
+
+def test_zero_and_signed_excitation_validate_assignments_and_reset():
+    lockin = VirtualLockin(excitation_current=0, xy_reader=lambda current: (100 * current, 0))
+    assert lockin.quick_read() == (0, 0)
+    lockin.excitation_current = -0.001
+    assert lockin.quick_read() == (-0.1, 0)
+    for invalid in (float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            lockin.excitation_current = invalid
+        assert lockin.excitation_current == -0.001
+    lockin.reset()
+    assert lockin.quick_read() == (0, 0)
+
+
+@pytest.mark.parametrize("settings", [
+    {"voltage": float("nan")}, {"voltage": -1},
+    {"frequency": 0}, {"frequency": float("inf")},
+    {"source": "invalid"}, {"phase": float("nan")},
+])
+def test_reference_configuration_validates_before_updating(settings):
+    lockin = VirtualLockin()
+    before = lockin.get_state()
+    with pytest.raises(ValueError):
+        lockin.configure_reference(**({"voltage": 2} | settings))
+    assert lockin.get_state() == before
+
+
+@pytest.mark.parametrize("xy,angle", [((0, 1), 90), ((-1, 1), 135), ((1, -1), -45)])
+def test_read_data_phase_agrees_with_xy(xy, angle):
+    lockin = VirtualLockin(xy_reader=lambda: xy)
+    assert lockin.read_data()["Theta"] == pytest.approx(angle)
+
+
+def test_hook_and_sample_assignment_are_isolated_from_other_instances(monkeypatch):
+    from piec.drivers.virtual_instrument import VirtualInstrument
+    class Sample:
+        def get_voltage_response(self, *, excitation_current):
+            return (excitation_current, 0)
+    shared = Sample()
+    monkeypatch.setattr(VirtualInstrument, "_shared_mag_sample", shared)
+    first, second = VirtualLockin(), VirtualLockin()
+    assert first.mag_sample is second.mag_sample is shared
+    first.mag_sample = None
+    first.xy_reader = lambda: (2, 3)
+    first.reset()
+    assert first.quick_read() == (2, 3)
+    assert second.quick_read() == (second.excitation_current, 0)
+    assert VirtualInstrument._shared_mag_sample is shared
+    del first.mag_sample
+    first.xy_reader = None
+    assert first.mag_sample is shared
+
+
+def test_hook_precedence_does_not_access_fallback_property():
+    class HookOnly(VirtualLockin):
+        @property
+        def mag_sample(self):
+            raise AssertionError("fallback must not be accessed")
+    assert HookOnly(xy_reader=lambda: (1, 2)).quick_read() == (1, 2)
+
+
+@pytest.mark.parametrize("value", [np.array(1), np.ones((2, 1)), np.ones((2, 2))])
+def test_response_rejects_non_vector_arrays(value):
+    with pytest.raises((TypeError, ValueError)):
+        VirtualLockin(xy_reader=lambda: value).quick_read()
+
+def test_hook_exception_propagates_cleanly():
+    def failing_hook():
+        raise RuntimeError("Hardware communication timeout in hook")
+
+    lockin = VirtualLockin(xy_reader=failing_hook)
+    with pytest.raises(RuntimeError, match="Hardware communication timeout"):
+        lockin.quick_read()
