@@ -37,7 +37,8 @@
         "repair_checkpoint": "24b",
         "behavior": "Final capture repeats a motor step already performed by the loop, so actual position and saved angle disagree.",
         "test": "test_amr_endpoint_matches_commanded_angle_and_scientific_golden",
-        "resolution": "Remove the extra movement, verify position and X/Y at all requested angles, remove the strict xfail, and replace the legacy-observation regression with the scientific golden."
+        "resolution": "Remove the extra movement, verify position and X/Y at all requested angles, remove the strict xfail, and replace the legacy-observation regression with the scientific golden.",
+        "status": "Repaired in Checkpoint 24b."
       },
       {
         "id": "AMR-FIELD-001",
@@ -72,7 +73,8 @@
     "DiscreteWaveform",
     "HysteresisLoop",
     "ThreePulsePund",
-    "MagnetoTransport"
+    "MagnetoTransport",
+    "AMR"
   ],
   "migration_notes": {
     "HysteresisLoop": "Migrated in Checkpoint 20b.",
@@ -81,7 +83,7 @@
     "IVSweep": "Migrated in Checkpoint 13.",
     "ThreePulsePund": "Migrated in Checkpoint 20c.",
     "MagnetoTransport": "Migrated in Checkpoint 24a.",
-    "AMR": "Pending vertical slice in Checkpoint 24b."
+    "AMR": "Migrated in Checkpoint 24b."
   },
   "standardization_principles": [
     "All measurement families adopt one shared execution lifecycle (run_experiment, configure_instruments, capture_data, session, safe_shutdown, request_stop, snapshot).",
@@ -1669,6 +1671,10 @@
           "stepper",
           "lockin",
           "setup"
+        ],
+        "optional_columns": [
+          "field_measured",
+          "field_time"
         ]
       },
       "old_to_new_column_mapping": {
@@ -2159,6 +2165,10 @@
           "stepper",
           "lockin",
           "setup"
+        ],
+        "optional_columns": [
+          "field_measured",
+          "field_time"
         ]
       },
       "old_to_new_column_mapping": {
@@ -2179,7 +2189,7 @@
             "instantiation_args": [
               "dmm",
               "calibrator",
-              "arduino",
+              "stepper",
               "lockin",
               "field",
               "angle_step",
@@ -2188,20 +2198,21 @@
               "frequency",
               "measure_time",
               "sensitivity",
-              "save_dir"
+              "save_dir",
+              "shutdown_handler"
             ],
-            "execution_call": "experiment.run_experiment(configure_lockin=initialize_lockin)",
-            "execution_context": "threading.Thread(target=experiment.run_experiment, kwargs={'configure_lockin': initialize_lockin}, daemon=True)",
+            "execution_call": "experiment.run_experiment(options={'configure_lockin': initialize_lockin}, save=bool(save_dir))",
+            "execution_context": "threading.Thread(target=experiment.run_experiment, kwargs={'options': {'configure_lockin': initialize_lockin}, 'save': bool(save_dir)}, daemon=True)",
             "controls": {
-              "pause": "experiment.pause_requested = True / False",
-              "stop": "experiment.abort_requested = True"
+              "pause": "experiment.request_pause(True / False)",
+              "stop": "experiment.request_stop()"
             },
             "data_consumption": "standard_csv_to_metadata_and_data(experiment.filename)",
             "plotted_columns": [
               "angle",
               "field",
-              "X",
-              "Y"
+              "x",
+              "y"
             ]
           },
           {
@@ -2215,7 +2226,7 @@
             "instantiation_kwargs": [
               "dmm",
               "calibrator",
-              "arduino",
+              "stepper",
               "lockin",
               "field",
               "angle_step",
@@ -2224,15 +2235,15 @@
               "frequency",
               "measure_time",
               "sensitivity",
-              "save_dir",
-              "live_plot"
+              "output_dir",
+              "shutdown_handler"
             ],
             "execution_call": "experiment.run_experiment()",
             "data_consumption": "standard_csv_to_metadata_and_data(experiment.filename)",
             "plotted_columns": [
               "angle",
-              "X",
-              "Y"
+              "x",
+              "y"
             ]
           },
           {

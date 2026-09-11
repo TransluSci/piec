@@ -129,15 +129,15 @@ class AMRApp(MeasurementApp):
 
         # Plot configuration
         ttk.Label(self.plot_config_frame, text="X-axis:").grid(row=0, column=0, sticky="w")
-        self.x_axis = ttk.Combobox(self.plot_config_frame, values=["angle", "field", "X", "Y"], state="readonly")
+        self.x_axis = ttk.Combobox(self.plot_config_frame, values=["angle", "field", "x", "y"], state="readonly")
         self.x_axis.grid(row=0, column=1, padx=5, pady=5)
         self.x_axis.set("angle")
         self.x_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
         ttk.Label(self.plot_config_frame, text="Y-axis:").grid(row=1, column=0, sticky="w")
-        self.y_axis = ttk.Combobox(self.plot_config_frame, values=["angle", "field", "X", "Y"], state="readonly")
+        self.y_axis = ttk.Combobox(self.plot_config_frame, values=["angle", "field", "x", "y"], state="readonly")
         self.y_axis.grid(row=1, column=1, padx=5, pady=5)
-        self.y_axis.set("X")
+        self.y_axis.set("x")
         self.y_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
     def test_stepper(self):
@@ -281,7 +281,7 @@ class AMRApp(MeasurementApp):
         self.experiment = AMR(
             dmm=dmm,
             calibrator=calibrator,
-            arduino=stepper,
+            stepper=stepper,
             lockin=lockin,
             field=field,
             angle_step=angle_step,
@@ -290,7 +290,8 @@ class AMRApp(MeasurementApp):
             frequency=frequency,
             measure_time=measure_time,
             sensitivity=sensitivity,
-            save_dir=save_dir
+            save_dir=save_dir,
+            shutdown_handler=lambda: None,
         )
 
         self.is_measuring = True
@@ -304,7 +305,10 @@ class AMRApp(MeasurementApp):
         # Run experiment in a background thread
         self.measurement_thread = threading.Thread(
             target=self.experiment.run_experiment,
-            kwargs={'configure_lockin': initialize_lockin},
+            kwargs={
+                'options': {'configure_lockin': initialize_lockin},
+                'save': bool(save_dir),
+            },
             daemon=True
         )
         self.measurement_thread.start()
@@ -331,7 +335,7 @@ class AMRApp(MeasurementApp):
             return
             
         self.paused = not self.paused
-        self.experiment.pause_requested = self.paused
+        self.experiment.request_pause(self.paused)
         self.pause_button.config(text="RESUME" if self.paused else "PAUSE")
         print("Measurement paused." if self.paused else "Measurement resumed.")
 
@@ -340,7 +344,7 @@ class AMRApp(MeasurementApp):
             return
             
         print("Stopping measurement...")
-        self.experiment.abort_requested = True
+        self.experiment.request_stop()
         self.stop_button.config(state='disabled')
 
     def cleanup_controls(self):

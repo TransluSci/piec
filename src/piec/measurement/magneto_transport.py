@@ -1,18 +1,20 @@
 """
-Parent class for managing magneto-transport measurements.
+AMR (Anisotropic Magnetoresistance) and MagnetoTransport measurement module.
 
-Standardized for Checkpoint 24a of MEASUREMENT_STANDARDIZATION_PLAN.md:
-- Inherits BaseMeasurement with shared lifecycle, runner, and session support;
+Standardized for Checkpoint 24b of MEASUREMENT_STANDARDIZATION_PLAN.md:
+- MagnetoTransport base lifecycle imported from ._magneto_transport_base;
+- AMR subclasses MagnetoTransport with shared BaseMeasurement lifecycle;
 - Target API and schema: schema 'amr', version 1;
-- Plain lowercase columns: ['angle', 'field', 'x', 'y'] with canonical units {'angle': 'deg', 'field': 'Oe', 'x': 'V', 'y': 'V'};
+- Plain lowercase columns: ['angle', 'field', 'x', 'y'] with canonical units
+  {'angle': 'deg', 'field': 'Oe', 'x': 'V', 'y': 'V'};
 - Zero instrument I/O in __init__;
-- Setup profile composition (AMRSetupProfile) with FieldSource, FieldReader, TransportReadout, OrientationController;
+- Setup profile composition (AMRSetupProfile) with FieldSource, FieldReader,
+  TransportReadout, OrientationController;
 - Lock-in settings preservation by default (readout_configuration='preserve');
-- Validates excitation shutdown policy before energizing;
-- Attempt-all safe shutdown propagating failures to SafetyStatus.UNSAFE while retaining connections;
-- The public MagnetoTransport implementation is imported from _magneto_transport_base.
-- The private _LegacyMagnetoTransport supports only unmigrated AMR until 24b;
-  its old direct methods are not part of the standardized public base.
+- Mandatory declared excitation shutdown policy before energizing;
+- Attempt-all safe shutdown with connection retention on SafetyStatus.UNSAFE;
+- Repaired AMR-ANGLE-001: exact angle tracking without extra endpoint motor step;
+- Fully removed _LegacyMagnetoTransport.
 """
 
 from __future__ import annotations
@@ -33,15 +35,9 @@ from typing import (
     Union,
 )
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from piec.analysis.utilities import (
-    create_measurement_filename,
-    metadata_and_data_to_csv,
-)
-from piec.measurement.base import BaseMeasurement
 from piec.measurement.contracts import (
     HardwareSafetyError,
     MeasurementSnapshot,
@@ -52,39 +48,22 @@ from piec.measurement.contracts import (
     SafetyStatus,
     ShutdownAttemptRecorder,
 )
+from ._magneto_transport_base import MagnetoTransport
 
 if TYPE_CHECKING:
-    from piec.measurement.adapters.amr import (
-        AMRSetupProfile,
-        FieldReader,
-        FieldSource,
-        OrientationController,
-        TransportReadout,
-    )
+    from piec.measurement.adapters.amr import AMRSetupProfile
 
 
-class _LegacyMagnetoTransport(BaseMeasurement):
+class AMR(MagnetoTransport):
     """
-    Parent class for managing all magneto-transport measurements.
+    Performs the AMR (Anisotropic Magnetoresistance) angular sweep measurement.
 
-    Provides core functionality for configuring magnet field sources, orientation
-    controllers, transport electrical readout, data capture, and attempt-all safing.
-    Designed to be subclassed for specific measurement types (e.g. AMR).
-
-    Attributes:
-        dmm: DMM / Hall sensor instrument object (optional/setup reader)
-        calibrator: Calibrator / magnet power supply instrument object
-        arduino: Stepper motor instrument object
-        lockin: Lock-in amplifier instrument object
-        field: Commanded magnetic field in Oersted
-        save_dir: Legacy directory path for data storage
-        voltage_callibration: Legacy calibration factor (Oe/V)
-        voltage_calibration: Canonical calibration factor (Oe/V)
-        profile: AMRSetupProfile composite coordinating setup roles
+    Standardized on the BaseMeasurement lifecycle and MagnetoTransport base.
+    Rotates the sample angle, measures electrical transport signals (in-phase x,
+    quadrature y), and preserves manual lock-in settings by default.
     """
 
-    snapshot_type = MeasurementSnapshot
-    mtype = "magneto_transport"
+    mtype = "amr"
     measurement_schema = "amr"
     measurement_schema_version = 1
     supports_pause = True
@@ -99,590 +78,274 @@ class _LegacyMagnetoTransport(BaseMeasurement):
         stepper: Any = None,
         lockin: Any = None,
         *,
-        field: float = 0.0,
+        field: float = 100.0,
+        angle_step: float = 15.0,
+        total_angle: float = 360.0,
+        start_angle: float = 0.0,
+        amplitude: float = 1.0,
+        frequency: float = 10.0,
+        measure_time: float = 1.0,
+        sensitivity: str = "50uv/pa",
+        settling_time: float = 1.0,
         output_dir: Optional[Union[str, Path]] = None,
-        profile: Optional[AMRSetupProfile] = None,
-        save_dir: str = r"\scratch",
+        save_dir: Optional[Union[str, Path]] = None,
         voltage_calibration: float = 10000.0,
-        live_plot: bool = True,
-        plot_config: Optional[Dict[str, str]] = None,
+        profile: Optional[AMRSetupProfile] = None,
         metadata: Optional[Mapping[str, Any]] = None,
-        require_excitation_safing: bool = False,
-        readout_configuration: str = "preserve",
+        readout_configuration: Optional[str] = None,
         excitation_source: str = "internal",
         shutdown_handler: Optional[Callable[[], None]] = None,
         external_source_owner: Optional[str] = None,
-        measurement_schema: str = "amr",
-        column_units: Optional[Mapping[str, str]] = None,
-        raw_column_units: Optional[Mapping[str, str]] = None,
+        field_settling_time: float = 0.0,
+        record_field_readback: bool = False,
+        live_plot: bool = False,
+        plot_config: Optional[Dict[str, str]] = None,
     ) -> None:
         """
-        Initialize core magneto-transport measurement system without performing hardware I/O.
+        Initialize AMR measurement without performing hardware I/O.
         """
-        cal_factor = float(voltage_calibration)
-        if not math.isfinite(cal_factor) or cal_factor <= 0:
-            raise ValueError(f"voltage_calibration must be a positive finite number, got {voltage_calibration!r}")
-        self.voltage_calibration = cal_factor
-        self.voltage_callibration = cal_factor
+        self.angle_step = float(angle_step)
+        if not math.isfinite(self.angle_step) or self.angle_step <= 0:
+            raise ValueError(f"angle_step must be a positive finite number, got {angle_step!r}")
 
-        # Commanded field
-        field_f = float(field)
-        if not math.isfinite(field_f):
-            raise ValueError(f"field must be a finite number, got {field!r}")
-        self.field = field_f
+        self.start_angle = float(start_angle)
+        if not math.isfinite(self.start_angle):
+            raise ValueError(f"start_angle must be finite, got {start_angle!r}")
 
-        # Instruments & profile
-        self.dmm = dmm
-        self.calibrator = calibrator
-        self.stepper = stepper
-        self.arduino = stepper
-        self.lockin = lockin
+        self.total_angle = float(total_angle)
+        if not math.isfinite(self.total_angle) or self.total_angle < self.start_angle:
+            raise ValueError(f"total_angle must be >= start_angle and finite, got {total_angle!r}")
 
-        if profile is not None:
-            self._profile = profile
-            if self.dmm is None and profile.field_reader is not None:
-                self.dmm = profile.field_reader.instrument
-            if self.calibrator is None:
-                self.calibrator = profile.field_source.instrument
-            if self.stepper is None and profile.orientation_controller is not None:
-                self.stepper = profile.orientation_controller.instrument
-                self.arduino = self.stepper
-            if self.lockin is None and profile.transport_readout is not None:
-                self.lockin = profile.transport_readout.instrument
-        elif calibrator is not None and stepper is not None and lockin is not None:
-            from piec.measurement.adapters.amr import AMRSetupProfile
+        self.amplitude = float(amplitude)
+        if not math.isfinite(self.amplitude) or self.amplitude <= 0:
+            raise ValueError(f"amplitude must be a positive finite number, got {amplitude!r}")
 
-            self._profile = AMRSetupProfile.from_instruments(
+        self.frequency = float(frequency)
+        if not math.isfinite(self.frequency) or self.frequency <= 0:
+            raise ValueError(f"frequency must be a positive finite number, got {frequency!r}")
+
+        self.measure_time = float(measure_time)
+        if not math.isfinite(self.measure_time) or self.measure_time < 0:
+            raise ValueError(f"measure_time must be non-negative and finite, got {measure_time!r}")
+
+        self.sensitivity = str(sensitivity)
+
+        self.settling_time = float(settling_time)
+        if not math.isfinite(self.settling_time) or self.settling_time < 0:
+            raise ValueError(f"settling_time must be non-negative and finite, got {settling_time!r}")
+
+        self.record_field_readback = bool(record_field_readback)
+        self.live_plot = bool(live_plot)
+        self.plot_config = dict(plot_config or {"x": "angle", "y": "x"})
+
+        out_path: Optional[Path] = None
+        if output_dir is not None:
+            out_path = Path(output_dir)
+        elif save_dir is not None:
+            out_path = Path(save_dir)
+
+        if profile is None and calibrator is not None and stepper is not None and lockin is not None:
+            from .adapters.amr import AMRSetupProfile
+
+            profile = AMRSetupProfile.from_instruments(
                 dmm=dmm,
                 calibrator=calibrator,
                 arduino=stepper,
                 lockin=lockin,
-                field_calibration=self.voltage_calibration,
-                reader_calibration=self.voltage_calibration if dmm is not None else None,
-                readout_configuration=readout_configuration,
+                field_calibration=float(voltage_calibration),
+                reader_calibration=float(voltage_calibration) if dmm is not None else None,
+                readout_configuration=readout_configuration or "preserve",
                 excitation_source=excitation_source,
+                amplitude=self.amplitude,
+                frequency=self.frequency,
+                sensitivity=self.sensitivity,
+                settling_time=self.settling_time,
                 shutdown_handler=shutdown_handler,
                 external_source_owner=external_source_owner,
             )
-        else:
-            self._profile = None
+            dmm = calibrator = stepper = lockin = shutdown_handler = external_source_owner = None
 
-        # Storage directories
-        self.save_dir = str(output_dir) if output_dir is not None else str(save_dir)
-        norm_save = str(save_dir).replace("/", "\\")
-        if output_dir is not None:
-            out_path = Path(output_dir)
-        elif norm_save not in (r"\scratch", r"\\scratch"):
-            out_path = Path(save_dir)
-        else:
-            out_path = None
-        self.output_dir = out_path
-
-        # Live plotting & config
-        self.live_plot = bool(live_plot)
-        self.plot_config = dict(plot_config or {"x": "angle", "y": "X"})
-        self.require_excitation_safing = bool(require_excitation_safing)
-        self.readout_configuration = str(readout_configuration)
-        self._fig = None
-        self._ax = None
-        self._in_jupyter = self._is_jupyter()
-        self._legacy_metadata_df: Optional[pd.DataFrame] = None
-        self._abort_requested: bool = False
-        self._pause_requested: bool = False
-
-        initial_metadata: Dict[str, Any] = {
-            "field": self.field,
-            "voltage_calibration": self.voltage_calibration,
-            "voltage_callibration": self.voltage_callibration,
-        }
-        if metadata is not None:
-            initial_metadata.update(dict(metadata))
-
-        c_units = (
-            dict(column_units)
-            if column_units is not None
-            else {"angle": "deg", "field": "Oe", "x": "V", "y": "V"}
-        )
-        r_units = (
-            dict(raw_column_units)
-            if raw_column_units is not None
-            else {"angle": "deg", "field": "Oe", "x": "V", "y": "V"}
+        info: Dict[str, Any] = dict(metadata or {})
+        field_val = float(field)
+        unit = profile.field_source.field_unit if profile else "Oe"
+        info.update(
+            angle_step=self.angle_step,
+            total_angle=self.total_angle,
+            field=field_val,
+            field_unit=unit,
+            frequency=self.frequency,
+            amplitude=self.amplitude,
         )
 
-        super().__init__(
-            output_dir=self.output_dir,
-            measurement_schema=measurement_schema,
-            column_units=c_units,
-            raw_column_units=r_units,
-            metadata=initial_metadata,
-        )
-
-    # ------------------------------------------------------------------------
-    # Setup Role Properties
-    # ------------------------------------------------------------------------
-
-    @property
-    def profile(self) -> Optional[AMRSetupProfile]:
-        """Active AMRSetupProfile instance, if configured."""
-        return self._profile
-
-    @property
-    def field_source(self) -> Optional[FieldSource]:
-        """FieldSource role adapter from setup profile."""
-        return self._profile.field_source if self._profile else None
-
-    @property
-    def field_reader(self) -> Optional[FieldReader]:
-        """FieldReader role adapter from setup profile."""
-        return self._profile.field_reader if self._profile else None
-
-    @property
-    def transport_readout(self) -> Optional[TransportReadout]:
-        """TransportReadout role adapter from setup profile."""
-        return self._profile.transport_readout if self._profile else None
-
-    @property
-    def orientation_controller(self) -> Optional[OrientationController]:
-        """OrientationController role adapter from setup profile."""
-        return self._profile.orientation_controller if self._profile else None
-
-    # ------------------------------------------------------------------------
-    # Cooperative Controls & Properties
-    # ------------------------------------------------------------------------
-
-    @property
-    def abort_requested(self) -> bool:
-        """Cooperative abort flag linked to BaseMeasurement coordinator."""
-        return self._abort_requested or self._coordinator.is_stop_requested
-
-    @abort_requested.setter
-    def abort_requested(self, value: bool) -> None:
-        self._abort_requested = bool(value)
-        if value:
-            if self._coordinator.run_state.is_active:
-                self.request_stop()
-            else:
-                self._coordinator._stop_event.set()
-        else:
-            self._coordinator._stop_event.clear()
-
-    @property
-    def pause_requested(self) -> bool:
-        """Cooperative pause flag linked to BaseMeasurement coordinator."""
-        return self._pause_requested or self._coordinator.is_pause_requested
-
-    @pause_requested.setter
-    def pause_requested(self, value: bool) -> None:
-        self._pause_requested = bool(value)
-        if self._coordinator.run_state.is_active:
-            self.request_pause(bool(value))
-        else:
-            if value:
-                self._coordinator._pause_event.set()
-            else:
-                self._coordinator._pause_event.clear()
-
-    @property
-    def data(self) -> Optional[pd.DataFrame]:
-        """Captured or analyzed data DataFrame."""
-        return self._data
-
-    @data.setter
-    def data(self, value: Optional[pd.DataFrame]) -> None:
-        self._data = value
-
-    @property
-    def filename(self) -> Optional[str]:
-        """Path to saved data file, or None."""
-        return self._filename
-
-    @filename.setter
-    def filename(self, value: Optional[str]) -> None:
-        self._filename = value
-
-    @property
-    def metadata(self) -> pd.DataFrame:
-        """DataFrame representation of measurement metadata for legacy compatibility."""
-        if self._legacy_metadata_df is not None:
-            return self._legacy_metadata_df
-        m = dict(self.measurement_metadata)
-        m.update(
-            measurement_schema=self.measurement_schema,
-            measurement_schema_version=self.measurement_schema_version,
-            column_units_json=self.column_units_json,
-            mtype=self.mtype,
-            timestamp=self.measurement_metadata.get("timestamp", 0.0),
-            processed=self.measurement_metadata.get("processed", False),
-        )
-        return pd.DataFrame([m])
-
-    @metadata.setter
-    def metadata(self, value: Any) -> None:
-        if isinstance(value, pd.DataFrame):
-            if len(value) > 0:
-                self.measurement_metadata.update(value.iloc[0].to_dict())
-            self._legacy_metadata_df = value
-        elif isinstance(value, Mapping):
-            self.measurement_metadata.update(dict(value))
-
-    # ------------------------------------------------------------------------
-    # Legacy Direct Methods
-    # ------------------------------------------------------------------------
-
-    def initialize(self) -> None:
-        """
-        Ensure proper connection along all base instruments.
-        Legacy direct execution method.
-        """
-        try:
-            if self.dmm is not None and hasattr(self.dmm, "idn"):
-                self.dmm.idn()
-            if self.calibrator is not None and hasattr(self.calibrator, "idn"):
-                self.calibrator.idn()
-            if self.arduino is not None and hasattr(self.arduino, "idn"):
-                self.arduino.idn()
-            if self.lockin is not None and hasattr(self.lockin, "idn"):
-                self.lockin.idn()
-            print("All instruments working nominally")
-        except Exception:
-            print("Error communicating with instruments")
-        self.set_field()
-
-    def set_field(self) -> None:
-        """
-        Set the magnetic field using the calibrator and verify with DMM.
-        Legacy direct execution method.
-        """
-        voltage = convert_field_to_voltage(self.field, self.voltage_callibration)
-        self.calibrator.set_output(voltage)
-        time.sleep(3)  # Allow time for field to stabilize
-        actual_voltage = self.dmm.get_voltage()
-        actual_field = convert_voltage_to_field(actual_voltage, self.voltage_callibration)
-        tolerance = 1.0 + 0.1 * abs(self.field)
-        if abs(actual_field - self.field) > tolerance:
-            print(f"Warning: Field set to {self.field} Oe, but actual field is {actual_field} Oe")
-        else:
-            print(f"Set field to {self.field} Oe and checked it is at {actual_field} Oe")
-
-    def configure_lockin(self) -> None:
-        """
-        Placeholder for measurement specific lockin configuration.
-
-        Raises:
-            AttributeError: If not implemented in child class
-        """
-        raise AttributeError("configure_lockin() must be defined in the child class specific to measurement")
-
-    def capture_data(
-        self,
-        *,
-        on_update: Optional[Callable[[Any], None]] = None,
-    ) -> pd.DataFrame:
-        """
-        Public capture data method.
-
-        If called directly on base MagnetoTransport outside an active session,
-        raises AttributeError for legacy base compatibility.
-        """
-        if type(self) is _LegacyMagnetoTransport and self._active_session is None:
-            raise AttributeError("capture_data() must be defined in the child class specific to measurement")
-        return super().capture_data(on_update=on_update)
-
-    def shut_off(self) -> None:
-        """
-        Turns off the field by setting the calibrator to zero volts.
-        Legacy direct execution method.
-        """
-        if self.calibrator is not None:
-            self.calibrator.set_output(0)
-            output_fn = getattr(self.calibrator, "output", None)
-            if callable(output_fn):
-                try:
-                    output_fn(on=False)
-                except Exception:
-                    pass
-        print("Field turned off.")
-
-    def analyze(self) -> None:
-        """Placeholder for measurement-specific analysis."""
-        if self.data is not None:
-            print(f"Analysis method not defined. Not changing {self.filename}")
-        else:
-            print("No data to analyze. Capture the waveform first.")
-
-    @staticmethod
-    def _is_jupyter() -> bool:
-        """Detect if running inside a Jupyter notebook."""
-        try:
-            from IPython import get_ipython
-
-            shell = get_ipython()
-            if shell is None:
-                return False
-            if shell.__class__.__name__ == "ZMQInteractiveShell":
-                return True
-        except ImportError:
-            pass
-        return False
-
-    def _init_live_plot(self) -> None:
-        """Initialize the live plot figure and axes."""
-        if not self.live_plot:
-            return
-        if not self._in_jupyter:
-            plt.ion()
-        self._fig, self._ax = plt.subplots(figsize=(8, 5))
-        x_col = self.plot_config.get("x", "angle")
-        y_col = self.plot_config.get("y", "X")
-        self._ax.set_xlabel(x_col)
-        self._ax.set_ylabel(y_col)
-        self._ax.set_title(f"{y_col} vs {x_col} (live)")
-
-    def _update_live_plot(self) -> None:
-        """Update the live plot with the latest data."""
-        if not self.live_plot or self._fig is None or self.data is None:
-            return
-        x_col = self.plot_config.get("x", "angle")
-        y_col = self.plot_config.get("y", "X")
-        if x_col not in self.data.columns or y_col not in self.data.columns:
-            return
-
-        self._ax.clear()
-        self._ax.plot(self.data[x_col], self.data[y_col], "o-", color="blue")
-        self._ax.set_xlabel(x_col)
-        self._ax.set_ylabel(y_col)
-        self._ax.set_title(f"{y_col} vs {x_col} (live)")
-
-        if self._in_jupyter:
-            from IPython.display import clear_output, display
-
-            clear_output(wait=True)
-            display(self._fig)
-        else:
-            self._fig.canvas.draw_idle()
-            self._fig.canvas.flush_events()
-
-    def _close_live_plot(self) -> None:
-        """Close the live plot and show a final static version."""
-        if not self.live_plot or self._fig is None:
-            return
-        if not self._in_jupyter:
-            plt.ioff()
-        plt.close(self._fig)
-        self._fig = None
-        self._ax = None
-
-    def plot_results(self) -> None:
-        """Show a final static plot of the captured data."""
-        if not self.live_plot:
-            return
-        if self.data is None:
-            print("No data to plot.")
-            return
-        x_col = self.plot_config.get("x", "angle")
-        y_col = self.plot_config.get("y", "X")
-        if x_col not in self.data.columns or y_col not in self.data.columns:
-            print(f"Columns '{x_col}' or '{y_col}' not found in data.")
-            return
-        fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(self.data[x_col], self.data[y_col], "o-", color="blue")
-        ax.set_xlabel(x_col)
-        ax.set_ylabel(y_col)
-        ax.set_title(f"{y_col} vs {x_col}")
-        plt.tight_layout()
-        plt.show()
-
-### SPECIFIC WAVEFORM MEASUREMENT CLASSES ###
-class AMR(_LegacyMagnetoTransport):
-    """
-    Performs the AMR measurement using the lockin amplifier and the stepper motor.
-
-    Attributes:
-        :type (str): Measurement type identifier ('amr')
-        :angle_step (float): Step size for angle in degrees
-        :total_angle (float): Total angle to rotate in degrees
-        :amplitude (float): Peak voltage amplitude in volts
-        :frequency (float): Excitation frequency in Hz
-    """
-
-    mtype = "amr"
-
-    def __init__(
-        self,
-        dmm=None,
-        calibrator=None,
-        arduino=None,
-        lockin=None,
-        field=None,
-        angle_step=15,
-        total_angle=360,
-        amplitude=1.0,
-        frequency=10,
-        measure_time=60,
-        sensitivity="50uv/pa",
-        save_dir=r"\scratch",
-        voltage_callibration=10000,
-        live_plot=True,
-        plot_config=None,
-    ):
-        """
-        Initialize AMR measurement parameters.
-
-        Specializes MagnetoTransport for AMR measurements.
-        """
         super().__init__(
             dmm=dmm,
             calibrator=calibrator,
-            stepper=arduino,
+            stepper=stepper,
             lockin=lockin,
-            field=float(field) if field is not None else 0.0,
-            save_dir=save_dir,
-            voltage_calibration=float(voltage_callibration),
-            live_plot=live_plot,
-            plot_config=plot_config or {"x": "angle", "y": "X"},
+            field=field_val,
+            output_dir=out_path,
+            profile=profile,
+            voltage_calibration=voltage_calibration,
+            metadata=info,
+            readout_configuration=readout_configuration,
+            excitation_source=excitation_source,
+            shutdown_handler=shutdown_handler,
+            external_source_owner=external_source_owner,
+            field_settling_time=field_settling_time,
         )
-        self.arduino = arduino
-        self.angle_step = angle_step
-        self.total_angle = total_angle
-        self.amplitude = amplitude
-        self.frequency = frequency
-        self.measure_time = measure_time
-        self.sensitivity = sensitivity
-        self.notes = str(amplitude).replace(".", "p") + "V_" + str(int(frequency)) + "Hz"
-        self.metadata = pd.DataFrame(locals(), index=[0])
-        del self.metadata["self"]
-        self.metadata["mtype"] = self.mtype
-        if self.lockin is not None and hasattr(self.lockin, "idn"):
-            self.metadata["lockin"] = self.lockin.idn()
-        if self.dmm is not None and hasattr(self.dmm, "idn"):
-            self.metadata["dmm"] = self.dmm.idn()
-        if self.arduino is not None and hasattr(self.arduino, "idn"):
-            self.metadata["arduino"] = self.arduino.idn()
-        self.metadata["timestamp"] = time.time()
-        self.metadata["processed"] = False
-        self.filename = create_measurement_filename(self.save_dir, self.mtype, self.notes)
-        self.angle = 0  # initial angle
 
-    def analyze(self):
-        """Process AMR data."""
-        if self.data is not None:
-            print(f"Analysis succeeded, updated {self.filename}")
+        # AMR primary schema uses 4 canonical columns unless field readback columns are explicitly requested
+        if not self.record_field_readback:
+            canonical_units = {"angle": "deg", "field": unit, "x": "V", "y": "V"}
+            self.column_units = canonical_units
+            self.raw_column_units = canonical_units
+            self.ordered_columns = ("angle", "field", "x", "y")
+
+    def _compute_angles(self) -> List[float]:
+        """Compute quantized measurement angles from start_angle to total_angle."""
+        step = self.angle_step
+        total = self.total_angle
+        start = self.start_angle
+
+        num_steps = int(round((total - start) / step))
+        if math.isclose(start + num_steps * step, total, rel_tol=1e-5, abs_tol=1e-5):
+            return [round(start + i * step, 6) for i in range(num_steps + 1)]
         else:
-            print("No data to analyze. Capture the waveform first.")
+            angles = []
+            curr = start
+            while curr < total - 1e-9:
+                angles.append(round(curr, 6))
+                curr += step
+            if not any(math.isclose(a, total, abs_tol=1e-5) for a in angles):
+                angles.append(round(total, 6))
+            return angles
 
-    def configure_lockin(self):
-        """Configure lock-in amplifier for AMR measurement."""
-        self.lockin.initialize()
-        self.lockin.configure_reference(voltage=self.amplitude, frequency=self.frequency)
-        self.lockin.configure_input(input_configuration="a-b")
-        self.lockin.configure_gain_filters(sensitivity=self.sensitivity)
-        time.sleep(10)
-        print("Lock-in amplifier configured for AMR measurement.")
+    def _measure_signals(self) -> Dict[str, float]:
+        """Measure lock-in signals, averaging over measure_time with cooperative pause/stop."""
+        duration = self.measure_time
+        dt = 0.1
+        if duration <= 0:
+            return self.transport_readout.read_signals()
 
-    def capture_data(self):
-        """Loop through angles and capture data at each step."""
-        if self.angle_step > 0:
-            direction = 1
-        else:
-            direction = 0
-        steps = convert_angle_to_steps(self.angle_step)
-        for angle in np.arange(0, self.total_angle, self.angle_step):
-            while self.pause_requested:
-                if self.abort_requested:
-                    break
-                time.sleep(0.5)
-
-            if self.abort_requested:
-                print("Measurement aborted by user.")
+        x_list: List[float] = []
+        y_list: List[float] = []
+        start_time = time.monotonic()
+        while not self._coordinator.is_stop_requested:
+            sig = self.transport_readout.read_signals()
+            x_list.append(sig["x"])
+            y_list.append(sig["y"])
+            elapsed = time.monotonic() - start_time
+            if elapsed >= duration - 1e-9:
+                break
+            if not self._wait(min(dt, max(0.001, duration - elapsed)), pause=True):
                 break
 
-            self.angle = angle
-            print("capturing data at angle: ", self.angle)
-            self.capture_data_point()
-            self.save_data_point()
-            self._update_live_plot()
-            self.arduino.step(abs(steps), direction)
-            time.sleep(1)
+        if not x_list:
+            return self.transport_readout.read_signals()
+        return {"x": float(np.mean(x_list)), "y": float(np.mean(y_list))}
 
-        # Legacy observation AMR-ANGLE-001 (repaired in Checkpoint 24b)
-        if self.angle != self.total_angle and not self.abort_requested:
-            self.angle = self.total_angle
-            self.arduino.step(abs(steps), direction)
-            time.sleep(1)
-            self.capture_data_point()
-            self.save_data_point()
-            self._update_live_plot()
+    def _capture_data(
+        self,
+        request: RunRequest,
+        on_update: Optional[Callable[[Any], None]] = None,
+    ) -> pd.DataFrame:
+        """
+        Acquire AMR angular sweep data.
 
-    def capture_data_point(self):
-        """Take a single data point from the lockin with averaging."""
-        current_time = time.time()
-        x_avg_list = []
-        y_avg_list = []
-        while (time.time() - current_time) < self.measure_time:
-            time.sleep(0.1)
-            x, y = self.lockin.get_X_Y()
-            x_avg_list.append(x)
-            y_avg_list.append(y)
-        x_avg = np.mean(x_avg_list)
-        y_avg = np.mean(y_avg_list)
-        if self.data is None:
-            self.data = pd.DataFrame(
-                {"angle": [self.angle], "field": [self.field], "X": [x_avg], "Y": [y_avg]}
-            )
-        else:
-            self.data.loc[len(self.data)] = {
-                "angle": self.angle,
-                "field": self.field,
-                "X": x_avg,
-                "Y": y_avg,
+        Rotates the stepper motor to each commanded angle, pauses/settles,
+        measures lock-in transport response, verifies magnetic field, and
+        emits bounded live snapshots. No extra motor movement occurs after the final angle.
+        """
+        if self.profile is None:
+            raise ValueError("AMR requires instruments or profile to execute")
+
+        angles = self._compute_angles()
+        total_steps = len(angles)
+        rows: List[Dict[str, Any]] = []
+
+        for step_idx, target_angle in enumerate(angles):
+            # Check stop/pause before moving
+            if self._coordinator.is_stop_requested:
+                break
+            if not self._wait(pause=True):
+                break
+
+            # Rotate stepper motor to exact target angle
+            self.orientation_controller.move_to_angle(target_angle)
+
+            # Settle post-motion
+            if not self._wait(self.settling_time, pause=True):
+                break
+
+            # Check stop/pause before measuring
+            if not self._wait(pause=True):
+                break
+
+            signals = self._measure_signals()
+            if self._coordinator.is_stop_requested and not signals:
+                break
+
+            row: Dict[str, Any] = {
+                "angle": float(self.orientation_controller.current_angle),
+                "field": float(self.field),
+                "x": float(signals["x"]),
+                "y": float(signals["y"]),
             }
-        print(f"Data point at angle {self.angle} degrees and field {self.field} Oe: X={x_avg}, Y={y_avg}")
 
-    def save_data_point(self):
-        """Save captured data to CSV file."""
-        if self.data is not None and self.filename is not None:
-            metadata_and_data_to_csv(self.metadata, self.data, self.filename)
-            print(f"Data point saved to {self.filename}")
-        else:
-            print("No data to save. Capture the data point first.")
+            if self.record_field_readback and self.field_reader:
+                measured, _ = self.field_reader.read_field()
+                self.field_reader.verify_field(self.field, measured)
+                row.update(
+                    field_measured=float(measured),
+                    field_time=float(time.monotonic() - self._field_time_origin),
+                )
+            elif self.field_reader:
+                # Field verification is performed even when readback columns are not recorded
+                measured, _ = self.field_reader.read_field()
+                self.field_reader.verify_field(self.field, measured)
 
-    def run_experiment(self, configure_lockin=True):
-        """
-        Legacy AMR execution workflow (preserved for Checkpoint 24a; migrated in 24b).
-        """
-        self.initialize()
-        if configure_lockin:
-            self.configure_lockin()
-        self._init_live_plot()
-        self.capture_data()
-        self._close_live_plot()
-        self.shut_off()
-        self.analyze()
-        self.plot_results()
+            rows.append(row)
+
+            # Update in-progress views and emit snapshot
+            current_df = pd.DataFrame(rows, columns=self.ordered_columns)
+            self._raw_data = current_df.copy()
+            self._data = current_df.copy()
+            snapshot = self.publish_snapshot(
+                views={"raw": current_df},
+                completed_steps=step_idx + 1,
+                total_steps=total_steps,
+            )
+            if on_update:
+                on_update(snapshot)
+
+        result_df = pd.DataFrame(rows, columns=self.ordered_columns)
+        self._raw_data = result_df.copy()
+        self._data = result_df.copy()
+        return result_df
 
 
 # ----------------------------------------------------------------------------
 # Helper Functions
 # ----------------------------------------------------------------------------
 
-def convert_steps_to_angle(steps, steps_per_revolution=200) -> float:
+def convert_steps_to_angle(steps: int, steps_per_revolution: int = 200) -> float:
     """Helper function to convert steps to an angle in degrees."""
     if not isinstance(steps_per_revolution, (int, np.integer)) or steps_per_revolution <= 0:
         raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
     return float(steps) * 360.0 / float(steps_per_revolution)
 
 
-def convert_angle_to_steps(angle, steps_per_revolution=200) -> int:
+def convert_angle_to_steps(angle: float, steps_per_revolution: int = 200) -> int:
     """Helper function to convert an angle in degrees to steps."""
     if not isinstance(steps_per_revolution, (int, np.integer)) or steps_per_revolution <= 0:
         raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
     angle_f = float(angle)
     if not math.isfinite(angle_f):
         raise ValueError(f"angle must be a finite number, got {angle!r}")
-    return int(round(angle_f * steps_per_revolution / 360.0))
+    return int(round(angle_f * float(steps_per_revolution) / 360.0))
 
 
-def convert_field_to_voltage(field, voltage_calibration=10000.0) -> float:
+def convert_field_to_voltage(field: float, voltage_calibration: float = 10000.0) -> float:
     """
     Convert magnetic field in Oe to calibrator control voltage in V.
     Default calibration is 10000.0 Oe/V (0.01 V for 100 Oe).
@@ -696,7 +359,7 @@ def convert_field_to_voltage(field, voltage_calibration=10000.0) -> float:
     return field_f / cal_f
 
 
-def convert_voltage_to_field(voltage, voltage_calibration=10000.0) -> float:
+def convert_voltage_to_field(voltage: float, voltage_calibration: float = 10000.0) -> float:
     """
     Convert sensor / calibrator voltage in V to magnetic field in Oe.
     Default calibration is 10000.0 Oe/V (100 Oe for 0.01 V).
@@ -710,5 +373,11 @@ def convert_voltage_to_field(voltage, voltage_calibration=10000.0) -> float:
     return v_f * cal_f
 
 
-# Public standardized class; legacy AMR stays isolated until checkpoint 24b.
-from ._magneto_transport_base import MagnetoTransport
+__all__ = [
+    "MagnetoTransport",
+    "AMR",
+    "convert_steps_to_angle",
+    "convert_angle_to_steps",
+    "convert_field_to_voltage",
+    "convert_voltage_to_field",
+]

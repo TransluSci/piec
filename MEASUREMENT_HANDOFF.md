@@ -1,9 +1,30 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 24a (MagnetoTransport lifecycle and consumers) is complete.**
-Next: **checkpoint 24b only, AMR acquisition/schema/persistence and consumers**, as numbered in the roadmap.
+Continue on `measuremnt-standarization`. **Checkpoint 24b (AMR acquisition/schema/persistence and consumers) is complete.**
+Next: **checkpoint 24c only, AMR notebook/GUI presentation integration**, as numbered in the roadmap.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
+
+## Checkpoint 24b: AMR acquisition, schema, persistence, and consumers
+
+- **Standardized AMR Lifecycle & Base Migration**: Modernized `AMR` in `src/piec/measurement/magneto_transport.py` to directly subclass the public `MagnetoTransport` (and `BaseMeasurement`), inheriting the unified execution lifecycle (`run_experiment`, `session`, `configure_instruments`, `capture_data`, `safe_shutdown`, `request_stop`, `request_pause`, `snapshot`). Zero constructor I/O or file writes in `__init__`.
+- **Target Schema & Plain Columns**: Emits canonical schema `amr` version 1 with lowercase columns `('angle', 'field', 'x', 'y')` and canonical declared units `{'angle': 'deg', 'field': 'Oe', 'x': 'V', 'y': 'V'}`. Optional `field_measured` and `field_time` follow when readback is requested.
+- **Defect AMR-ANGLE-001 Repaired**: Fixed the motor stepping loop in `_capture_data()` by rotating to each commanded angle from `_compute_angles()` and capturing data without performing an extra motor step after the final angle. Motor physical position ends at exactly the commanded angle (e.g., 180.0°), and the strict `xfail` test `test_amr_endpoint_matches_commanded_angle_and_scientific_golden` now passes as a full regression.
+- **Removal of Legacy Support**: Completely deleted `_LegacyMagnetoTransport` and all obsolete legacy methods (`initialize()`, `shut_off()`, `set_field()`, `configure_lockin()`, `save_data_point()`, `capture_data_point()`, `analyze()`, `plot_results()`). Standardized constructor parameter names to `stepper` and `voltage_calibration`.
+- **Excitation Safing & Readout Preservation**: Enforced mandatory declared excitation shutdown policy before energizing (raising `HardwareSafetyError` if unprovided). Preserved manual front-panel lock-in settings by default (`readout_configuration="preserve"`), sending no configuration writes to the lock-in unless explicitly opted in.
+- **Engine-Owned Persistence & Safing**: Atomic publication at experiment completion using `BaseMeasurement` handle publishing and schema metadata. Partial CSV publication on cooperative stop (`request_stop()`). Attempt-all safing de-energizes the field source and invokes the excitation shutdown handler, escalating to `SafetyStatus.UNSAFE` while retaining open instrument connections for physical recovery.
+- **Consumer Migration**:
+  - `Measurements/AMR/amr_GUI.py`: Updated to use `stepper=stepper`, `save_dir=save_dir`, `shutdown_handler=lambda: None`, `options={'configure_lockin': initialize_lockin}`, cooperative `request_pause` / `request_stop`, and lowercase plot axes `['angle', 'field', 'x', 'y']`.
+  - `Measurements/AMR/AMR_testing.ipynb`: Updated cells to `stepper=arduino`, `output_dir=path`, `shutdown_handler=lambda: None`, and plot lowercase `['x', 'y']`.
+  - `Measurements/AMR/amr_measurement.md`: Updated architecture section to document `BaseMeasurement` shared lifecycle methods.
+  - `src/piec/measurement/__init__.py`: Re-exported `AMR` alongside `MagnetoTransport`.
+  - `tests/fixtures/measurement_compatibility/manifest.json`: Marked `AMR` as migrated in `migrated_families`, updated `AMR-ANGLE-001` defect status to Repaired, and synchronized consumer inventory.
+- **Validation**:
+  - Updated `tests/test_measurement_amr_compatibility.py` with 20 passing unit, lifecycle, and scientific golden regression tests. Removed obsolete `_LegacyMagnetoTransport` tests.
+  - Targeted suites (`test_measurement_amr_compatibility.py`, `test_measurement_magneto_transport.py`, `test_magneto_transport_review.py`, `test_amr_contract.py`, `test_measurement_compatibility_manifest.py`): **165 passed**.
+  - Full repository test suite with `MPLBACKEND=Agg`: **1571 passed, 1 skipped** in 32.72s on Python 3.13.2. Zero failures, zero xfails.
+- **Physical Validation**: Checkpoints 17 (IV/MOKE) and 22 (FE) remain explicitly **PENDING**.
+- **Next Step**: Stop after checkpoint 24b. Proceed with **checkpoint 24c only: AMR notebook/GUI presentation integration** once authorized.
 
 ## Checkpoint 24a review corrections (authoritative)
 

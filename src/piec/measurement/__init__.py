@@ -3,7 +3,7 @@ from .base import BaseMeasurement, MeasurementSession
 from .iv_sweep import IVSweep
 from .discrete_waveform import DiscreteWaveform, HysteresisLoop, ThreePulsePund
 from .moke import MokeMeasurement, MokeSnapshot
-from .magneto_transport import MagnetoTransport
+from .magneto_transport import AMR, MagnetoTransport
 from .contracts import (
     ConcurrentRunError,
     ControlQueue,
@@ -66,6 +66,7 @@ __all__ = [
     "MokeMeasurement",
     "MokeSnapshot",
     "MagnetoTransport",
+    "AMR",
     "MeasurementRunner",
     "CloseCoordinationStatus",
     "RunState",

@@ -118,6 +118,10 @@ class MagnetoTransport(BaseMeasurement):
     def orientation_controller(self):
         return self.profile.orientation_controller if self.profile else None
 
+    @property
+    def metadata(self):
+        return self.measurement_metadata
+
     def _validate_options(self, options):
         super()._validate_options(options)
         opts = options or {}

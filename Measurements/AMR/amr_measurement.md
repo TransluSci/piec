@@ -58,21 +58,21 @@ The codebase is structured around a parent class `MagnetoTransport` and a specif
 
 ### `MagnetoTransport` Class
 *   **Location**: `src/piec/measurement/magneto_transport.py`
-*   **Role**: Manages core instrument connections and the magnetic field feedback loop.
-*   **Key Methods**:
-    *   `initialize()`: Checks communication with all instruments.
-    *   `set_field()`: Orchestrates the Calibrator -> DMM feedback loop described above.
-    *   `shut_off()`: Safely turns off the magnetic field (sets calibrator to 0V).
+*   **Role**: Base measurement class managing instrument setup roles, field control, lock-in excitation safing, and the shared `BaseMeasurement` lifecycle.
+*   **Key Lifecycle Methods**:
+    *   `run_experiment()`: Executes the standardized full-run sequence (configure -> capture -> safing -> save).
+    *   `session()`: Context manager for piecewise manual hardware control.
+    *   `safe_shutdown()`: Attempt-all safing de-energizing the magnet and invoking excitation shutdown handler.
+    *   `request_stop()`: Cooperatively halts execution and triggers safe shutdown.
+    *   `request_pause()`: Temporarily pauses angular sweep between points.
 
 ### `AMR` Class
 *   **Location**: `src/piec/measurement/magneto_transport.py`
 *   **Inherits from**: `MagnetoTransport`
-*   **Role**: Manages the specific details of the AMR experiment.
-*   **Key Methods**:
-    *   `configure_lockin()`: Sets up the lock-in amplifier (reference frequency, gain, etc.).
-    *   `capture_data()`: Loops through the specified angles, moves the stepper motor, and triggers data capture.
-    *   `capture_data_point()`: Reads the averaged X/Y signals from the lock-in for a set duration.
-    *   `save_data_point()`: Saves measurements to a CSV file.
+*   **Role**: Concrete implementation of the AMR angular sweep experiment.
+*   **Key Lifecycle Methods**:
+    *   `run_experiment()`: Sweeps sample angle, measures lock-in X/Y signals, and publishes standardized `amr` schema v1 CSV with units.
+    *   `_capture_data()`: Rotates stepper motor to exact commanded angles without endpoint overshoot (AMR-ANGLE-001 repaired) and captures averaged signals.
 
 ## How to Use the Notebook
 

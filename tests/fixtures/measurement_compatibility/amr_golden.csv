@@ -1,7 +1,7 @@
-dmm,calibrator,arduino,lockin,field,angle_step,total_angle,amplitude,frequency,measure_time,sensitivity,save_dir,voltage_callibration,live_plot,plot_config,__class__,mtype,timestamp,processed
-TEST_DMM,TEST_CALIBRATOR,TEST_STEPPER,TEST_LOCKIN,100.0,45.0,180.0,1.0,10,0.01,50uv/pa,__NORMALIZED_PATH__,10000,False,,<class 'piec.measurement.magneto_transport.AMR'>,amr,0.0,False
+angle_step,total_angle,field,field_unit,frequency,amplitude,field_basis,signal_mode,field_source_mode,field_source_name,source_output_unit,excitation_source,excitation_settings_provenance,field_source_scale,field_reader_name,field_reader_mode,field_absolute_tolerance,field_relative_tolerance,field_mismatch_policy,field_reader_scale,instrument_0,instrument_1,instrument_2,instrument_3,readout_configuration,measurement_schema,measurement_schema_version,run_id,outcome,partial,save_requested,column_units_json
+45.0,180.0,100.0,Oe,10.0,1.0,commanded,lockin_xy,linear,calibrator,V,internal,user_declared_unverified,10000.0,dmm,linear,1.0,0.1,warn,10000.0,TEST_CALIBRATOR,TEST_LOCKIN,TEST_STEPPER,TEST_DMM,preserve,amr,1,__NORMALIZED_UUID__,COMPLETED,False,True,"{""angle"":""deg"",""field"":""Oe"",""x"":""V"",""y"":""V""}"
 
-angle,field,X,Y
+angle,field,x,y
 0.0,100.0,0.000102,1.02e-05
 45.0,100.0,0.000101,1.0100000000000002e-05
 90.0,100.0,0.0001,1e-05
