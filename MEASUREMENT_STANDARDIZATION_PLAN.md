@@ -195,6 +195,14 @@ Checkpoint 26 recorded: AMR physical validation record is **PENDING** as physica
 
 ## 1. Purpose and non-negotiable constraints
 
+Checkpoints 28e/28f review corrected scope channel routing, pre-trigger timestamps,
+array validation and atomic bundled configuration; AWG arbitrary waveform
+validation/offset/polarity, detached snapshots, explicit SCPI channels and isolated
+resettable noise. Cross-family numerical regression evidence is recorded in the
+current handoff. Next is checkpoint 28g, one remaining driver family (audit
+VirtualSourcemeter next), with VirtualBench and additional AMR adapters separate.
+Physical 17/22/26 remain PENDING.
+
 Checkpoint 28d follow-up: reject fractional/non-finite directions before mutation;
 repair mixed hook binding and preserve unrelated optional defaults; report the
 actual reset delta and notify recalculated angles after steps-per-revolution

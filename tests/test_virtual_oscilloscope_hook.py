@@ -513,13 +513,12 @@ class TestOutputNormalizationAndValidation:
         with pytest.raises(ValueError, match="must not be empty"):
             scope.get_data()
 
-    def test_negative_or_non_finite_time_rejected(self):
+    def test_pretrigger_time_allowed_but_non_finite_time_rejected(self):
         scope = VirtualScope(waveform_hook=lambda ch: ([1.0, 2.0], [-1.0, 1.0]))
-        with pytest.raises(ValueError, match="finite and non-negative"):
-            scope.get_data()
+        assert scope.get_data()["Time"].tolist() == [-1.0, 1.0]
 
         scope2 = VirtualScope(waveform_hook=lambda ch: ([1.0, 2.0], [0.0, float("nan")]))
-        with pytest.raises(ValueError, match="finite and non-negative"):
+        with pytest.raises(ValueError, match="finite and strictly increasing"):
             scope2.get_data()
 
     def test_unsupported_return_type_rejected(self):

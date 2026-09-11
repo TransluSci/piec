@@ -8,6 +8,8 @@ It mimics the behavior of a physical AWG by maintaining internal state and gener
 from __future__ import annotations
 
 import inspect
+import re
+from copy import deepcopy
 import math
 from numbers import Real
 from types import MappingProxyType
@@ -76,6 +78,7 @@ class VirtualAwg(VirtualInstrument, Awg):
         waveform_hook: Optional[Callable[..., Any]] = None,
         apply_hook: Optional[Callable[..., Any]] = None,
         trigger_hook: Optional[Callable[..., Any]] = None,
+        seed: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -95,6 +98,8 @@ class VirtualAwg(VirtualInstrument, Awg):
             trigger_hook (callable, optional): Alias for waveform_hook.
             **kwargs: Additional arguments passed to parent classes.
         """
+        self._rng = np.random.default_rng(seed)
+        self._initial_rng_state = deepcopy(self._rng.bit_generator.state)
         super().__init__(
             address=address,
             simulation_points=simulation_points,
@@ -226,10 +231,7 @@ class VirtualAwg(VirtualInstrument, Awg):
 
     def get_state(self) -> dict[str, Any]:
         """Return a deep copy of the internal driver state."""
-        return {
-            k: v.copy() if isinstance(v, dict) else v
-            for k, v in self.state.items()
-        }
+        return deepcopy(self.state)
 
     # ------------------------------------------------------------------------
     # Triggering and SCPI Command Dispatch
@@ -264,14 +266,11 @@ class VirtualAwg(VirtualInstrument, Awg):
             self.reset()
         elif cmd == '*CLS':
             pass
-        elif ':OUTP' in cmd:
-            on = 'ON' in cmd or ' 1' in cmd or cmd.endswith('1')
-            ch = 1
-            for c in self.channel:
-                if f"OUTP{c}" in cmd or f":OUTP{c}" in cmd:
-                    ch = c
-                    break
-            self.output(ch, on)
+        elif cmd.startswith((':OUTP', 'OUTP')):
+            match = re.fullmatch(r':?OUTP(?:UT)?([12])?\s+(ON|OFF|0|1)', cmd)
+            if match is None:
+                raise ValueError("unsupported output command")
+            self.output(int(match[1] or 1), match[2] in ('ON', '1'))
 
     def query(self, command: str) -> str:
         """
@@ -290,19 +289,14 @@ class VirtualAwg(VirtualInstrument, Awg):
             return '1'
         elif cmd == '*ESR?':
             return '0'
-        elif ':OUTP?' in cmd:
-            ch = 1
-            for c in self.channel:
-                if f"OUTP{c}" in cmd or f":OUTP{c}" in cmd:
-                    ch = c
-                    break
-            return '1' if self.state['output'][ch] else '0'
-        elif ':FREQ?' in cmd or ':SOUR:FREQ?' in cmd:
-            ch = self.state['acquisition_channel']
-            return str(self.state['frequency'][ch])
-        elif ':VOLT?' in cmd or ':SOUR:VOLT?' in cmd:
-            ch = self.state['acquisition_channel']
-            return str(self.state['amplitude'][ch])
+        match = re.fullmatch(r':?OUTP(?:UT)?([12])?\?', cmd)
+        if match:
+            return '1' if self.state['output'][int(match[1] or 1)] else '0'
+        match = re.fullmatch(r':?(?:SOUR(?:CE)?([12])?:)?(FREQ|VOLT)\?', cmd)
+        if match:
+            channel = int(match[1] or 1)
+            key = 'frequency' if match[2] == 'FREQ' else 'amplitude'
+            return str(self.state[key][channel])
         return ''
 
     def _handle_trigger(self) -> None:
@@ -817,9 +811,11 @@ class VirtualAwg(VirtualInstrument, Awg):
         if data is None:
             raise ValueError("data must not be None")
         warn_for_large_simulation_input(data, label="virtual AWG arbitrary waveform")
-        data_arr = np.array(data)
-        if len(data_arr) == 0:
+        data_arr = np.asarray(data, dtype=float)
+        if data_arr.size == 0:
             raise ValueError("data array must not be empty")
+        if data_arr.ndim != 1 or data_arr.size < 2 or not np.isfinite(data_arr).all():
+            raise ValueError("data must be a finite one-dimensional waveform with at least two points")
         max_abs = np.max(np.abs(data_arr))
         if max_abs > 0:
             voltage_data = data_arr / max_abs
@@ -1008,16 +1004,18 @@ class VirtualAwg(VirtualInstrument, Awg):
             duty = self.state['duty_cycle'][ch] / 100.0
             v = amp * (np.mod(t, 1) < duty) + offset
         elif wf.upper() == 'NOIS':
-            v = amp * np.random.randn(points) + offset
+            v = amp * self._rng.standard_normal(points) + offset
         elif wf.upper() == 'DC':
             v = np.ones(points) * offset
         elif wf.upper() == 'USER' and self.state['arb_waveform'][ch] is not None:
             data = self.state['arb_waveform'][ch]
             v = np.interp(np.linspace(0, len(data) - 1, points), np.arange(len(data)), data)
-            v = v * amp
+            v = v * amp + offset
         else:
             v = np.zeros(points)
 
+        if self.state["polarity"][ch] == "INV":
+            v = 2 * offset - v
         return v
 
     # ------------------------------------------------------------------------
@@ -1031,6 +1029,7 @@ class VirtualAwg(VirtualInstrument, Awg):
         Preserves injected waveform hook. Setup-owned state (external material models,
         timebase, clocks, RNG) is owned by the test fixture / VirtualBench and not reset.
         """
+        self._rng.bit_generator.state = deepcopy(self._initial_rng_state)
         self.state = {
             'output': {ch: False for ch in self.channel},
             'waveform': {ch: 'SIN' for ch in self.channel},

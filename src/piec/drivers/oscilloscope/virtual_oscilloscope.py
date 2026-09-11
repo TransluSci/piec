@@ -6,6 +6,8 @@ This module provides a software simulation of an oscilloscope for development an
 from __future__ import annotations
 
 import inspect
+from copy import deepcopy
+from functools import wraps
 import math
 from numbers import Real
 from types import MappingProxyType
@@ -19,6 +21,22 @@ from ..virtual_instrument import (
     VirtualInstrument,
     warn_for_large_simulation_points,
 )
+
+
+def _atomic_configuration(method):
+    """Apply bundled driver settings together or restore their previous values."""
+    @wraps(method)
+    def configure(self, *args, **kwargs):
+        previous = self.state
+        previous_points = self._requested_acquisition_points
+        self.state = deepcopy(previous)
+        try:
+            return method(self, *args, **kwargs)
+        except BaseException:
+            self.state = previous
+            self._requested_acquisition_points = previous_points
+            raise
+    return configure
 
 
 class VirtualScope(VirtualInstrument, Oscilloscope):
@@ -288,7 +306,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if isinstance(channel, bool) or not isinstance(channel, Real):
             raise TypeError("channel must be an integer")
-        ch = int(channel)
+        ch = self._validate_channel_number(channel)
         if ch not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if not isinstance(on, (bool, int)) or on not in (False, True, 0, 1):
@@ -311,7 +329,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if isinstance(channel, bool) or not isinstance(channel, Real):
             raise TypeError("channel must be an integer")
-        ch = int(channel)
+        ch = self._validate_channel_number(channel)
         if ch not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
 
@@ -354,7 +372,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if isinstance(channel, bool) or not isinstance(channel, Real):
             raise TypeError("channel must be an integer")
-        ch = int(channel)
+        ch = self._validate_channel_number(channel)
         if ch not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if isinstance(y_position, bool) or not isinstance(y_position, Real):
@@ -376,7 +394,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if isinstance(channel, bool) or not isinstance(channel, Real):
             raise TypeError("channel must be an integer")
-        ch = int(channel)
+        ch = self._validate_channel_number(channel)
         if ch not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         c_str = str(input_coupling).upper().strip()
@@ -394,7 +412,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if isinstance(channel, bool) or not isinstance(channel, Real):
             raise TypeError("channel must be an integer")
-        ch = int(channel)
+        ch = self._validate_channel_number(channel)
         if ch not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if isinstance(probe_attenuation, bool) or not isinstance(probe_attenuation, Real):
@@ -463,6 +481,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
             raise ValueError(f"x_position {pos_f} is outside range {self.x_position}")
         self.state["x_position"] = pos_f
 
+    @_atomic_configuration
     def configure_horizontal(
         self,
         tdiv: Optional[float] = None,
@@ -544,6 +563,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
             raise ValueError(f"trigger_sweep must be one of {self.trigger_sweep}, got {trigger_sweep!r}")
         self.state["trigger_sweep"] = swp_str
 
+    @_atomic_configuration
     def configure_trigger(
         self,
         trigger_source: Optional[Union[int, str]] = None,
@@ -582,7 +602,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if isinstance(channel, bool) or not isinstance(channel, Real):
             raise TypeError("channel must be an integer")
-        ch = int(channel)
+        ch = self._validate_channel_number(channel)
         if ch not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state["acquisition_channel"] = ch
@@ -608,6 +628,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
             raise ValueError(f"acquisition_points must be an integer >= 2, got {acquisition_points!r}")
         self._requested_acquisition_points = int(pts_f)
 
+    @_atomic_configuration
     def configure_acquisition(
         self,
         channel: Optional[int] = None,
@@ -651,6 +672,13 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         v = np.sin(2 * np.pi * freq * t) * self.state["vdiv"][self.state["acquisition_channel"]] * 2
         return v.astype(np.uint8)
 
+    def _validate_channel_number(self, channel):
+        if isinstance(channel, bool) or not isinstance(channel, Real):
+            raise TypeError("channel must be an integer")
+        if not math.isfinite(channel) or channel != int(channel) or int(channel) not in self.channel:
+            raise ValueError("channel must be an integer in the supported range")
+        return int(channel)
+
     def get_data(self, channel: Optional[int] = None) -> pd.DataFrame:
         """
         Get voltage and time waveform data from the virtual oscilloscope.
@@ -672,7 +700,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         if channel is not None:
             if isinstance(channel, bool) or not isinstance(channel, Real):
                 raise TypeError("channel must be an integer")
-            ch = int(channel)
+            ch = self._validate_channel_number(channel)
             if ch not in self.channel:
                 raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         else:
@@ -680,7 +708,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
 
         if self._waveform_hook is not None:
             raw = self._invoke_hook(self._waveform_hook, ch)
-            return self._normalize_waveform_response(raw)
+            return self._normalize_waveform_response(raw, ch)
 
         # Deprecated fallback to shared ferroelectric sample
         if hasattr(self, "sample") and self.sample is not None:
@@ -770,103 +798,35 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         return hook(*args, **kwargs)
 
     @staticmethod
-    def _normalize_waveform_response(raw: Any) -> pd.DataFrame:
-        """Normalize raw hook output into standard pd.DataFrame with 'Time' and 'Voltage' columns."""
-        if isinstance(raw, pd.DataFrame):
-            cols_lower = {str(c).strip().lower(): c for c in raw.columns}
-            time_col: Optional[Any] = None
-            for candidate in ("time", "t", "timestamp"):
-                if candidate in cols_lower:
-                    time_col = cols_lower[candidate]
-                    break
-            volt_col: Optional[Any] = None
-            for candidate in ("voltage", "v", "volt", "ch1", "chan1", "channel1"):
-                if candidate in cols_lower and cols_lower[candidate] != time_col:
-                    volt_col = cols_lower[candidate]
-                    break
-
-            if time_col is None or volt_col is None:
-                if len(raw.columns) == 2:
-                    col0, col1 = raw.columns[0], raw.columns[1]
-                    if time_col is not None:
-                        volt_col = col1 if time_col == col0 else col0
-                    else:
-                        time_col, volt_col = col0, col1
-                else:
-                    raise ValueError(
-                        f"DataFrame returned by waveform_hook must contain time and voltage columns, got {list(raw.columns)}"
-                    )
-
-            try:
-                t_arr = np.asarray(raw[time_col], dtype=np.float64)
-                v_arr = np.asarray(raw[volt_col], dtype=np.float64)
-            except (ValueError, TypeError) as exc:
-                raise TypeError(f"Failed to convert waveform data to float64 arrays: {exc}") from exc
-
-            if len(t_arr) == 0:
-                raise ValueError("waveform data must not be empty")
-            if not np.all(np.isfinite(t_arr)) or np.any(t_arr < 0):
-                raise ValueError("time values must be finite and non-negative")
-
-            return pd.DataFrame({"Time": t_arr, "Voltage": v_arr})
-
-        if isinstance(raw, Mapping) or (hasattr(raw, "keys") and callable(raw.keys)):
-            keys_lower = {str(k).strip().lower(): k for k in raw.keys()}
-            time_key: Optional[Any] = None
-            for candidate in ("time", "t", "timestamp"):
-                if candidate in keys_lower:
-                    time_key = keys_lower[candidate]
-                    break
-            volt_key: Optional[Any] = None
-            for candidate in ("voltage", "v", "volt", "ch1", "chan1", "channel1"):
-                if candidate in keys_lower and keys_lower[candidate] != time_key:
-                    volt_key = keys_lower[candidate]
-                    break
-
-            if time_key is None or volt_key is None:
-                if len(raw) == 2:
-                    k0, k1 = list(raw.keys())[:2]
-                    if time_key is not None:
-                        volt_key = k1 if time_key == k0 else k0
-                    else:
-                        time_key, volt_key = k0, k1
-                else:
-                    raise ValueError(
-                        f"Mapping returned by waveform_hook must contain time and voltage keys, got {list(raw.keys())}"
-                    )
-
-            try:
-                t_arr = np.asarray(raw[time_key], dtype=np.float64)
-                v_arr = np.asarray(raw[volt_key], dtype=np.float64)
-            except (ValueError, TypeError) as exc:
-                raise TypeError(f"Failed to convert waveform data to float64 arrays: {exc}") from exc
-
-            if len(t_arr) == 0:
-                raise ValueError("waveform data must not be empty")
-            if len(t_arr) != len(v_arr):
-                raise ValueError(f"time and voltage arrays must have matching length: {len(t_arr)} != {len(v_arr)}")
-            if not np.all(np.isfinite(t_arr)) or np.any(t_arr < 0):
-                raise ValueError("time values must be finite and non-negative")
-
-            return pd.DataFrame({"Time": t_arr, "Voltage": v_arr})
-
-        if isinstance(raw, (tuple, list)) and len(raw) == 2:
-            try:
-                voltages = np.asarray(raw[0], dtype=np.float64)
-                times = np.asarray(raw[1], dtype=np.float64)
-            except (ValueError, TypeError) as exc:
-                raise TypeError(f"Failed to convert waveform tuple elements to float64 arrays: {exc}") from exc
-
-            if len(voltages) == 0:
-                raise ValueError("waveform data arrays must not be empty")
-            if len(voltages) != len(times):
-                raise ValueError(f"waveform data arrays must have matching length, got {len(voltages)} and {len(times)}")
-
-            if not np.all(np.isfinite(times)) or np.any(times < 0):
-                raise ValueError("time array must be finite and non-negative")
-
-            return pd.DataFrame({"Time": times, "Voltage": voltages})
-
-        raise TypeError(
-            f"waveform_hook must return a 2-tuple (voltages, times), dict, or DataFrame, got {type(raw).__name__}"
-        )
+    def _normalize_waveform_response(raw: Any, channel: int = 1) -> pd.DataFrame:
+        """Normalize explicit channel data; time is relative to the trigger."""
+        if isinstance(raw, (pd.DataFrame, Mapping)):
+            names = list(raw.columns) if isinstance(raw, pd.DataFrame) else list(raw.keys())
+            lower = {str(k).strip().lower(): k for k in names}
+            if len(lower) != len(names):
+                raise ValueError("waveform columns must be unambiguous")
+            time_key = next((lower[k] for k in ("time", "t", "timestamp") if k in lower), None)
+            voltage_key = next((lower[k] for k in (
+                f"voltage_ch{channel}", f"ch{channel}", f"chan{channel}", f"channel{channel}",
+                "voltage", "v", "volt") if k in lower), None)
+            if time_key is None or voltage_key is None:
+                raise ValueError("waveform must contain explicit time and voltage columns for the requested channel")
+            times, voltages = raw[time_key], raw[voltage_key]
+        elif isinstance(raw, (tuple, list)) and len(raw) == 2:
+            voltages, times = raw
+        else:
+            raise TypeError("waveform_hook must return (voltages, times), a mapping, or DataFrame")
+        try:
+            t = np.asarray(times, dtype=float)
+            v = np.asarray(voltages, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise TypeError("waveform arrays must be numeric") from error
+        if t.size == 0 or v.size == 0:
+            raise ValueError("waveform arrays must not be empty")
+        if t.ndim != 1 or v.ndim != 1 or t.size != v.size:
+            raise ValueError("waveform arrays must be one-dimensional with matching length")
+        if not np.isfinite(t).all() or np.any(np.diff(t) <= 0):
+            raise ValueError("time must be finite and strictly increasing")
+        if not np.isfinite(v).all():
+            raise ValueError("voltage must be finite")
+        return pd.DataFrame({"Time": t.copy(), "Voltage": v.copy()})

@@ -206,6 +206,22 @@ Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents
 
+### Waveform hook review clarifications (28e/28f)
+
+Scope timestamps are relative to a trigger: negative pre-trigger times are valid,
+but duplicate/decreasing/non-finite timestamps are not. Voltage arrays must be
+finite and one-dimensional. Labeled responses must explicitly identify time and
+voltage (or the requested channel); the scope never guesses from column order.
+Bundled scope configurations reject invalid settings without partial state changes.
+
+AWG `seed=` selects per-instance waveform-noise randomness; reset replays that
+driver-owned RNG sequence. Hook-owned model/RNG state is still reset by the setup.
+Arbitrary waveforms apply amplitude, offset and polarity and require finite 1D
+data. State snapshots detach arbitrary-waveform arrays. Trigger hooks receive the
+synthesized waveform plus output metadata; they are not a physical shutdown
+verification or a continuous-time circuit transport. Other waveform approximations
+and historical fallback prep handling remain unchanged.
+
 The core logic is implemented in `fe_material.py` and includes:
 
 *   **`Material`**: Base class for all material simulations.

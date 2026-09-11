@@ -2,10 +2,19 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 28f (generic per-instance virtual hooks: AWG family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28g: generic per-instance virtual hooks for one next driver family only** (or next standardized checkpoint). Select and record the family/task, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28g: audit and implement generic per-instance virtual hooks for VirtualSourcemeter only.** Run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
 
 ## Checkpoint 28f report (authoritative)
+
+### Review corrections for checkpoints 28e and 28f
+
+- Scope normalization accepts negative pre-trigger timestamps, requires finite increasing time and finite one-dimensional voltage, selects the requested channel from labeled data and rejects unlabeled/ambiguous mappings instead of guessing. Fractional/non-finite channels are rejected before invocation or mutation.
+- Scope bundled horizontal/trigger/acquisition configuration restores previous state on invalid input.
+- AWG arbitrary waveforms validate dimensions and finiteness before storing, apply offset and polarity, and cannot be mutated through a state snapshot. Explicit SCPI channel queries route correctly; malformed output commands cannot silently affect channel 1.
+- AWG noise uses a per-instance seeded RNG with replay on reset, independent of other instruments/global RNG. This is driver-owned noise state; hooks' external RNG/material state remains setup-owned.
+- Added numerical regressions and a connected AWG-to-scope test for offset, polarity and pre-trigger time preservation. Trigger hooks receive synthesized waveform data and output metadata; this is not proof of physical output-off, continuous-time transport, or a completed VirtualBench. Historical fallback prep behavior remains separate.
+- Corrective validation: full suite with Agg **2040 passed, 1 skipped in 63.38s**; `git diff --check` passed. Continue with checkpoint 28g for VirtualSourcemeter only, not VirtualBench yet. Physical 17/22/26 remain PENDING.
 
 - **Status**: **Completed**. Selected driver family: **Arbitrary Waveform Generator (`VirtualAwg`)**.
 - **Physical Validation Matrix**:
@@ -45,7 +54,7 @@ Additional electrical adapters remain separate later work; do not bundle them in
     - `(voltages, times)` 2-tuples/lists (canonical format of `WaveformResponsiveMaterialContract`).
     - Mappings/dicts containing time (`"time"`, `"t"`, `"timestamp"`) and voltage (`"voltage"`, `"v"`, `"volt"`, `"ch1"`, etc.) keys.
     - `pd.DataFrame` with time and voltage columns.
-    - Validates non-empty datasets, matching lengths, and finite non-negative timestamps (`np.all(np.isfinite(times)) and np.all(times >= 0)`).
+    - Validates non-empty datasets, matching lengths, and finite strictly increasing timestamps (including negative pre-trigger times).
   - **State & Reset Ownership**: `reset()` restores default driver-owned configuration (scales, positions, coupling, trigger, acquisition channels/modes/points) while preserving the injected hook intact. Documented that setup-owned state (external models, timebase, clocks, RNG) is owned by the test fixture / VirtualBench and not reset by driver reset. Added instance-level `sample` property descriptor ensuring instance assignments never mutate global `VirtualInstrument._shared_fe_sample`.
 - **Validation**:
   - Dedicated hook test suite: 46 tests in `tests/test_virtual_oscilloscope_hook.py` passed in 1.34s.
