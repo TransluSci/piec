@@ -1689,13 +1689,14 @@
             "file": "Measurements/AMR/amr_GUI.py",
             "category": "gui",
             "imported_symbols": [
-              "AMR"
+              "AMR",
+              "MeasurementRunner"
             ],
             "import_module": "piec.measurement.amr",
             "instantiation_args": [
               "dmm",
               "calibrator",
-              "arduino",
+              "stepper",
               "lockin",
               "field",
               "angle_step",
@@ -1704,20 +1705,21 @@
               "frequency",
               "measure_time",
               "sensitivity",
-              "save_dir"
+              "output_dir",
+              "shutdown_handler"
             ],
-            "execution_call": "experiment.run_experiment(configure_lockin=initialize_lockin)",
-            "execution_context": "threading.Thread(target=experiment.run_experiment, kwargs={'configure_lockin': initialize_lockin}, daemon=True)",
+            "execution_call": "self.runner.start(save=self._save_this_run, options={'configure_lockin': initialize_lockin})",
+            "execution_context": "MeasurementRunner(self.experiment).start(save=self._save_this_run, options={'configure_lockin': initialize_lockin})",
             "controls": {
-              "pause": "experiment.pause_requested = True / False",
-              "stop": "experiment.abort_requested = True"
+              "pause": "self.runner.request_pause(True / False)",
+              "stop": "self.runner.request_stop()"
             },
-            "data_consumption": "standard_csv_to_metadata_and_data(experiment.filename)",
+            "data_consumption": "raw_window (display_queue) and data (terminal final_snapshot)",
             "plotted_columns": [
               "angle",
               "field",
-              "X",
-              "Y"
+              "x",
+              "y"
             ]
           },
           {
@@ -2183,7 +2185,8 @@
             "file": "Measurements/AMR/amr_GUI.py",
             "category": "gui",
             "imported_symbols": [
-              "AMR"
+              "AMR",
+              "MeasurementRunner"
             ],
             "import_module": "piec.measurement.amr",
             "instantiation_args": [
@@ -2198,16 +2201,16 @@
               "frequency",
               "measure_time",
               "sensitivity",
-              "save_dir",
+              "output_dir",
               "shutdown_handler"
             ],
-            "execution_call": "experiment.run_experiment(options={'configure_lockin': initialize_lockin}, save=bool(save_dir))",
-            "execution_context": "threading.Thread(target=experiment.run_experiment, kwargs={'options': {'configure_lockin': initialize_lockin}, 'save': bool(save_dir)}, daemon=True)",
+            "execution_call": "self.runner.start(save=self._save_this_run, options={'configure_lockin': initialize_lockin})",
+            "execution_context": "MeasurementRunner(self.experiment).start(save=self._save_this_run, options={'configure_lockin': initialize_lockin})",
             "controls": {
-              "pause": "experiment.request_pause(True / False)",
-              "stop": "experiment.request_stop()"
+              "pause": "self.runner.request_pause(True / False)",
+              "stop": "self.runner.request_stop()"
             },
-            "data_consumption": "standard_csv_to_metadata_and_data(experiment.filename)",
+            "data_consumption": "raw_window (display_queue) and data (terminal final_snapshot)",
             "plotted_columns": [
               "angle",
               "field",

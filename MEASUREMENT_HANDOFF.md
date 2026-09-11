@@ -1,9 +1,29 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 24b (AMR acquisition/schema/persistence and consumers) is complete.**
-Next: **checkpoint 24c only, AMR notebook/GUI presentation integration**, as numbered in the roadmap.
+Continue on `measuremnt-standarization`. **Checkpoint 24c (AMR notebook/GUI presentation integration) is complete.**
+Next: **checkpoint 24d onward / 25 (AMR additional adapters / GUI interaction hardening)**, as numbered in the roadmap.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
+
+## Checkpoint 24c report (authoritative)
+
+- **MeasurementRunner Integration**: Modernized `AMRApp` in `Measurements/AMR/amr_GUI.py` to coordinate acquisition through `MeasurementRunner(self.experiment)` instead of unmanaged `threading.Thread`. Guarantees non-daemon background thread execution (`daemon=False`), preventing thread abandonment while hardware outputs are active.
+- **Bounded Live Updates & Authoritative Terminal Data**: GUI polling drains `self.runner.display_queue` on the main thread, extracting the bounded `raw_window` view (bounded by `raw_window_points`, default 100) to keep rendering overhead constant. Upon receiving `TerminalEvent` from `self.runner.control_queue`, the GUI renders the complete authoritative dataset from `event.final_snapshot.get_view('data')` or `event.data`. Removed legacy CSV-file polling via `standard_csv_to_metadata_and_data`.
+- **Main-Thread Plotting with Metadata-Derived Units**: Main-thread plotting in `_plot_data(self, df)` derives axis labels dynamically from `self.experiment.column_units` (`{'angle': 'deg', 'field': 'Oe', 'x': 'V', 'y': 'V'}`), formatting labels as `{col} ({unit})`.
+- **Excitation Shutdown Policy**:
+  - Virtual Mode: When all selected instrument addresses are `"VIRTUAL"`, `AMRApp` automatically installs `_simulation_excitation_shutdown()`, which explicitly sets `lockin.configure_reference(voltage=0.0)`.
+  - Physical Mode: When any physical VISA resource is selected, `AMRApp` strictly requires an external `excitation_shutdown_handler` (passed to constructor or instance attribute). If unsupplied, `run_measurement()` rejects execution before `# Initialize drivers`, leaving bench hardware untouched.
+  - Zero tolerance: No-op callbacks (`lambda: None`) are strictly prohibited in GUI and notebook.
+- **Manual Lock-In Setting Preservation**: Defaulted `initialize_lockin` to `False` in `DEFAULTS` (`readout_configuration="preserve"`), sending zero configuration writes to the lock-in unless explicitly checked by the operator.
+- **Connection Retention on Unsafe Shutdown**: If `_safe_shutdown` escalates to `SafetyStatus.UNSAFE`, the GUI displays a safety alert and retains all open instrument connections in `self._instruments` for manual bench inspection and recovery. Window closing is deferred until worker exit and verified safe shutdown.
+- **Notebook Migration**: Updated `Measurements/AMR/AMR_testing.ipynb` cell 6 to supply an explicit `simulation_excitation_shutdown()` function for virtual testing, and cell 8 to plot dual-channel X and Y response with metadata-derived units.
+- **Consumer Inventory & Manifest Sync**: Updated `tests/fixtures/measurement_compatibility/manifest.json` under both `MagnetoTransport` and `AMR` consumer inventories to document `MeasurementRunner` and in-memory snapshots. Updated `test_gui_consumer_contract` in `tests/test_measurement_amr_compatibility.py`.
+- **Validation**:
+  - Added 16 headless unit and interaction tests in `tests/test_measurement_amr_gui.py`.
+  - Targeted suites (`test_measurement_amr_gui.py`, `test_amr_sweep_review.py`, `test_measurement_amr_compatibility.py`, `test_measurement_magneto_transport.py`, `test_magneto_transport_review.py`, `test_amr_contract.py`, `test_measurement_compatibility_manifest.py`): **191 passed**.
+  - Full repository test suite with `MPLBACKEND=Agg`: **1597 passed, 1 skipped** in 44.45s on Python 3.13.2. Zero failures, zero xfails.
+- **Physical Validation**: Checkpoints 17 (IV/MOKE) and 22 (FE) remain explicitly **PENDING**.
+- **Next Step**: Proceed with **checkpoint 24d onward / 25** once authorized.
 
 ## Checkpoint 24b review corrections (authoritative)
 

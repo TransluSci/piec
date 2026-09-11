@@ -506,6 +506,7 @@ class TestAMRConsumerInventory:
 
         # Import contract
         assert "from piec.measurement.amr import AMR" in content
+        assert "from piec.measurement import MeasurementRunner" in content
 
         # Instantiation parameters
         for arg in (
@@ -515,16 +516,16 @@ class TestAMRConsumerInventory:
         ):
             assert f"{arg}=" in content, f"Missing {arg} in GUI AMR instantiation"
 
-        # Background execution
-        assert "threading.Thread" in content
-        assert "target=self.experiment.run_experiment" in content
+        # Background execution via runner
+        assert "MeasurementRunner" in content
+        assert "self.runner.start(" in content
 
         # Controls
         assert "request_pause" in content
         assert "request_stop" in content
 
-        # Data consumption
-        assert "standard_csv_to_metadata_and_data" in content
+        # Data consumption via in-memory snapshots / views
+        assert "raw_window" in content
 
     def test_notebook_consumer_contract(self):
         """Verify that Measurements/AMR/AMR_testing.ipynb matches the documented inventory."""
