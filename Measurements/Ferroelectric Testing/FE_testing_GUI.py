@@ -1,3 +1,4 @@
+import math
 import os
 import queue
 import tkinter as tk
@@ -133,6 +134,7 @@ class FEMeasurementApp(MeasurementApp):
         self._terminal_event = None
         self._instruments = []
         self._closing = False
+        self._close_when_safe = False
         self._plot_frame = None
         self._plot_units = {}
         self.status_label = ttk.Label(self.plot_config_frame, text="Idle")
@@ -258,12 +260,16 @@ class FEMeasurementApp(MeasurementApp):
                                 next_widget.insert(0, val)
 
     def select_measurement(self, meas_type, event=None):
+        if self._busy():
+            return
         print(f"Selected measurement type: {meas_type}")
 
         self.measurement_type.set(meas_type)
         self.update_dynamic_inputs(None)
 
     def update_dynamic_inputs(self, event):
+        if self._busy():
+            return
         # Save current dynamic values before clearing (so switching back preserves edits)
         dynamic_title = self.dynamic_frame.cget("text").strip()
         if dynamic_title and self.dynamic_inputs:
@@ -285,8 +291,19 @@ class FEMeasurementApp(MeasurementApp):
         measurement_type = self.measurement_type.get()
         if measurement_type == "HysteresisLoop":
             self.setup_hysteresis_inputs()
+            if hasattr(self, "x_axis") and hasattr(self, "y_axis"):
+                hyst_cols = ["time (s)", "applied voltage (V)", "current (A)", "polarization (uC/cm^2)"]
+                self.x_axis["values"] = hyst_cols
+                self.y_axis["values"] = hyst_cols
         elif measurement_type == "ThreePulsePund":
             self.setup_pund_inputs()
+            if hasattr(self, "x_axis") and hasattr(self, "y_axis"):
+                pund_cols = [
+                    "time (s)", "applied voltage (V)", "current (A)", "polarization (uC/cm^2)",
+                    "dP (uC/cm^2)", "P^ (uC/cm^2)", "P* (uC/cm^2)", "P^r (uC/cm^2)", "P*r (uC/cm^2)",
+                ]
+                self.x_axis["values"] = pund_cols
+                self.y_axis["values"] = pund_cols
         
         # Apply any saved values over the defaults
         self._apply_saved_dynamic()
@@ -376,7 +393,7 @@ class FEMeasurementApp(MeasurementApp):
         self.runner = None
         try:
             self._create_experiment()
-            if not self.measurement_type.get():
+            if not self.measurement_type.get() or self.experiment is None:
                 return
             if isinstance(self.experiment, (HysteresisLoop, ThreePulsePund)):
                 self._plot_frame = None
@@ -387,7 +404,8 @@ class FEMeasurementApp(MeasurementApp):
                 self.stop_button.config(state="normal")
                 self.status_label.config(text="Running")
                 self._awaiting_terminal = True
-                self.runner.start(save=True)
+                save = self.experiment.output_dir is not None
+                self.runner.start(save=save)
         except Exception as error:
             messagebox.showerror("FE measurement error", str(error))
             if self.runner is None or self.runner.can_close():
@@ -396,16 +414,161 @@ class FEMeasurementApp(MeasurementApp):
                 self.stop_button.config(state="disabled")
 
     def _create_experiment(self):
-        if not self.measurement_type.get():
-            print("No measurement type selected.")
-            return
+        meas_type = str(self.measurement_type.get()).strip()
+        if not meas_type:
+            raise ValueError("Please select a measurement type (HysteresisLoop or ThreePulsePund)")
+        if meas_type not in ("HysteresisLoop", "ThreePulsePund"):
+            raise ValueError(f"Unknown measurement type {meas_type!r}")
 
-        print(f"Running {self.measurement_type.get()} measurement...")
-        # get static inputs for passthrough to measurment object
-        awg_address = self.awg_address_entry.get()
-        osc_address = self.osc_address_entry.get()
-        save_dir = self.save_dir_entry.get()
-        measurement_type = self.measurement_type.get()
+        print(f"Running {meas_type} measurement...")
+        # get static inputs for passthrough to measurement object
+        awg_address = self.awg_address_entry.get().strip()
+        osc_address = self.osc_address_entry.get().strip()
+        raw_save_dir = self.save_dir_entry.get().strip()
+        save_dir = (
+            raw_save_dir
+            if (raw_save_dir and raw_save_dir != r"your\default\save\directory")
+            else None
+        )
+
+        if not awg_address or not osc_address:
+            raise ValueError("Both AWG Address and Oscilloscope Address must be specified.")
+
+        if (awg_address == "VIRTUAL") != (osc_address == "VIRTUAL"):
+            raise ValueError(
+                "Virtual and physical AWG/Oscilloscope cannot be mixed; "
+                "select VIRTUAL for both or valid VISA addresses for both."
+            )
+
+        # Validate static parameters before connecting any instruments
+        v_div_str = self.vdiv_entry.get()
+        try:
+            v_div = float(v_div_str)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid Oscilloscope V/div: {v_div_str!r}") from exc
+        if not math.isfinite(v_div) or v_div <= 0:
+            raise ValueError(f"Oscilloscope V/div must be a positive finite float, got {v_div}")
+
+        area_str = str(self.area_entry.get()).strip()
+        try:
+            area = float(eval(area_str, {"__builtins__": None}, {}))
+        except Exception as exc:
+            raise ValueError(f"Invalid Sample Area expression: {area_str!r}") from exc
+        if not math.isfinite(area) or area <= 0:
+            raise ValueError(f"Sample Area must be a positive finite number, got {area}")
+
+        timeshift_str = self.timeshift_entry.get()
+        try:
+            time_offset = float(timeshift_str or 0) * 1.0e-9
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid Time Offset: {timeshift_str!r}") from exc
+        if not math.isfinite(time_offset) or time_offset < 0:
+            raise ValueError(f"Time Offset must be a non-negative finite number, got {time_offset}")
+
+        if awg_address == "VIRTUAL":
+            time_offset = 0.0
+
+        save_plots = bool(self.saveplots_entry.get())
+        if save_plots and save_dir is None:
+            print("Warning: Save Plots is checked but no valid Save Directory was provided; plot saving will be disabled.")
+            save_plots = False
+        show_plots = save_plots
+        auto_timeshift = bool(self.auto_timeshift_entry.get())
+
+        # Validate measurement-specific parameters before connecting instruments
+        if meas_type == "HysteresisLoop":
+            freq_str = self.dynamic_inputs["frequency"].get()
+            amp_str = self.dynamic_inputs["amplitude"].get()
+            offset_str = self.dynamic_inputs["offset"].get()
+            cycles_str = self.dynamic_inputs["n_cycles"].get()
+
+            try:
+                frequency = float(freq_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid frequency: {freq_str!r}") from exc
+            if not math.isfinite(frequency) or frequency <= 0:
+                raise ValueError(f"Frequency must be a positive finite float, got {frequency}")
+
+            try:
+                amplitude = float(amp_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid amplitude: {amp_str!r}") from exc
+            if not math.isfinite(amplitude) or amplitude == 0:
+                raise ValueError(f"Amplitude cannot be zero, got {amplitude}")
+
+            try:
+                offset = float(offset_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid offset: {offset_str!r}") from exc
+            if not math.isfinite(offset):
+                raise ValueError(f"Offset must be finite, got {offset}")
+
+            try:
+                n_cycles = int(cycles_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid n_cycles: {cycles_str!r}") from exc
+            if n_cycles <= 0:
+                raise ValueError(f"Number of cycles must be a positive integer, got {n_cycles}")
+
+        elif meas_type == "ThreePulsePund":
+            reset_amp_str = self.dynamic_inputs["reset_amp"].get()
+            reset_width_str = self.dynamic_inputs["reset_width"].get()
+            reset_delay_str = self.dynamic_inputs["reset_delay"].get()
+            p_u_amp_str = self.dynamic_inputs["p_u_amp"].get()
+            p_u_width_str = self.dynamic_inputs["p_u_width"].get()
+            p_u_delay_str = self.dynamic_inputs["p_u_delay"].get()
+            offset_str = self.dynamic_inputs["offset"].get()
+
+            try:
+                reset_amp = float(reset_amp_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid reset_amp: {reset_amp_str!r}") from exc
+            if not math.isfinite(reset_amp) or reset_amp == 0:
+                raise ValueError(f"Reset amplitude cannot be zero, got {reset_amp}")
+
+            try:
+                reset_width = float(reset_width_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid reset_width: {reset_width_str!r}") from exc
+            if not math.isfinite(reset_width) or reset_width <= 0:
+                raise ValueError(f"Reset width must be positive, got {reset_width}")
+
+            try:
+                reset_delay = float(reset_delay_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid reset_delay: {reset_delay_str!r}") from exc
+            if not math.isfinite(reset_delay) or reset_delay <= 0:
+                raise ValueError(f"Reset delay must be positive, got {reset_delay}")
+
+            try:
+                p_u_amp = float(p_u_amp_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid p_u_amp: {p_u_amp_str!r}") from exc
+            if not math.isfinite(p_u_amp):
+                raise ValueError(f"P/U amplitude must be finite, got {p_u_amp}")
+
+            try:
+                p_u_width = float(p_u_width_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid p_u_width: {p_u_width_str!r}") from exc
+            if not math.isfinite(p_u_width) or p_u_width <= 0:
+                raise ValueError(f"P/U width must be positive, got {p_u_width}")
+
+            try:
+                p_u_delay = float(p_u_delay_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid p_u_delay: {p_u_delay_str!r}") from exc
+            if not math.isfinite(p_u_delay) or p_u_delay <= 0:
+                raise ValueError(f"P/U delay must be positive, got {p_u_delay}")
+
+            try:
+                offset = float(offset_str)
+            except Exception as exc:
+                raise ValueError(f"Invalid offset: {offset_str!r}") from exc
+            if not math.isfinite(offset):
+                raise ValueError(f"Offset must be finite, got {offset}")
+
+        # Connect instruments ONLY AFTER parameter validation succeeds
         if awg_address == "VIRTUAL":
             awg = VirtualAwg(awg_address)
         else:
@@ -415,45 +578,24 @@ class FEMeasurementApp(MeasurementApp):
             osc = VirtualScope(osc_address)
         else:
             osc = KeysightDSOX3024a(osc_address)
-
         self._instruments.append(osc)
-        v_div = float(self.vdiv_entry.get())
-        area = float(eval(str(self.area_entry.get())))
-        time_offset = float(self.timeshift_entry.get() or 0)*1.0e-9
-        if awg_address == "VIRTUAL":
-            time_offset = 0.0
-        save_plots = bool(self.saveplots_entry.get())
-        show_plots = save_plots
-        auto_timeshift = bool(self.auto_timeshift_entry.get())
 
-        if measurement_type == "HysteresisLoop":
-            # get hyst specific inputs for passthrough to measurment object
-            frequency = float(self.dynamic_inputs["frequency"].get())
-            amplitude = float(self.dynamic_inputs["amplitude"].get())
-            offset = float(self.dynamic_inputs["offset"].get())
-            n_cycles = int(self.dynamic_inputs["n_cycles"].get())
-            # initiate hyst object
-            self.experiment = HysteresisLoop(awg=awg, osc=osc,
-                                             frequency=frequency, amplitude=amplitude,
-                                             offset=offset, n_cycles=n_cycles,
-                                             output_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area,
-                                             save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
-            
-        elif measurement_type == "ThreePulsePund":
-            # get pund specific inputs for passthrough to measurment object
-            reset_amp = float(self.dynamic_inputs["reset_amp"].get())
-            reset_width = float(self.dynamic_inputs["reset_width"].get())
-            reset_delay = float(self.dynamic_inputs["reset_delay"].get())
-            p_u_amp = float(self.dynamic_inputs["p_u_amp"].get())
-            p_u_width = float(self.dynamic_inputs["p_u_width"].get())
-            p_u_delay = float(self.dynamic_inputs["p_u_delay"].get())
-            offset = float(self.dynamic_inputs["offset"].get())
-            # initiate pund object
-            self.experiment = ThreePulsePund(awg=awg, osc=osc,
-                                             reset_amp=reset_amp, reset_width=reset_width, reset_delay=reset_delay,
-                                             p_u_amp=p_u_amp, p_u_width=p_u_width, p_u_delay=p_u_delay,
-                                             output_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area, offset=offset,
-                                             save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
+        if meas_type == "HysteresisLoop":
+            self.experiment = HysteresisLoop(
+                awg=awg, osc=osc,
+                frequency=frequency, amplitude=amplitude,
+                offset=offset, n_cycles=n_cycles,
+                output_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area,
+                save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift
+            )
+        elif meas_type == "ThreePulsePund":
+            self.experiment = ThreePulsePund(
+                awg=awg, osc=osc,
+                reset_amp=reset_amp, reset_width=reset_width, reset_delay=reset_delay,
+                p_u_amp=p_u_amp, p_u_width=p_u_width, p_u_delay=p_u_delay,
+                output_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area, offset=offset,
+                save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift
+            )
 
     def plot_data(self, event=None):
         if getattr(self, "experiment", None) is None:
@@ -498,9 +640,12 @@ class FEMeasurementApp(MeasurementApp):
         self.canvas.draw()
 
     def stop_measurement(self):
-        if self.runner is not None:
+        if getattr(self, "runner", None) is not None:
+            if hasattr(self, "stop_button") and self.stop_button is not None:
+                self.stop_button.config(state="disabled")
+            if hasattr(self, "status_label") and self.status_label is not None:
+                self.status_label.config(text="Stopping; waiting for shutdown")
             self.runner.request_stop()
-            self.status_label.config(text="Stopping; waiting for shutdown")
 
     def _show_snapshot(self, snapshot, terminal=False):
         if snapshot is None:
@@ -515,12 +660,14 @@ class FEMeasurementApp(MeasurementApp):
                 while True:
                     event = self.runner.control_queue.get_nowait()
                     if isinstance(event, SafetyAlertEvent):
-                        self.status_label.config(text="Unsafe shutdown: connections retained")
+                        if hasattr(self, "status_label") and self.status_label is not None:
+                            self.status_label.config(text="Unsafe shutdown: connections retained")
                     elif isinstance(event, TerminalEvent):
                         terminal_seen = True
                         self._terminal_event = event
                         self._show_snapshot(event.final_snapshot, terminal=True)
-                        self.status_label.config(text=f"{event.state.value}: {event.safety.status.value}")
+                        if hasattr(self, "status_label") and self.status_label is not None:
+                            self.status_label.config(text=f"{event.state.value}: {event.safety.status.value}")
                         if event.primary_error_message:
                             messagebox.showerror("FE measurement failed", event.primary_error_message)
                         if event.record is not None:
@@ -529,31 +676,49 @@ class FEMeasurementApp(MeasurementApp):
                                 print(f"Recoverable staging paths: {paths}")
             except queue.Empty:
                 pass
+
+            latest_snapshot = None
             try:
-                snapshot = self.runner.display_queue.get_nowait()
+                while True:
+                    latest_snapshot = self.runner.display_queue.get_nowait()
             except queue.Empty:
                 pass
-            else:
-                if not terminal_seen:
-                    self._show_snapshot(snapshot)
+            if latest_snapshot is not None and not terminal_seen:
+                self._show_snapshot(latest_snapshot)
+
             if self._terminal_event is not None and not self.runner.is_worker_alive:
+                event = self._terminal_event
                 self._terminal_event = None
                 self._awaiting_terminal = False
-                self.stop_button.config(state="disabled")
-                self.timeshift_entry.delete(0, tk.END)
-                self.timeshift_entry.insert(0, self.experiment.time_offset * 1e9)
+                if hasattr(self, "stop_button") and self.stop_button is not None:
+                    self.stop_button.config(state="disabled")
+                if hasattr(self, "timeshift_entry") and self.timeshift_entry is not None:
+                    time_offset = getattr(self.experiment, "time_offset", None)
+                    if time_offset is not None:
+                        self.timeshift_entry.delete(0, tk.END)
+                        self.timeshift_entry.insert(0, str(time_offset * 1e9))
                 self.update_dynamic_defaults()
                 if self.runner.can_close():
                     self._close_instruments()
-                    self.run_button.config(state="normal")
-            if self._closing and self.runner.can_close() and not self._awaiting_terminal:
+                    if hasattr(self, "run_button") and self.run_button is not None:
+                        self.run_button.config(state="normal")
+
+            if (self._closing or getattr(self, "_close_when_safe", False)) and self.runner.can_close() and not self._awaiting_terminal:
                 self._close_instruments()
                 self._finish_close()
                 return
-        self._poll_id = self.root.after(50, self._poll_events)
+
+        if hasattr(self, "root") and getattr(self.root, "winfo_exists", None) and self.root.winfo_exists():
+            self._poll_id = self.root.after(50, self._poll_events)
+        else:
+            self._poll_id = None
 
     def _close_instruments(self):
+        seen = set()
         for instrument in self._instruments:
+            if id(instrument) in seen:
+                continue
+            seen.add(id(instrument))
             try:
                 close = getattr(instrument, "close", None)
                 if callable(close):
@@ -563,18 +728,25 @@ class FEMeasurementApp(MeasurementApp):
         self._instruments = []
 
     def on_closing(self):
-        if self.runner is not None:
+        if getattr(self, "runner", None) is not None:
             self._closing = True
+            self._close_when_safe = True
             self.runner.request_close()
             if not self.runner.can_close() or self._awaiting_terminal:
-                self.status_label.config(text="Waiting for worker exit and confirmed safety")
+                if hasattr(self, "status_label") and self.status_label is not None:
+                    self.status_label.config(text="Waiting for worker exit and confirmed safety")
                 return
         self._close_instruments()
         self._finish_close()
 
     def _finish_close(self):
-        if self._poll_id is not None:
-            self.root.after_cancel(self._poll_id)
+        self._closing = False
+        self._close_when_safe = False
+        if getattr(self, "_poll_id", None) is not None:
+            try:
+                self.root.after_cancel(self._poll_id)
+            except Exception:
+                pass
             self._poll_id = None
         super().on_closing()
 

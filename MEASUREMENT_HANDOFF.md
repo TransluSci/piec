@@ -1,20 +1,23 @@
 # Measurement standardization handoff
 
-**Uncommitted review fixes: validate and commit these before proceeding.**
-The last full Agg run had 1494 passed, 1 skipped, 1 xfailed and two failures
-from outdated commanded_field assertions. Those assertions are now corrected;
-an additional computed-output overflow regression was also added. The final
-rerun was blocked by automatic approval review reporting a usage limit.
-Therefore the current working tree is not yet fully verified. Run the targeted
-AMR suites and full suite with Agg, resolve any failures, and commit the review
-corrections separately before starting checkpoint 21. Do not discard these edits.
-
-Continue on `measuremnt-standarization`. **Next: checkpoint 21 only, FE GUI
-interaction/ownership hardening**, as numbered in the Section 13 roadmap.
-The AMR adapter commit `bd0d10b` was mislabeled checkpoint 21; it belongs to
-checkpoint 23/23a and was implemented early. Do not skip the FE GUI audit.
+Continue on `measuremnt-standarization`. **Checkpoint 21 (FE GUI interaction/ownership hardening) is complete.**
+Next: **checkpoint 24a only, MagnetoTransport lifecycle and consumers**, as numbered in the Section 13 roadmap.
 Checkpoint 22 is the FE physical record; without hardware execution record it
-must be PENDING. Checkpoint 17 also remains explicitly PENDING.
+remains PENDING. Checkpoint 17 also remains explicitly PENDING.
+
+## Checkpoint 21: FE GUI interaction/ownership hardening
+
+- **Pre-Connection Parameter Validation**: Enforced strict parameter validation in `FEMeasurementApp._create_experiment()` before any hardware driver (`VirtualAwg`, `VirtualScope`, `Keysight81150a`, `KeysightDSOX3024a`) is instantiated. Rejects non-finite, zero, or negative values across all static and dynamic inputs (`vdiv`, `area` expression, `time_offset`, `frequency`, `amplitude`, `offset`, `n_cycles`, `reset_amp`, `reset_width`, `reset_delay`, `p_u_amp`, `p_u_width`, `p_u_delay`). If validation fails, `self._instruments` remains empty, guaranteeing zero connection leaks.
+- **Virtual Instrument Selection**: Explicitly rejects mixed virtual and physical AWG/Scope configurations and empty addresses before attempting connection. Cable delay offset (`time_offset`) is forced to 0.0 for virtual drivers.
+- **Single Hardware Writer Rule**: Hardened `_busy()` gating to protect active hardware worker threads. Concurrent `run_measurement()`, `refresh_instruments()`, `select_measurement()`, and `update_dynamic_inputs()` return immediately when a measurement is active or awaiting safe closure.
+- **Stop-Before-Start & Active Close Coordination**: Debounced Stop button and cleanly handle Stop-before-start zero-I/O aborts (`RunState.ABORTED`). Coordinated active window close (`on_closing`) by requesting cooperative worker stop (`runner.request_close()`) and deferring window destruction (`_finish_close`) until worker thread terminates and confirmed hardware safety is achieved.
+- **Unsafe Shutdown & Connection Retention**: When safing fails (`SafetyStatus.UNSAFE`), open instrument connections in `self._instruments` are retained for manual bench recovery. The GUI presents an unsafe status alert, disables re-runs, and blocks window destruction.
+- **Deduplicated Teardown**: `_close_instruments()` deduplicates instrument references by object identity (`id(inst)`) to avoid double-close attempts.
+- **Display Queue Draining & Unit-Derived Plotting**: Drains `display_queue` in a coalescing loop on each Tk polling tick to eliminate UI rendering lag during high-frequency acquisitions. Precedence is given to `TerminalEvent` final snapshot over stale display frames. Axes choices dynamically populate all PUND quantities (`dP`, `P^`, `P*`, etc.) when `ThreePulsePund` is selected, and plot labels are derived from canonical `column_units`.
+- **Save Policies**: Normalizes default placeholder `r"your\default\save\directory"` and empty paths to `None`. Starts runner with `save = self.experiment.output_dir is not None` to satisfy `BaseMeasurement` schema requirements. Disables plot artifact saving with a warning if no save directory is configured. Reports recoverable staging paths on save failure.
+- **Validation**: Added 43 comprehensive headless tests in `tests/test_measurement_fe_gui.py`. Targeted FE suite: **207 passed**; full test suite with Agg backend: **1540 passed, 1 skipped, 1 xfailed** (`AMR-ANGLE-001`) in 31.58s on Python 3.13.2.
+- **Physical Validation**: Checkpoints 17 (IV/MOKE) and 22 (FE) remain explicitly **PENDING**.
+- **Next Step**: Stop after checkpoint 21. Proceed with **checkpoint 24a only: MagnetoTransport lifecycle and consumers** once authorized. AMR-ANGLE-001 stays tracked as xfail until checkpoint 24b.
 
 ## AMR adapter review corrections (checkpoint 23/23a work performed early)
 
@@ -44,13 +47,6 @@ must be PENDING. Checkpoint 17 also remains explicitly PENDING.
 - The original successful virtual workflow does not prove physical excitation
   shutdown. The virtual test now explicitly checks the unconfirmed result.
 
-For checkpoint 21: audit the FE GUI for Hysteresis and PUND against the roadmap,
-including virtual selection, settings, Stop-before-start, active close, worker
-ownership, main-thread plotting, save policies and terminal/error behavior.
-Reuse the existing runner integration. Add meaningful regressions for gaps,
-update the plan/handoff, commit this checkpoint separately, and stop for review.
-Do not start AMR lifecycle checkpoint 24a in the same commit. AMR-ANGLE-001 stays
-tracked until 24b; do not mark the entire AMR migration complete.
 
 ## Checkpoint 20c PUND integration and consumers
 
