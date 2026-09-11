@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from .contracts import (
     AngleDependentResistanceContract,
+    AwgWaveformHook,
     CalibratorFieldHook,
     CapacitiveLoad,
     DeterministicTimebase,
@@ -19,6 +20,7 @@ from .contracts import (
     ResistorLoad,
     ScopeChannelHook,
     SimulationRole,
+    SourcemeterLoadHook,
     StepperAngleHook,
     WaveformResponsiveMaterialContract,
 )
@@ -33,6 +35,7 @@ from .magnetic_material import MagneticSample
 
 __all__ = [
     "AngleDependentResistanceContract",
+    "AwgWaveformHook",
     "CalibratorFieldHook",
     "CapacitiveLoad",
     "DeterministicTimebase",
@@ -52,6 +55,7 @@ __all__ = [
     "ResistorLoad",
     "ScopeChannelHook",
     "SimulationRole",
+    "SourcemeterLoadHook",
     "StepperAngleHook",
     "WaveformResponsiveMaterialContract",
 ]

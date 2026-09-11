@@ -202,6 +202,48 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
 - Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
   that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
 
+## Driver virtual hooks: Sourcemeter family (checkpoint 28g)
+
+- `VirtualSourcemeter` (sourcemeter driver family) supports generic per-instance hook injection via
+  `load_hook`, `source_hook`, `measure_hook`, or `transport_hook` (in constructor, via property, or via `set_load_hook`).
+- Injected hooks take strict precedence over the default unhooked fallback.
+  When an explicit hook is injected, the load is evaluated under active operating mode and stimulus.
+- Supports both `ElectricalLoadContract` instances (e.g. `ResistorLoad`, `DiodeLoad`, `CapacitiveLoad`)
+  and general callables.
+- Supports voltage-source mode (`source_func == 'VOLT'`) and current-source mode (`source_func == 'CURR'`).
+- Compliance limiting:
+  - In voltage-source mode: clamps current to $\pm I_{\text{comp}}$ and sets `compliance_tripped = True`.
+  - In current-source mode: clamps voltage to $\pm V_{\text{comp}}$ and sets `compliance_tripped = True`.
+- Distinguishes stored settings from effective terminal output:
+  - `source_voltage`, `source_current`, `voltage_compliance`, and `current_compliance` are stored setpoints
+    available in `state` and via SCPI queries (`:SOUR:VOLT:LEV?`, `:SOUR:CURR:LEV?`).
+  - Effective output: when `output_on` is `False`, effective terminal voltage is 0.0 V, current is 0.0 A,
+    `compliance_tripped` is `False`, and `effective_voltage` / `effective_current` properties report 0.0 V / 0.0 A.
+    When a hook is injected, `get_voltage()`, `get_current()`, and `quick_read()` report 0.0 V / 0.0 A when output is off.
+    (Unhooked fallback preserves historical return values for existing Level 2 contract tests).
+- Unconfirmed state on failure:
+  - If a hook raises an exception during output enable/disable (`output()`), setpoint updates
+    (`set_source_voltage()`, `set_source_current()`), convenience configuration (`configure_voltage_source()`,
+    `configure_current_source()`), or `reset()`, `state['output_on']` and `_output_enabled` become `None` (unconfirmed).
+  - Failed commands never falsely confirm shutdown or stopped state until a subsequent command succeeds.
+  - Exceptions propagate unchanged without retries or masking.
+- Flexible signature binding:
+  - Binds `(mode, stimulus, compliance)`, `(v, i)`, named parameters (`mode`, `source_func`, `stimulus`, `value`,
+    `voltage`, `current`, `v`, `i`, `compliance`, `output_on`, `channel`, `time`), single-arg `(stimulus)`,
+    zero-arg `()`, positional-only, `*args`, and `**kwargs`.
+  - Unrelated optional parameters retain their defaults.
+- Normalizes and validates return values: `LoadResponse`, `(v, i)` tuple, dict mapping, scalar numeric, or `None`.
+  Rejects non-numeric types with `TypeError` and non-finite numbers with `ValueError`.
+- Declared units are `{"voltage": "V", "current": "A", "resistance": "Ohm", "time": "s"}`.
+  Validates channel, numeric types, finiteness, and positive compliance before mutating state.
+- `reset()` restores default factory driver-owned configuration (`output_on=False`, `source_func='VOLT'`,
+  `source_voltage=0.0`, `source_current=0.0`, `sense_func='VOLT'`, `voltage_compliance=210.0`,
+  `current_compliance=1.05`, `compliance_tripped=False`) while preserving the injected hook intact.
+  Notifies hook of 0.0 stimulus / output disabled. Instance assignments to `sourcemeter.sample` or
+  `sourcemeter.mag_sample` do not pollute global shared sample state.
+- Driver reset does not reset setup-owned closures, external load/material models, clocks, or RNG seeds:
+  that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents

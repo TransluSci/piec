@@ -1,9 +1,35 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28f (generic per-instance virtual hooks: AWG family) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28g (generic per-instance virtual hooks: Sourcemeter family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28g: audit and implement generic per-instance virtual hooks for VirtualSourcemeter only.** Run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28h: audit and implement generic per-instance virtual hooks for the next driver family.** Run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28g report (authoritative)
+
+- **Status**: **Completed**. Selected driver family: **Sourcemeter (`VirtualSourcemeter`)**.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/sourcemeter/virtual_sourcemeter.py`):
+  - **Hook Injection & Aliases**: Added `load_hook` (primary), `source_hook` (alias), `measure_hook` (alias), and `transport_hook` (alias) constructor parameters, method injectors `set_load_hook(hook)`, `set_source_hook(hook)`, `set_measure_hook(hook)`, `set_transport_hook(hook)`, and properties `load_hook`, `source_hook`, `measure_hook`, `transport_hook`. Passing `None` clears the hook and restores default fallback; non-callables and non-`ElectricalLoadContract` objects raise `TypeError`; conflicting hook aliases raise `ValueError`.
+  - **Strict Precedence**: Explicit per-instance injection takes strict precedence over default unhooked fallback. When an explicit hook is injected, load evaluation computes terminal voltage, current, and compliance tripping based on active operating mode and stimulus.
+  - **Material & Load Decoupling**: Generic `VirtualSourcemeter` contains no sample- or material-specific logic; physical load response simulation remains externalized to the hook callable or simulation model (`ElectricalLoadContract`, `ResistorLoad`, `DiodeLoad`, `CapacitiveLoad`).
+  - **Operating Modes & Compliance Clamping**: Supports both voltage-source mode (`source_func == 'VOLT'`) and current-source mode (`source_func == 'CURR'`). In voltage-source mode, clamps current to $\pm I_{\text{comp}}$ and sets `compliance_tripped = True`. In current-source mode, clamps voltage to $\pm V_{\text{comp}}$ and sets `compliance_tripped = True`. Exposes `@property def compliance_tripped(self) -> bool`.
+  - **Configured Values vs Effective Terminal Output**: Stored settings (`source_voltage`, `source_current`, `voltage_compliance`, `current_compliance`) remain accessible in `self.state` and via SCPI queries (`:SOUR:VOLT:LEV?`, `:SOUR:CURR:LEV?`, `:SENS:VOLT:PROT?`, `:SENS:CURR:PROT?`). When output is disabled (`output_on=False`), effective terminal voltage is 0.0 V, current is 0.0 A, `compliance_tripped` is `False`, and properties `effective_voltage` / `effective_current` return 0.0 V / 0.0 A. With hook injected, `get_voltage()`, `get_current()`, `get_resistance()`, and `quick_read()` report 0.0 V / 0.0 A / `inf` when output is off. Default unhooked fallback preserves historical return values for existing Level 2 contract tests.
+  - **Unconfirmed State on Failure**: If a hook raises an exception during output enable/disable (`output()`), setpoint updates (`set_source_voltage()`, `set_source_current()`), convenience configuration (`configure_voltage_source()`, `configure_current_source()`), or `reset()`, `state['output_on']` and `_output_enabled` become `None` (unconfirmed). Failed commands never falsely confirm shutdown or stopped state until a subsequent command succeeds. Exceptions propagate unchanged without retries or catch-and-retry masking.
+  - **Signature Dispatch & Normalization**: Inspects signatures before calling the hook exactly once without retries; binds `(mode, stimulus, compliance)`, `(v, i)`, named parameters (`mode`, `source_func`, `stimulus`, `value`, `voltage`, `current`, `v`, `i`, `compliance`, `output_on`, `channel`, `time`), single-arg `(stimulus)`, zero-arg `()`, positional-only, `*args`, and `**kwargs`. Unrelated optional parameters retain their defaults. Handles return values: `LoadResponse`, `(v, i)` tuple, dict mapping, scalar numeric, or `None`.
+  - **Declared Units & Input Validation Before Mutation**: Exposed `declared_units` mapping `{"voltage": "V", "current": "A", "resistance": "Ohm", "time": "s"}`. Validates channel (1), numeric types, finiteness, and positive compliance before mutating state.
+  - **SCPI Command Dispatch & Queries**: Supports SCPI commands via `write()`: `:OUTP`, `:SOUR:FUNC`, `:SOUR:VOLT:LEV`, `:SOUR:CURR:LEV`, `:SENS:FUNC`, `:SENS:VOLT:PROT`, `:SENS:CURR:PROT`, `:SYST:RSEN`, `*RST`, `*CLS`. Supports SCPI queries via `query()`: `*IDN?`, `*ESR?`, `*OPC?`, `:READ?`, `:SOUR:VOLT:LEV?`, `:SOUR:CURR:LEV?`, `:SENS:VOLT:PROT?`, `:SENS:CURR:PROT?`, `:OUTP?`.
+  - **State & Reset Ownership**: `reset()` restores default factory driver-owned configuration (`output_on=False`, `source_func='VOLT'`, `source_voltage=0.0`, `source_current=0.0`, `sense_func='VOLT'`, `voltage_compliance=210.0`, `current_compliance=1.05`, `compliance_tripped=False`) while preserving the injected hook intact. Notifies hook of 0.0 stimulus / output disabled. Setup-owned state (load timebase, RNG, material model) is owned by the setup / VirtualBench and not reset by driver reset. Added instance-level `sample` and `mag_sample` property descriptors ensuring instance assignments never mutate global `VirtualInstrument` state.
+  - **Simulation Contracts**: Extended `src/piec/simulation/contracts.py` and `src/piec/simulation/__init__.py` with `SourcemeterLoadHook = Callable[..., Any]`.
+- **Validation**:
+  - Dedicated hook test suite: 73 tests in `tests/test_virtual_sourcemeter_hook.py` passed in 1.14s.
+  - Focused simulation & virtual hook suites: 556 tests passed in 1.75s.
+  - Measurement suites using sourcemeter: 114 tests passed in 3.32s (`test_measurement_developer_guide.py`, `test_measurement_iv_review.py`, `test_measurement_iv_gui.py`, `test_moke.py`, `test_moke_gui.py`).
+  - Full repository test suite: **2113 passed, 1 skipped** in 61.36s on Python 3.13.2 (`MPLBACKEND=Agg`). Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly with 0 whitespace errors.
 
 ## Checkpoint 28f report (authoritative)
 
