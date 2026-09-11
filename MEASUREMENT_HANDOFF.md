@@ -1,12 +1,35 @@
 # Measurement standardization handoff
 
 Continue on `measuremnt-standarization`. **Checkpoint 24c (AMR notebook/GUI presentation integration) review corrections are complete.**
-Next: **checkpoint 25 (detailed GUI ownership audit / interaction hardening)** / **checkpoint 24d (additional AMR adapters)**, as numbered in the roadmap.
+Next: **checkpoint 25 only (detailed GUI ownership audit / interaction hardening)**.
+Additional electrical adapters remain separate later work; do not bundle them into this audit.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
 
 ## Checkpoint 24c review corrections (authoritative)
 
+- Latest follow-up validation: full suite with Agg **1606 passed, 1 skipped**
+  in 52.15s, including executable notebook and GUI cleanup regressions.
+- Follow-up review restored the notebook's execution order: instrument creation
+  and a runtime-checked all-virtual shutdown policy are executable code before
+  acquisition; metadata-derived plotting follows acquisition and uses in-memory
+  results. Previously setup code had been placed in Markdown and the instrument
+  cell replaced by premature plotting. The notebook is now tested by executing
+  its code cells in order with a short virtual sweep (excluding VISA discovery).
+- GUI rendering errors are reported without interrupting terminal processing,
+  connection cleanup or polling. Empty final results clear stale plots. The
+  measured data is retained even when plotting fails.
+- Test Stepper closes its connection even on identification/query failure and
+  uses VirtualStepper for virtual addresses. Failed close calls retain references
+  and block new hardware work/window destruction until an explicit close retry
+  succeeds; polling does not continuously retry failed closes.
+- Proceed with checkpoint 25: audit settings/preflight, Run/Pause/Stop/close,
+  failed setup/start, terminal-before-worker-exit, UNSAFE retention, and auxiliary
+  instrument actions. Preserve the close/retry, Test Stepper cleanup, and plot
+  failure regressions along with the reviewed virtual-only shutdown
+  guards and NOT_NEEDED cleanup. A custom callback is a caller-supplied contract;
+  callable() does not prove that it performs physical safing. Validate, update
+  plan/handoff, commit checkpoint 25 separately, and stop for review.
 - Validation: full suite with Agg **1601 passed, 1 skipped** in 46.85s on Python 3.13.2.
   Focused AMR/Magneto suite (195 tests) passed in 18.74s; GUI suite (20 tests) passed in 17.42s.
   No physical hardware validation was performed (checkpoints 17 and 22 remain PENDING).

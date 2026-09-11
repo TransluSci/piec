@@ -195,18 +195,20 @@ class AMRApp(MeasurementApp):
             return
 
         print(f"Testing Stepper at {addr}...")
-        from piec.drivers.autodetect import _safe_close
-        
+        inst = None
         try:
-            inst = Geos_Stepper(address=addr)
+            inst = VirtualStepper(address=addr) if addr.upper() == "VIRTUAL" else Geos_Stepper(address=addr)
+            self._instruments.append(inst)
             res = inst.idn()
             if "Not connected" not in res:
                 print(f"SUCCESS: {res}")
             else:
                 print(f"FAILURE: Stepper at {addr} returned '{res}'")
-            _safe_close(inst)
         except Exception as e:
             print(f"ERROR: Stepper test failed: {e}")
+        finally:
+            if inst is not None:
+                self._close_instruments()
 
     def refresh_instruments(self):
         if self._busy():
@@ -488,7 +490,18 @@ class AMRApp(MeasurementApp):
             self.run_button.config(state='normal')
 
     def plot_data(self, event=None):
-        self._plot_data()
+        self._render_plot(self._current_plot_data)
+
+    def _render_plot(self, data):
+        """Display errors must not interrupt worker terminal handling or cleanup."""
+        try:
+            if data is None or data.empty:
+                self.ax.clear()
+                self.canvas.draw_idle()
+            else:
+                self._plot_data(data)
+        except Exception as error:
+            print(f"AMR plot error (data retained): {error}")
 
     def _plot_data(self, df=None):
         """Main-thread plotting with metadata-derived units from experiment."""
@@ -538,9 +551,8 @@ class AMRApp(MeasurementApp):
                             terminal_df = event.final_snapshot.get_view("data")
                         if terminal_df is None:
                             terminal_df = event.data
-                        if terminal_df is not None and not terminal_df.empty:
-                            self._current_plot_data = terminal_df
-                            self._plot_data(terminal_df)
+                        self._current_plot_data = terminal_df
+                        self._render_plot(terminal_df)
                         if hasattr(self, "status_label") and self.status_label is not None:
                             self.status_label.config(text=f"{event.state.value}: safety {event.safety.status.value}")
                         print(
@@ -570,7 +582,7 @@ class AMRApp(MeasurementApp):
                 raw_window = latest_snapshot.get_view("raw_window")
                 if raw_window is not None and not raw_window.empty:
                     self._current_plot_data = raw_window
-                    self._plot_data(raw_window)
+                    self._render_plot(raw_window)
 
             # Terminal delivery can precede worker exit. Retain ownership until both finish.
             if self._terminal_event is not None and not self.runner.is_worker_alive:
@@ -586,8 +598,9 @@ class AMRApp(MeasurementApp):
 
             if (self._closing or self._close_when_safe) and self.runner.can_close() and not self._awaiting_terminal:
                 self._close_instruments()
-                self._finish_close()
-                return
+                if not self._instruments:
+                    self._finish_close()
+                    return
 
         if hasattr(self, "root") and getattr(self.root, "winfo_exists", None) and self.root.winfo_exists():
             self._poll_id = self.root.after(50, self._poll_runner)
@@ -597,6 +610,7 @@ class AMRApp(MeasurementApp):
     def _close_instruments(self):
         """Safely close instrument connections without crashing on errors."""
         seen = set()
+        retained = []
         for instrument in self._instruments:
             if id(instrument) in seen:
                 continue
@@ -605,9 +619,15 @@ class AMRApp(MeasurementApp):
             if callable(close):
                 try:
                     close()
-                except Exception:
-                    pass
-        self._instruments = []
+                except Exception as error:
+                    retained.append(instrument)
+                    print(f"Instrument close failed; connection retained for retry: {error}")
+        self._instruments = retained
+        if retained:
+            # Avoid repeatedly issuing failed close calls every polling tick.
+            self._closing = self._close_when_safe = False
+        else:
+            self._active_lockin = None
 
     def on_closing(self):
         """Handle window close event with graceful runner stop and safe shutdown."""
@@ -621,7 +641,8 @@ class AMRApp(MeasurementApp):
                 return
         if self.runner is None or self.runner.can_close():
             self._close_instruments()
-        self._finish_close()
+        if not self._instruments:
+            self._finish_close()
 
     def _finish_close(self):
         """Cancel pending polling and invoke parent window destruction."""

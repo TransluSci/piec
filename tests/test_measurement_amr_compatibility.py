@@ -543,7 +543,7 @@ class TestAMRConsumerInventory:
         assert "standard_csv_to_metadata_and_data" in all_code
         assert "experiment = AMR(" in all_code
         assert "experiment.run_experiment()" in all_code
-        assert "standard_csv_to_metadata_and_data(experiment.filename)" in all_code
+        assert "amr_df = experiment.data.copy()" in all_code
 
     def test_documentation_consumer_contract(self):
         """Verify that Measurements/AMR/amr_measurement.md matches documented theory and classes."""

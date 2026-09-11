@@ -646,6 +646,14 @@ Do not add a fictitious `read_waveform()` requirement to every oscilloscope driv
 
 ### 9.5 General AMR setups and the existing four-instrument profile
 
+24c follow-up review restored executable notebook setup/acquisition/plot ordering
+and a runtime-checked all-virtual shutdown policy. Notebook results are read in
+memory. GUI rendering errors cannot prevent terminal cleanup; empty results clear
+stale plots. Test Stepper closes on query failure; failed closes retain references
+for explicit retry. Next is checkpoint 25 only, the detailed GUI ownership audit;
+additional electrical adapters are separate subsequent work. Physical 17/22
+remain PENDING.
+
 **24b review corrections:** snapshots now bound raw_window (default 100 points)
 while terminal data and persistence retain full acquisition. All requested and
 quantized motor positions are preflighted; descending sweeps are supported.
