@@ -82,6 +82,28 @@ or undefined at zero current.
   configuration values leave state unchanged; non-finite voltage readings remain
   permitted by the overload contract.
 
+## Driver virtual hooks: DC Calibrator family (checkpoint 28c)
+
+- `VirtualCalibrator` (DC calibrator driver family) supports generic per-instance hook injection via
+  `output_hook` or `field_hook` (in constructor, via property, or via `set_output_hook`).
+- Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.
+  When an explicit hook is injected, `mag_sample` is not accessed or mutated.
+- The injected path adds no sample-, sensor-, or magnetic-specific logic; physical modeling
+  remains external in the hook closure. The historical `value * 10000.0` fallback remains
+  solely for existing shared-sample simulations.
+- Hook receives commanded output parameters if declared: accepts single output value (positional
+  or named), `mode` ("voltage" or "current"), `output_on` (boolean), or `**kwargs`.
+  Zero-argument hooks are also supported.
+- Invocation is selected by signature binding before calling the hook exactly once. Hook exceptions
+  propagate unchanged without retries or fallback invocation.
+- Declared units are `{"voltage": "V", "current": "A"}`. Output values must be finite numeric values;
+  rejected values leave state unchanged.
+- `reset()` restores default driver-owned configuration (`output_on=False`, `voltage=0.0`, `current=0.0`,
+  `mode="voltage"`, engaging crowbar) while preserving the injected hook. If a hook is injected, it is
+  notified of 0.0 V output. Instance assignments to `cal.mag_sample` do not pollute global shared sample state.
+- Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
+  that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 
 ## Contents

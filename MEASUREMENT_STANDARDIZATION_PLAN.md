@@ -218,8 +218,14 @@ global `mag_sample` fallback, material logic externalized, scalar float voltage 
 IEEE 754 non-finite overload preservation, rejection of non-scalar sequences, unchanged error
 propagation without retry, exact-once invocation with signature binding (ac/coupling kwargs and
 positional-only ac), instance isolation protecting `VirtualInstrument._shared_mag_sample`,
-and driver reset ownership documented. Next is checkpoint 28c, one virtual-driver family per commit.
-Additional AMR electrical adapters and VirtualBench stay separate. Physical 17/22/26 stay PENDING.
+and driver reset ownership documented.
+Checkpoint 28c completed: generic per-instance virtual hooks for the DC Calibrator family (`VirtualCalibrator`).
+Supports `output_hook` / `field_hook` injection with strict precedence over deprecated global `mag_sample`
+fallback, material logic externalized, commanded output binding (`value`, `mode`, `output_on`, `voltage`, `current`,
+`**kwargs`, and zero-arg), exact-once invocation without error retry, declared units (`{"voltage": "V", "current": "A"}`),
+input validation rejecting non-numeric and non-finite values while preserving previous state, instance isolation
+protecting `VirtualInstrument._shared_mag_sample`, and driver reset ownership documented. Next is checkpoint 28d,
+one virtual-driver family per commit. Additional AMR electrical adapters and VirtualBench stay separate. Physical 17/22/26 stay PENDING.
 
 Standardize IV, MOKE, discrete waveform/FE/PUND, and AMR through the same lifecycle, public execution interface, unit metadata, persistence, snapshots, and GUI ownership rules.
 
@@ -933,7 +939,8 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 27 | Completed | Role-specific simulation contracts: explicit physical units, frozen `LoadResponse`, `DeterministicTimebase`, seeded reset protocol, voltage/current-source electrical load contracts with compliance clamping (`ResistorLoad`, `DiodeLoad`, `CapacitiveLoad`), and material contracts (`FieldResponsiveMaterialContract`, `AngleDependentResistanceContract`, `WaveformResponsiveMaterialContract`). 33 contract tests in `tests/test_simulation_contracts.py`; full suite: 1657 passed, 1 skipped. |
 | 28a | Completed | Generic per-instance virtual hooks for Lock-in family (`VirtualLockin`): `xy_reader` / `transport_hook` injection, precedence over global fallback, material decoupling, plain tuple (X, Y) response, declared units, reset preservation, and instance isolation. 28 tests in `tests/test_virtual_lockin_hook.py`; full suite: 1725 passed, 1 skipped. |
 | 28b | Completed | Generic per-instance virtual hooks for DMM family (`VirtualDMM`): `voltage_reader` / `reader_hook` injection, precedence over global fallback, material decoupling, scalar float V response, overload preservation, non-scalar rejection, error preservation without retries, declared units, reset ownership, and instance isolation. 37 tests in `tests/test_virtual_dmm_hook.py`. |
-| 28c onward | Generic per-instance virtual hooks, remaining driver families one family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
+| 28c | Completed | Generic per-instance virtual hooks for DC Calibrator family (`VirtualCalibrator`): `output_hook` / `field_hook` injection, precedence over global fallback, material decoupling, commanded output binding, error preservation without retries, declared units, reset ownership, and instance isolation. 46 tests in `tests/test_virtual_calibrator_hook.py`. |
+| 28d onward | Generic per-instance virtual hooks, remaining driver families one family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |
 | 29 | VirtualBench | Routing, reset isolation, deterministic noise/time and two-bench concurrency |
 | 30a–30d | Migrate IV/MOKE/FE/AMR simulation fixtures one family per commit | Physical/virtual schemas agree; preserve applicable generic-driver fallback tests |
 | 31 | Retire internal global-sample use after consumers migrate | Keep external generic-driver fallback unless separately authorized to remove it |

@@ -1,9 +1,30 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28b (generic per-instance virtual hooks: DMM family) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28c (generic per-instance virtual hooks: DC Calibrator family) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28c: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
+Next: **Checkpoint 28d: generic per-instance virtual hooks for one next driver family only.** Select and record the family, implement it, run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters and VirtualBench remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28c report (authoritative)
+
+- **Status**: **Completed**. Selected driver family: **DC Calibrator (`VirtualCalibrator`)**.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/dc_calibrator/virtual_calibrator.py`):
+  - **Hook Injection**: Added `output_hook` and `field_hook` (alias) constructor parameters, method injectors `set_output_hook(hook)`, `set_field_hook(hook)`, and properties `output_hook`, `field_hook`.
+  - **Strict Precedence**: Explicit per-instance injection takes strict precedence over the deprecated shared `mag_sample` fallback in `set_output()`, `set_voltage()`, `set_current()`, `output()`, and `reset()`. When an explicit hook is injected, `mag_sample` is never accessed or mutated.
+  - **Material Decoupling**: Generic `VirtualCalibrator` contains no sample-, magnetic-, or coil-specific formulas; physical modeling remains entirely external to the driver in the hook closure. The historical `value * 10000.0` factor is retained strictly for the deprecated shared-sample fallback.
+  - **Commanded Output Binding & Signature Dispatch**: Inspects signatures before calling the hook exactly once without retries; hook exceptions propagate unchanged. Supports single output value (positional or named), `mode` ("voltage" or "current"), `output_on` (boolean), or `**kwargs`. Zero-argument hooks are also supported.
+  - **Declared Units & Validation**: Exposed `declared_units` mapping `{"voltage": "V", "current": "A"}`. Command inputs require finite numeric values; non-numeric values raise `TypeError` and non-finite values or unsupported modes raise `ValueError`, preserving previous state. Supports both standard `voltage_calibration` and legacy `voltage_callibration` aliases.
+  - **State & Reset Ownership**: `reset()` restores default driver-owned configuration (`output_on=False`, `voltage=0.0`, `current=0.0`, `mode="voltage"`, engaging crowbar) while preserving the injected hook intact. Informs injected hook with 0.0 V output. Documented that setup-owned state (closures, external material models, clocks, RNG) is owned by the test fixture / VirtualBench and not reset by driver reset. Added instance-level `mag_sample` property descriptor ensuring instance assignments never mutate global `VirtualInstrument._shared_mag_sample`.
+- **Validation**:
+  - Dedicated hook test suite: 46 tests in `tests/test_virtual_calibrator_hook.py` passed in 1.35s.
+  - Focused simulation & virtual hook suites: 324 tests passed in 2.49s (`test_virtual_calibrator_hook.py`, `test_virtual_dmm_hook.py`, `test_virtual_lockin_hook.py`, `test_dmm_contract.py`, `test_amr_contract.py`, `test_virtual_dispatch.py`, `test_simulation_contracts.py`).
+  - Focused AMR measurement suites: 76 tests in `tests/test_measurement_magneto_transport.py`, `tests/test_measurement_amr_gui.py`, `tests/test_measurement_amr_compatibility.py` passed in 28.30s.
+  - Full repository test suite: **1836 passed, 1 skipped** in 63.97s on Python 3.13.2. Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly.
 
 ## Checkpoint 28b report (authoritative)
 
