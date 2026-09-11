@@ -184,14 +184,57 @@ class AMRApp(MeasurementApp):
         self.y_axis.set("x")
         self.y_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
+    def save_settings(self):
+        """Saves current widget values to a JSON file, including checkbox variables."""
+        super().save_settings()
+        filepath = self.get_settings_file_path()
+        if filepath and os.path.exists(filepath):
+            try:
+                import json
+                with open(filepath, "r") as f:
+                    settings = json.load(f)
+                if "dynamic" not in settings or not isinstance(settings["dynamic"], dict):
+                    settings["dynamic"] = {}
+                title = self.dynamic_frame.cget("text").strip()
+                if title in settings["dynamic"] and isinstance(settings["dynamic"][title], dict):
+                    settings["dynamic"][title]["Initialize Lock-in?"] = bool(self.initialize_lockin_var.get())
+                else:
+                    settings["dynamic"]["Initialize Lock-in?"] = bool(self.initialize_lockin_var.get())
+                with open(filepath, "w") as f:
+                    json.dump(settings, f, indent=4)
+            except Exception as e:
+                print(f"Failed to persist AMR checkbox settings: {e}")
+
+    def load_settings(self):
+        """Loads settings from JSON and populates widgets, restoring checkbox variables."""
+        super().load_settings()
+        filepath = self.get_settings_file_path()
+        if not filepath or not os.path.exists(filepath):
+            return
+        try:
+            import json
+            with open(filepath, "r") as f:
+                settings = json.load(f)
+            dynamic_data = settings.get("dynamic", {})
+            title = self.dynamic_frame.cget("text").strip()
+            if isinstance(dynamic_data.get(title), dict):
+                val = dynamic_data[title].get("Initialize Lock-in?")
+            else:
+                val = dynamic_data.get("Initialize Lock-in?")
+            if val is not None:
+                self.initialize_lockin_var.set(bool(val))
+        except Exception as e:
+            print(f"Failed to restore AMR checkbox settings: {e}")
+
     def test_stepper(self):
         if self._busy():
             print("ERROR: Cannot test stepper while hardware is busy or in an unsafe state.")
             return
 
-        addr = self.stepper_address_entry.get()
+        addr = self.stepper_address_entry.get().strip()
         if not addr:
             print("ERROR: No address selected for Stepper.")
+            messagebox.showerror("Stepper Test Error", "No address selected for Stepper.")
             return
 
         print(f"Testing Stepper at {addr}...")
@@ -228,41 +271,45 @@ class AMRApp(MeasurementApp):
             return
 
         print("Autodetecting instruments... this may take a moment.")
-        from piec.drivers.autodetect import autodetect, _safe_close
-        from piec.drivers.dmm.dmm import DMM
-        from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
-        from piec.drivers.stepper_motor.stepper_motor import Stepper
-        from piec.drivers.lockin.lockin import Lockin
+        try:
+            from piec.drivers.autodetect import autodetect, _safe_close
+            from piec.drivers.dmm.dmm import DMM
+            from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
+            from piec.drivers.stepper_motor.stepper_motor import Stepper
+            from piec.drivers.lockin.lockin import Lockin
 
-        inst = autodetect(address="dmm", verbose=True, required_type=DMM)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.dmm_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected DMM at {addr}")
+            inst = autodetect(address="dmm", verbose=True, required_type=DMM)
+            if inst:
+                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
+                self.dmm_address_entry.set(addr)
+                _safe_close(inst)
+                print(f"Detected DMM at {addr}")
 
-        inst = autodetect(address="dc_calibrator", verbose=True, required_type=DCCalibrator)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.calibrator_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected Calibrator at {addr}")
+            inst = autodetect(address="dc_calibrator", verbose=True, required_type=DCCalibrator)
+            if inst:
+                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
+                self.calibrator_address_entry.set(addr)
+                _safe_close(inst)
+                print(f"Detected Calibrator at {addr}")
 
-        inst = autodetect(address="stepper_motor", verbose=True, required_type=Stepper)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.stepper_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected Stepper at {addr}")
+            inst = autodetect(address="stepper_motor", verbose=True, required_type=Stepper)
+            if inst:
+                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
+                self.stepper_address_entry.set(addr)
+                _safe_close(inst)
+                print(f"Detected Stepper at {addr}")
 
-        inst = autodetect(address="lockin", verbose=True, required_type=Lockin)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.lockin_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected Lockin at {addr}")
+            inst = autodetect(address="lockin", verbose=True, required_type=Lockin)
+            if inst:
+                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
+                self.lockin_address_entry.set(addr)
+                _safe_close(inst)
+                print(f"Detected Lockin at {addr}")
 
-        print("Autodetect complete.")
+            print("Autodetect complete.")
+        except Exception as error:
+            print(f"Autodetect failed: {error}")
+            messagebox.showerror("Autodetect Error", f"Autodetect failed: {error}")
 
     def _simulation_excitation_shutdown(self):
         """Simulation-only excitation shutdown policy for virtual lock-in."""
@@ -289,6 +336,12 @@ class AMRApp(MeasurementApp):
         raw_save_dir = self.save_dir_entry.get().strip()
         save_dir = raw_save_dir if (raw_save_dir and raw_save_dir != r"your\default\save\directory") else None
 
+        if not dmm_addr or not cal_addr or not step_addr or not lock_addr:
+            msg = "All instrument addresses (DMM, Calibrator, Stepper, Lock-in) must be specified."
+            print(msg)
+            messagebox.showerror("Parameter Error", msg)
+            return
+
         # Check virtual mode vs physical mode
         is_virtual = all(addr.upper() == "VIRTUAL" for addr in (dmm_addr, cal_addr, step_addr, lock_addr))
 
@@ -297,6 +350,12 @@ class AMRApp(MeasurementApp):
         shutdown_handler = self.excitation_shutdown_handler
         if shutdown_handler is None and is_virtual:
             shutdown_handler = self._simulation_excitation_shutdown
+
+        if not is_virtual and shutdown_handler == self._simulation_excitation_shutdown:
+            msg = "Simulation excitation shutdown policy cannot be used for physical instruments."
+            print(msg)
+            messagebox.showerror("AMR Safety Requirement", msg)
+            return
 
         if not callable(shutdown_handler):
             msg = "AMR setup requires an excitation_shutdown_handler that performs and verifies the bench shutdown action."
@@ -318,6 +377,15 @@ class AMRApp(MeasurementApp):
             if not math.isfinite(total_angle):
                 raise ValueError(f"total_angle must be finite, got {total_angle}")
 
+            if total_angle != 0 and (total_angle * angle_step < 0):
+                raise ValueError(
+                    f"angle_step ({angle_step}) direction opposes total_angle ({total_angle})"
+                )
+
+            count = abs(total_angle / angle_step)
+            if count > 1_000_000:
+                raise ValueError("Sweep exceeds one million intervals")
+
             amplitude = float(self.dynamic_inputs["amplitude"].get())
             if not math.isfinite(amplitude) or amplitude <= 0:
                 raise ValueError(f"amplitude must be positive, got {amplitude}")
@@ -331,6 +399,9 @@ class AMRApp(MeasurementApp):
                 raise ValueError(f"measure_time must be non-negative, got {measure_time}")
 
             sensitivity = str(self.dynamic_inputs["sensitivity"].get()).strip()
+            if not sensitivity:
+                raise ValueError("sensitivity cannot be empty")
+
             initialize_lockin = bool(self.initialize_lockin_var.get())
         except Exception as err:
             print(f"Invalid measurement parameters: {err}")
@@ -380,6 +451,8 @@ class AMRApp(MeasurementApp):
             messagebox.showerror("Driver initialization error", str(error))
             print(f"Driver initialization error: {error}")
             self._close_instruments()
+            if hasattr(self, "status_label") and self.status_label is not None:
+                self.status_label.config(text="Idle")
             return
 
         # Instantiate experiment
@@ -403,6 +476,8 @@ class AMRApp(MeasurementApp):
             messagebox.showerror("AMR setup error", str(error))
             print(f"AMR setup error: {error}")
             self._close_instruments()
+            if hasattr(self, "status_label") and self.status_label is not None:
+                self.status_label.config(text="Idle")
             return
 
         self.is_measuring = True
@@ -430,11 +505,17 @@ class AMRApp(MeasurementApp):
         except BaseException as error:
             messagebox.showerror("AMR start error", str(error))
             print(f"AMR start error: {error}")
-            self.is_measuring = False
-            self._awaiting_terminal = False
-            self.cleanup_controls()
-            if self.runner.can_close():
+            if self.runner is None or self.runner.can_close():
+                self.is_measuring = False
+                self._awaiting_terminal = False
+                self._terminal_event = None
+                self.cleanup_controls()
                 self._close_instruments()
+                if hasattr(self, "status_label") and self.status_label is not None:
+                    self.status_label.config(text="Idle")
+            else:
+                if hasattr(self, "status_label") and self.status_label is not None:
+                    self.status_label.config(text="Start error: active ownership retained")
 
     def add_control_buttons(self):
         """Adds Stop and Pause buttons to the GUI."""
@@ -464,6 +545,8 @@ class AMRApp(MeasurementApp):
         self.runner.request_pause(self.paused)
         if hasattr(self, 'pause_button') and self.pause_button is not None:
             self.pause_button.config(text="RESUME" if self.paused else "PAUSE")
+        if hasattr(self, 'status_label') and self.status_label is not None:
+            self.status_label.config(text="Paused" if self.paused else "Running")
         print("Measurement paused." if self.paused else "Measurement resumed.")
 
     def stop_measurement(self):
@@ -473,12 +556,17 @@ class AMRApp(MeasurementApp):
         print("Stopping measurement...")
         if hasattr(self, 'stop_button') and self.stop_button is not None:
             self.stop_button.config(state='disabled')
+        if hasattr(self, 'pause_button') and self.pause_button is not None:
+            self.pause_button.config(state='disabled')
         if hasattr(self, "status_label") and self.status_label is not None:
             self.status_label.config(text="Stopping and returning field to zero...")
         self.runner.request_stop()
 
     def cleanup_controls(self):
         """Removes control buttons and restores the run button."""
+        self.paused = False
+        self.pause_button = None
+        self.stop_button = None
         if hasattr(self, 'control_frame') and self.control_frame is not None:
             try:
                 self.control_frame.destroy()
@@ -487,7 +575,10 @@ class AMRApp(MeasurementApp):
             self.control_frame = None
         if hasattr(self, 'run_button') and self.run_button is not None:
             self.run_button.grid()
-            self.run_button.config(state='normal')
+            if self._busy():
+                self.run_button.config(state='disabled')
+            else:
+                self.run_button.config(state='normal')
 
     def plot_data(self, event=None):
         self._render_plot(self._current_plot_data)
@@ -542,6 +633,7 @@ class AMRApp(MeasurementApp):
                         print(f"SAFETY ALERT: {event.message}")
                         if hasattr(self, "status_label") and self.status_label is not None:
                             self.status_label.config(text="Hardware unsafe: connections retained")
+                        messagebox.showerror("Safety Alert", f"Unsafe hardware state detected:\n{event.message}")
                     elif isinstance(event, TerminalEvent):
                         terminal_seen = True
                         self._terminal_event = event
@@ -590,10 +682,13 @@ class AMRApp(MeasurementApp):
                 self._terminal_event = None
                 self._awaiting_terminal = False
                 self.is_measuring = False
-                self.cleanup_controls()
                 if self.runner.can_close():
                     self._close_instruments()
+                    self.cleanup_controls()
                 else:
+                    self.cleanup_controls()
+                    if hasattr(self, "status_label") and self.status_label is not None:
+                        self.status_label.config(text="Unsafe shutdown: connections retained")
                     print("Retaining open connections due to non-safe status or runner close gate.")
 
             if (self._closing or self._close_when_safe) and self.runner.can_close() and not self._awaiting_terminal:

@@ -24,7 +24,9 @@ import importlib.util
 import math
 from pathlib import Path
 import threading
-from unittest.mock import MagicMock, Mock, patch
+import json
+import queue
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import numpy as np
 import pandas as pd
@@ -32,7 +34,7 @@ import pytest
 
 from piec.drivers.lockin.srs830 import SRS830
 from piec.drivers.lockin.virtual_lockin import VirtualLockin
-from piec.measurement.contracts import RunState, SafetyAlertEvent, SafetyStatus, TerminalEvent
+from piec.measurement.contracts import RunState, SafetyAlertEvent, SafetyReport, SafetyStatus, TerminalEvent
 from piec.measurement.amr import AMR
 from piec.measurement.runner import MeasurementRunner
 
@@ -110,9 +112,25 @@ def make_headless_amr_gui(tmp_path=None, excitation_shutdown_handler=None):
         "sensitivity": MagicMock(get=MagicMock(return_value="50uv/pa")),
     }
 
+    class DummyVar:
+        def __init__(self, value=False):
+            self._val = value
+        def get(self):
+            return self._val
+        def set(self, val):
+            self._val = val
+
     # Lock-in initialization checkbox defaults to False
-    app.initialize_lockin_var = MagicMock()
-    app.initialize_lockin_var.get.return_value = False
+    app.initialize_lockin_var = DummyVar(False)
+
+    # Frames for settings extraction
+    app.static_frame = MagicMock()
+    app.static_frame.winfo_children.return_value = []
+    app.dynamic_frame = MagicMock()
+    app.dynamic_frame.cget.return_value = "AMR MEASUREMENT INPUTS"
+    app.dynamic_frame.winfo_children.return_value = []
+    app.plot_config_frame = MagicMock()
+    app.plot_config_frame.winfo_children.return_value = []
 
     # Plot axes
     app.x_axis = MagicMock()
@@ -446,3 +464,330 @@ def test_amr_gui_simulation_shutdown_restricts_to_virtual_and_propagates_failure
     app._active_lockin = mock_virtual
     with pytest.raises(IOError, match="bus failure during simulation shutdown"):
         app._simulation_excitation_shutdown()
+
+
+# ============================================================================
+# Checkpoint 25: AMR GUI Ownership and Interaction Audit Tests
+# ============================================================================
+
+def test_amr_gui_preflight_rejects_empty_addresses(monkeypatch):
+    """Preflight: empty or whitespace instrument addresses are rejected before opening drivers."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    for entry_name in ["dmm_address_entry", "calibrator_address_entry", "stepper_address_entry", "lockin_address_entry"]:
+        getattr(app, entry_name).get.return_value = "   "
+        with patch.object(gui_mod, "VirtualDMM") as mock_dmm:
+            app.run_measurement()
+            assert not mock_dmm.called
+            assert mock_error.called
+            assert "All instrument addresses" in mock_error.call_args[0][1]
+            assert not app._busy()
+            assert not app._instruments
+            mock_error.reset_mock()
+        getattr(app, entry_name).get.return_value = "VIRTUAL"
+
+
+def test_amr_gui_preflight_rejects_opposing_sweep_direction(monkeypatch):
+    """Preflight: angle_step opposing total_angle is rejected before touching hardware."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    # total_angle > 0 but angle_step < 0
+    app.dynamic_inputs["total_angle"].get.return_value = "180"
+    app.dynamic_inputs["angle_step"].get.return_value = "-10"
+
+    with patch.object(gui_mod, "VirtualDMM") as mock_dmm:
+        app.run_measurement()
+        assert not mock_dmm.called
+        assert mock_error.called
+        assert "opposes total_angle" in mock_error.call_args[0][1]
+        assert not app._busy()
+
+
+def test_amr_gui_preflight_rejects_excessive_sweep_intervals(monkeypatch):
+    """Preflight: sweep interval count exceeding 1,000,000 is rejected before opening drivers."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    app.dynamic_inputs["total_angle"].get.return_value = "360"
+    app.dynamic_inputs["angle_step"].get.return_value = "0.0000001"
+
+    with patch.object(gui_mod, "VirtualDMM") as mock_dmm:
+        app.run_measurement()
+        assert not mock_dmm.called
+        assert mock_error.called
+        assert "Sweep exceeds one million" in mock_error.call_args[0][1]
+
+
+def test_amr_gui_preflight_rejects_simulation_shutdown_on_physical_instruments(monkeypatch):
+    """Preflight: simulation shutdown handler cannot be used when any physical instrument is selected."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    app.lockin_address_entry.get.return_value = "GPIB0::8::INSTR"
+    app.excitation_shutdown_handler = app._simulation_excitation_shutdown
+
+    with patch.object(gui_mod, "SRS830") as mock_srs:
+        app.run_measurement()
+        assert not mock_srs.called
+        assert mock_error.called
+        assert "Simulation excitation shutdown policy cannot be used" in mock_error.call_args[0][1]
+
+
+def test_amr_gui_save_and_load_settings_preserves_lockin_checkbox(tmp_path, monkeypatch):
+    """Settings: save_settings persists initialize_lockin_var; load_settings restores it."""
+    app = make_headless_amr_gui()
+    settings_file = tmp_path / ".AMRApp_settings.json"
+    monkeypatch.setattr(app, "get_settings_file_path", lambda: str(settings_file))
+
+    # Set initialize_lockin to True and save
+    app.initialize_lockin_var.set(True)
+    app.save_settings()
+    assert settings_file.exists()
+    content_json = json.loads(settings_file.read_text(encoding="utf-8"))
+    dyn = content_json.get("dynamic", {})
+    val = dyn.get("AMR MEASUREMENT INPUTS", {}).get("Initialize Lock-in?") if "AMR MEASUREMENT INPUTS" in dyn else dyn.get("Initialize Lock-in?")
+    assert val is True
+
+    # Create fresh app, verify default is False, then load settings
+    app2 = make_headless_amr_gui()
+    assert app2.initialize_lockin_var.get() is False
+    monkeypatch.setattr(app2, "get_settings_file_path", lambda: str(settings_file))
+    app2.load_settings()
+    assert app2.initialize_lockin_var.get() is True
+
+
+def test_amr_gui_pause_resume_toggles_runner_and_controls():
+    """Run/Pause: toggle_pause requests pause on runner, updates button text and status label."""
+    app = make_headless_amr_gui()
+    # When idle, toggle_pause is safe no-op
+    app.toggle_pause()
+    assert not app.paused
+
+    pause_btn = MagicMock()
+    stop_btn = MagicMock()
+    def setup_mock_controls():
+        app.pause_button = pause_btn
+        app.stop_button = stop_btn
+        app.run_button.grid_remove()
+
+    with patch("time.sleep", return_value=None), patch.object(app, "add_control_buttons", side_effect=setup_mock_controls):
+        app.run_measurement()
+        assert app.runner is not None
+
+        # Pause
+        app.toggle_pause()
+        assert app.paused is True
+        pause_btn.config.assert_called_with(text="RESUME")
+        app.status_label.config.assert_called_with(text="Paused")
+
+        # Resume
+        app.toggle_pause()
+        assert app.paused is False
+        pause_btn.config.assert_called_with(text="PAUSE")
+        app.status_label.config.assert_called_with(text="Running")
+
+        assert app.runner.join(timeout=5)
+        app._poll_runner()
+
+
+def test_amr_gui_stop_measurement_disables_controls_and_requests_stop():
+    """Stop: stop_measurement disables both Stop and Pause buttons, updates status, and requests stop."""
+    app = make_headless_amr_gui()
+    app.dynamic_inputs["measure_time"].get.return_value = "30.0"
+
+    stop_btn = MagicMock()
+    pause_btn = MagicMock()
+    def setup_mock_controls():
+        app.stop_button = stop_btn
+        app.pause_button = pause_btn
+        app.run_button.grid_remove()
+
+    with patch.object(app, "add_control_buttons", side_effect=setup_mock_controls):
+        app.run_measurement()
+        assert app.runner is not None
+        assert app.is_measuring is True
+
+        app.stop_measurement()
+        stop_btn.config.assert_called_with(state="disabled")
+        pause_btn.config.assert_called_with(state="disabled")
+        assert any("Stopping" in str(c) for c in app.status_label.config.call_args_list)
+
+        assert app.runner.join(timeout=5)
+        app._poll_runner()
+        assert not app.is_measuring
+        assert app.runner.can_close()
+        assert len(app._instruments) == 0
+
+
+def test_amr_gui_active_window_close_requests_stop_and_defers_close():
+    """Close: on_closing while running requests runner close and defers window destruction until worker exits."""
+    app = make_headless_amr_gui()
+    app.dynamic_inputs["measure_time"].get.return_value = "30.0"
+
+    with patch.object(app, "add_control_buttons", return_value=None):
+        app.run_measurement()
+        assert app.runner.is_worker_alive
+
+        finish_mock = MagicMock()
+        app._finish_close = finish_mock
+
+        app.on_closing()
+        assert app.runner.is_closing is True
+        assert app._close_when_safe is True
+        assert not finish_mock.called
+        assert any("Waiting for worker exit" in str(c) for c in app.status_label.config.call_args_list)
+
+        # Let worker terminate cleanly
+        assert app.runner.join(timeout=5)
+        assert app.runner.can_close()
+
+        # Next poll executes finish_close
+        app._poll_runner()
+        assert finish_mock.called
+        assert len(app._instruments) == 0
+
+
+def test_amr_gui_start_validation_failure_restores_idle(monkeypatch):
+    """Startup failure: runner.start validation failure resets idle state, cleans controls, and closes instruments."""
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+
+    with patch.object(MeasurementRunner, "start", side_effect=ValueError("simulated validation failure")):
+        app.run_measurement()
+
+    assert not app._busy()
+    assert not app._awaiting_terminal
+    assert not app.is_measuring
+    assert len(app._instruments) == 0
+    app.status_label.config.assert_called_with(text="Idle")
+
+
+def test_amr_gui_start_failure_retains_active_ownership_if_cannot_close(monkeypatch):
+    """Startup failure: start failure when runner.can_close() is False retains active ownership and busy guard."""
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+
+    runner = MagicMock()
+    runner.can_close.return_value = False
+    runner.start.side_effect = RuntimeError("error after ownership acquired")
+
+    with patch.object(gui_mod, "MeasurementRunner", return_value=runner):
+        app.run_measurement()
+
+    assert app._busy()
+    assert app._awaiting_terminal
+    assert len(app._instruments) == 4
+    assert any("retained" in str(c) for c in app.status_label.config.call_args_list)
+
+
+def test_amr_gui_terminal_delivery_before_worker_exit_retains_busy_guard():
+    """Terminal ordering: terminal event delivery before worker thread exit keeps _busy() True and retains ownership."""
+    app = make_headless_amr_gui()
+    with patch("time.sleep", return_value=None):
+        app.run_measurement()
+        assert app.runner.join(timeout=5)
+
+    # Simulate terminal event in control_queue while worker is artificially marked alive
+    with patch.object(MeasurementRunner, "is_worker_alive", new_callable=PropertyMock) as mock_alive:
+        mock_alive.return_value = True
+        app._poll_runner()
+
+        # Terminal event is stored and plot rendered, but ownership is NOT released yet!
+        assert app._terminal_event is not None
+        assert app._awaiting_terminal is True
+        assert app.is_measuring is True
+        assert app._busy() is True
+        assert len(app._instruments) == 4
+
+        # Now simulate worker exit
+        mock_alive.return_value = False
+        app._poll_runner()
+
+        assert app._terminal_event is None
+        assert app._awaiting_terminal is False
+        assert app.is_measuring is False
+        assert not app._busy()
+        assert len(app._instruments) == 0
+
+
+def test_amr_gui_unsafe_status_leaves_run_button_disabled(monkeypatch):
+    """UNSAFE status: run button remains disabled and status label reflects unsafe retention."""
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+
+    def failing_shutdown(recorder):
+        raise RuntimeError("simulated lockin excitation shutdown failure")
+
+    monkeypatch.setattr(AMR, "_safe_shutdown", failing_shutdown)
+
+    with patch("time.sleep", return_value=None):
+        app.run_measurement()
+        assert app.runner.join(timeout=5)
+        app._poll_runner()
+
+    assert app.runner.safety_status == SafetyStatus.UNSAFE
+    assert not app.runner.can_close()
+    assert app._busy() is True
+    app.run_button.config.assert_called_with(state="disabled")
+    assert any("connections retained" in str(c) for c in app.status_label.config.call_args_list)
+
+
+def test_amr_gui_safety_alert_event_shows_dialog_and_updates_status(monkeypatch):
+    """Safety alert: SafetyAlertEvent displays an error dialog and updates status label."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    alert = SafetyAlertEvent(
+        run_id="test_run",
+        generation=1,
+        safety_status=SafetyStatus.UNSAFE,
+        report=SafetyReport(status=SafetyStatus.UNSAFE),
+        message="Dangerous overvoltage on excitation line",
+    )
+    app.runner = MagicMock()
+    app.runner.control_queue.get_nowait.side_effect = [alert, queue.Empty]
+    app.runner.display_queue.get_nowait.side_effect = queue.Empty
+    app.runner.is_worker_alive = True
+    app.runner.can_close.return_value = False
+
+    app._poll_runner()
+
+    assert mock_error.called
+    assert "Dangerous overvoltage" in str(mock_error.call_args)
+    assert any("Hardware unsafe" in str(c) for c in app.status_label.config.call_args_list)
+
+
+def test_amr_gui_autodetect_exception_does_not_crash_gui(monkeypatch):
+    """Auxiliary actions: autodetect driver scan exception is caught and displays error dialog."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    with patch("piec.drivers.autodetect.autodetect", side_effect=RuntimeError("VISA bus enumeration timeout")):
+        app.autodetect_instruments()
+
+    assert mock_error.called
+    assert "Autodetect failed" in str(mock_error.call_args)
+    assert not app._busy()
+
+
+def test_amr_gui_test_stepper_rejects_empty_address(monkeypatch):
+    """Auxiliary actions: test_stepper with blank address shows error dialog and does not attempt connection."""
+    app = make_headless_amr_gui()
+    mock_error = MagicMock()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", mock_error)
+
+    app.stepper_address_entry.get.return_value = "   "
+    with patch.object(gui_mod, "VirtualStepper") as mock_step:
+        app.test_stepper()
+        assert not mock_step.called
+        assert mock_error.called
+        assert "No address selected" in str(mock_error.call_args)
+        assert not app._busy()

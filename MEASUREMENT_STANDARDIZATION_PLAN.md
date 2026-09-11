@@ -646,13 +646,22 @@ Do not add a fictitious `read_waveform()` requirement to every oscilloscope driv
 
 ### 9.5 General AMR setups and the existing four-instrument profile
 
+Checkpoint 25 completed: comprehensive AMR GUI ownership and interaction audit.
+Covered settings/preflight address, sweep direction, interval count, and sensitivity
+validation; Run/Pause/Stop/close coordination through common runner; startup failure
+handling (validation vs active ownership retention); terminal delivery prior to
+worker thread exit; UNSAFE connection retention with run button locking; and
+auxiliary action (stepper test, autodetect, refresh) hardening. Preserved notebook
+execution order, virtual-only shutdown checks, NOT_NEEDED abort cleanup, and display
+error handling. Targeted GUI suite: 35 passed; focused suite: 215 passed; full
+suite with Agg: 1621 passed, 1 skipped in 62.07s. Next is checkpoint 24d onward
+(additional AMR electrical adapters) / 26. Physical 17/22 remain PENDING.
+
 24c follow-up review restored executable notebook setup/acquisition/plot ordering
 and a runtime-checked all-virtual shutdown policy. Notebook results are read in
 memory. GUI rendering errors cannot prevent terminal cleanup; empty results clear
 stale plots. Test Stepper closes on query failure; failed closes retain references
-for explicit retry. Next is checkpoint 25 only, the detailed GUI ownership audit;
-additional electrical adapters are separate subsequent work. Physical 17/22
-remain PENDING.
+for explicit retry. Physical 17/22 remain PENDING.
 
 **24b review corrections:** snapshots now bound raw_window (default 100 points)
 while terminal data and persistence retain full acquisition. All requested and
@@ -871,7 +880,7 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 24b | Completed | Migrated AMR acquisition, schema amr v1 with plain columns ('angle', 'field', 'x', 'y') and declared units, BaseMeasurement lifecycle, and consumers onto MagnetoTransport. Repaired AMR-ANGLE-001 (zero extra motor step; endpoint matches commanded angle). Excitation shutdown required before energizing; manual lock-in settings preserved by default. Atomic publication, bounded snapshots, cooperative pause/stop. Removed _LegacyMagnetoTransport and obsolete API tests. Full test suite: 1571 passed, 1 skipped. |
 | 24c | Completed | AMR notebook/GUI presentation integration: MeasurementRunner lifecycle, bounded raw_window live display, authoritative terminal data view, metadata-derived axis labels, simulation vs physical excitation shutdown policy, manual lock-in preservation by default, open connection retention on UNSAFE, notebook simulation safing & unit plotting. Full suite with Agg: 1597 passed, 1 skipped. |
 | 24d onward | Additional AMR electrical adapters, one signal mode per commit after the working four-instrument slice | Mode-specific data/units and truthful excitation; direct-resistance or voltage/current numerical fixtures, producer/GUI/consumer updates; no fabricated X/Y or assumed current |
-| 25 | AMR GUI interaction/ownership hardening | Pause/Stop/close/terminal behavior through common runner |
+| 25 | Completed | AMR GUI interaction/ownership hardening: settings/preflight validation (addresses, sweep direction, limits, sensitivity), Run/Pause/Stop/close coordination through common runner, startup failure handling (validation vs active ownership retention), terminal-before-worker-exit gating, UNSAFE connection retention & run button locking, auxiliary action resilience (stepper test, autodetect, refresh). Targeted GUI: 35 passed; focused: 215 passed; full repo suite: 1621 passed, 1 skipped in 62.07s. |
 | 26 | AMR physical record | Separate role tests then low-field integrated result or PENDING |
 | 27 | Role-specific simulation contracts | Units, reset, deterministic time/RNG and voltage/current-source electrical loads |
 | 28a onward | Generic per-instance virtual hooks, one driver family per commit | Explicit injection overrides global fallback; no sample-specific driver branches |

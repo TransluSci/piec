@@ -1,10 +1,40 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 24c (AMR notebook/GUI presentation integration) review corrections are complete.**
-Next: **checkpoint 25 only (detailed GUI ownership audit / interaction hardening)**.
-Additional electrical adapters remain separate later work; do not bundle them into this audit.
+Continue on `measuremnt-standarization`. **Checkpoint 25 (detailed AMR GUI ownership and interaction audit) is complete.**
+Next: **checkpoint 24d onward / 26 (additional AMR electrical adapters / AMR physical record)**, as numbered in the roadmap.
+Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
+
+## Checkpoint 25 report (authoritative)
+
+- Validation: full suite with Agg **1621 passed, 1 skipped** in 62.07s on Python 3.13.2.
+  Focused AMR/Magneto suite (215 tests) passed in 34.69s; GUI suite (35 tests) passed in 26.91s.
+  No physical hardware validation was performed (checkpoints 17 and 22 remain PENDING).
+- **Settings & Preflight Hardening**:
+  - `save_settings()` / `load_settings()` in `AMRApp` explicitly persists and restores `initialize_lockin_var` alongside all standard static and dynamic entries.
+  - Preflight validates that all four instrument addresses (`dmm`, `calibrator`, `stepper`, `lockin`) are specified and non-empty before touching any drivers.
+  - Simulation excitation shutdown policy is prohibited when any physical instrument is configured.
+  - Preflight checks sweep direction consistency (`total_angle * angle_step >= 0` if `total_angle != 0`), sweep interval bound (`abs(total_angle / angle_step) <= 1_000_000`), positive amplitude/frequency, non-negative measure time, and non-empty sensitivity. Validation failures show modal error dialogs and leave bench hardware untouched.
+- **Run / Pause / Stop / Close Lifecycle**:
+  - `toggle_pause()` toggles runner pause state, updates button text ("RESUME" / "PAUSE"), and updates `status_label` ("Paused" / "Running"). Idle calls are safe no-ops.
+  - `stop_measurement()` disables both Stop and Pause buttons to prevent interleaved pause requests while stopping, updates `status_label` ("Stopping and returning field to zero..."), and issues cooperative stop.
+  - `cleanup_controls()` safely destroys control buttons, resets `paused` state, clears button references, restores `run_button`, and automatically locks `run_button` (`state='disabled'`) whenever `_busy()` is True (e.g. retained UNSAFE hardware).
+  - `on_closing()` gracefully coordinates with running workers via `runner.request_close()`, deferring window destruction until worker exit and verified safety. Retained unclosed connections block window destruction until an explicit close retry succeeds.
+- **Startup Failures & Active Ownership Retention**:
+  - Driver setup failure closes earlier opened connections via `_close_instruments()` and resets status to "Idle".
+  - Experiment setup (`AMR(...)`) failure closes all 4 connections and resets status to "Idle".
+  - `runner.start()` failure: if `runner.can_close()` is True (validation failure or thread start failure with `NOT_NEEDED`), cleanly resets GUI latches, cleans up controls, closes instruments, and resets status to "Idle". If `runner.can_close()` is False (ownership was acquired and cannot close), retains open connections in `self._instruments`, keeps `_busy()` and `_awaiting_terminal` True, and updates status label to "Start error: active ownership retained".
+- **Terminal-Before-Worker-Exit Gating**:
+  - Drains display and control queues on the main thread; renders authoritative final plot upon `TerminalEvent`.
+  - Retains `_awaiting_terminal`, `is_measuring`, and `_busy()` True until `not runner.is_worker_alive`.
+  - Once the worker terminates, closes instruments if `runner.can_close()` or retains them under `SafetyStatus.UNSAFE` (locking `run_button` and updating status label).
+  - On `SafetyAlertEvent`, displays modal error dialog and updates status label.
+- **Auxiliary Action Resilience**:
+  - `test_stepper()` validates non-empty address, handles both VirtualStepper and Geos_Stepper, queries identification, and guarantees connection closure in `finally`.
+  - `refresh_instruments()` safely refreshes VISA resource lists when not busy.
+  - `autodetect_instruments()` wraps driver detection in try/except to guard against VISA bus scan timeouts or exceptions.
+- **Fault Regressions**: Added 15 new interaction and ownership tests in `tests/test_measurement_amr_gui.py` covering all audit invariants. Preserved executable notebook ordering, virtual-only shutdown checks, NOT_NEEDED abort cleanup, and display error handling.
 
 ## Checkpoint 24c review corrections (authoritative)
 
