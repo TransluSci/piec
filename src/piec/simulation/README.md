@@ -60,10 +60,14 @@ or undefined at zero current.
   `voltage_reader` or `reader_hook` (in constructor, via property, or via `set_voltage_reader`).
 - Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.
   When an explicit hook is injected, `mag_sample` is not accessed.
-- The generic driver contains no sample-, sensor-, or material-specific logic; physical modeling
-  remains external to the driver (in the hook closure or material contract).
+- The injected path adds no sample-, sensor-, or material-specific logic; physical modeling
+  remains external in the hook. The historical `current_field / 10000` fallback remains
+  solely for existing shared-sample simulations; it is not a general sensor calibration.
 - The hook receives coupling parameters if declared: accepts zero arguments, keyword `ac` or `coupling`,
   or positional-only `ac` or `coupling`. Callables with unavailable signatures follow the zero-argument contract.
+- Named `ac` and `coupling` parameters are supplied together when both are declared,
+  including mixed positional-only/keyword signatures. Optional unrelated parameters
+  keep their defaults. A `**kwargs` hook also receives undeclared coupling settings.
 - Invocation is selected by signature binding before calling the hook exactly once. Hook exceptions
   propagate unchanged without retries or fallback invocation.
 - Returns scalar `float` voltages in Volts. Preserves IEEE 754 non-finite numbers (`inf`, `-inf`, `nan`)
@@ -74,6 +78,9 @@ or undefined at zero current.
   the injected hook. Instance assignments to `dmm.mag_sample` do not pollute global shared sample state.
 - Driver reset does not reset setup-owned closures, external material models, clocks, or RNG seeds:
   that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
+- Manual sense range and integration time must be positive and finite. Rejected
+  configuration values leave state unchanged; non-finite voltage readings remain
+  permitted by the overload contract.
 
 Other driver families and VirtualBench wiring remain separate later checkpoints.
 

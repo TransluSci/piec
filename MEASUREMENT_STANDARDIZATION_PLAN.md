@@ -190,6 +190,15 @@ Checkpoint 26 recorded: AMR physical validation record is **PENDING** as physica
 
 ## 1. Purpose and non-negotiable constraints
 
+Checkpoint 28b review corrections: DMM hooks receive all declared coupling/ac
+settings, including combined and mixed positional-only/keyword signatures, without
+retrying hook errors or silently keeping a DC default during AC acquisition.
+Manual range and integration time reject non-finite/non-positive configuration;
+non-finite voltage overload readings remain valid. The historical shared magnetic
+conversion remains fallback only; new injected paths keep sensor models external.
+See the current handoff for corrective validation. Next is checkpoint 28c, one
+remaining driver family per commit. Physical 17/22/26 remain PENDING.
+
 Checkpoint 27 follow-up review corrected explicit-current AMR tuple responses
 (removing the new scalar compatibility wrapper), updated its existing virtual
 lock-in consumer, repaired diode solving/reverse compliance and capacitor charge

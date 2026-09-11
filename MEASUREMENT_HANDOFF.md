@@ -7,6 +7,14 @@ Additional electrical adapters remain separate later work; do not bundle them in
 
 ## Checkpoint 28b report (authoritative)
 
+### Review corrections
+
+- Hook dispatch supplies all declared `ac`/`coupling` settings together, including mixed positional-only/keyword signatures and defaulted `coupling` with `**kwargs`. AC reads no longer silently use a hook's DC default. Binding happens before one invocation; hook exceptions still propagate unchanged.
+- Manual sense ranges and integration times reject non-finite/non-positive values without changing configuration. IEEE non-finite voltage readings remain supported for overload simulation.
+- Added regressions for combined/mixed/defaulted hook signatures, unchanged hook-error identity and configuration state preservation.
+- Corrected documentation: the new injected path is generic, while the historical shared-sample `current_field / 10000` conversion remains as the explicitly retained fallback. It is not a general sensor calibration.
+- Corrective validation: full suite with Agg **1790 passed, 1 skipped in 63.50s**; `git diff --check` passed. Physical 17/22/26 remain PENDING. Proceed with checkpoint 28c only, one next driver family; keep extra AMR adapters and VirtualBench separate.
+
 - **Status**: **Completed**. Selected driver family: **DMM (`VirtualDMM`)**.
 - **Physical Validation Matrix**:
   - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
@@ -15,7 +23,7 @@ Additional electrical adapters remain separate later work; do not bundle them in
 - **Generic Per-Instance Virtual Hook Implementation** (`src/piec/drivers/dmm/virtual_dmm.py`):
   - **Hook Injection**: Added `voltage_reader` and `reader_hook` (alias) constructor parameters, method injectors `set_voltage_reader(hook)`, `set_reader_hook(hook)`, and properties `voltage_reader`, `reader_hook`.
   - **Strict Precedence**: Explicit per-instance injection takes strict precedence over the deprecated shared `mag_sample` fallback in `get_voltage()`. If `voltage_reader` is injected, it is evaluated directly and `mag_sample` is not accessed.
-  - **Material Decoupling**: Generic `VirtualDMM` contains no sample-, magnetic-, or sensor-specific logic; physical modeling remains entirely external to the driver in the hook closure or material contract.
+  - **Material Decoupling**: The injected path adds no sample-specific logic. Physical modeling belongs in the hook; the historical shared-sample conversion is retained only as fallback.
   - **Scalar Voltage & Units**: Returns scalar `float` voltages in Volts. Preserves IEEE 754 non-finite values (`inf`, `-inf`, `nan`) for DMM hardware overload emulation (per Checkpoint 6 contract). Rejects non-scalar collections (`tuple`, `list`, non-0d `ndarray`) with `TypeError`. Exposed `declared_units` mapping `{"voltage": "V"}`.
   - **Error Propagation & Dispatch**: Hook dispatch inspects signatures before invoking the hook exactly once; hook exceptions (`RuntimeError`, `TypeError`, etc.) propagate unchanged without retries or fallback invocation. Supports 0-argument callables, `ac` and `coupling` keyword arguments, and positional-only `ac`/`coupling` parameters.
   - **State & Reset Ownership**: `reset()` restores default driver-owned configuration (`sense_func="VOLT"`, `coupling="DC"`, `sense_mode="2W"`, `sense_range=None`, `autorange=True`, `integration_time=1.0`) while preserving the injected hook intact. Setup-owned state (closures, external material models, clocks, RNG) is owned by the test fixture / VirtualBench and not reset by driver reset. Added instance-level `mag_sample` property descriptor so instance assignments never mutate global `VirtualInstrument._shared_mag_sample`.

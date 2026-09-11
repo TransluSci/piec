@@ -407,3 +407,52 @@ class TestDeterministicResetAndInstanceIsolation:
     def test_idn_returns_virtual_dmm(self):
         dmm = VirtualDMM()
         assert dmm.idn() == "Virtual DMM"
+
+
+@pytest.mark.parametrize("signature", ["both", "mixed", "positional", "kwargs", "default_prefix"])
+def test_dispatch_supplies_all_declared_coupling_settings(signature):
+    calls = []
+    def record(ac, coupling):
+        calls.append((ac, coupling))
+        return 2.0 if ac and coupling == "AC" else 1.0
+    def both(*, ac, coupling):
+        return record(ac, coupling)
+    def mixed(ac, /, *, coupling):
+        return record(ac, coupling)
+    def positional(ac, coupling, /, other=None):
+        return record(ac, coupling)
+    def kwargs(coupling="DC", **settings):
+        return record(settings["ac"], coupling)
+    def default_prefix(offset=7, coupling="DC", /, *, ac=False):
+        assert offset == 7
+        return record(ac, coupling)
+    hook = {"both": both, "mixed": mixed, "positional": positional,
+            "kwargs": kwargs, "default_prefix": default_prefix}[signature]
+    dmm = VirtualDMM(voltage_reader=hook)
+    assert dmm.get_voltage(ac=True) == 2.0
+    assert dmm.get_voltage(ac=False) == 1.0
+    assert calls == [(True, "AC"), (False, "DC")]
+
+
+def test_combined_coupling_hook_error_is_not_retried():
+    calls = []
+    error = TypeError("inside hook")
+    def hook(ac, /, *, coupling):
+        calls.append((ac, coupling))
+        raise error
+    with pytest.raises(TypeError) as result:
+        VirtualDMM(voltage_reader=hook).get_voltage(ac=True)
+    assert result.value is error
+    assert calls == [(True, "AC")]
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -1, 0])
+def test_invalid_configuration_preserves_previous_state(invalid):
+    dmm = VirtualDMM()
+    before = dmm.get_state()
+    with pytest.raises(ValueError):
+        dmm.set_integration_time(invalid)
+    assert dmm.get_state() == before
+    with pytest.raises(ValueError):
+        dmm.set_sense_range(invalid, auto=False)
+    assert dmm.get_state() == before

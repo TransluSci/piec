@@ -144,13 +144,16 @@ class VirtualDMM(VirtualInstrument, DMM):
     def set_sense_range(self, range_val: Optional[float] = None, auto: bool = True) -> None:
         if not auto and range_val is None:
             raise ValueError("range_val is required when autorange is disabled")
-        self.state["sense_range"] = None if auto else float(range_val)
+        selected_range = None if auto else float(range_val)
+        if selected_range is not None and (not math.isfinite(selected_range) or selected_range <= 0):
+            raise ValueError("range_val must be positive and finite")
+        self.state["sense_range"] = selected_range
         self.state["autorange"] = bool(auto)
 
     def set_integration_time(self, nplc: float = 1) -> None:
         nplc = float(nplc)
-        if nplc <= 0:
-            raise ValueError("nplc must be positive")
+        if not math.isfinite(nplc) or nplc <= 0:
+            raise ValueError("nplc must be positive and finite")
         self.state["integration_time"] = nplc
 
     def get_voltage(self, ac: bool = False) -> float:
@@ -190,27 +193,33 @@ class VirtualDMM(VirtualInstrument, DMM):
         is_ac = self.state["coupling"] == "AC"
         coupling = self.state["coupling"]
 
-        pos_args: tuple[Any, ...] = ()
         params = list(sig.parameters.values())
-        if len(params) == 1 and params[0].kind == inspect.Parameter.POSITIONAL_ONLY:
-            if params[0].name == "ac":
-                pos_args = (is_ac,)
-            elif params[0].name == "coupling":
-                pos_args = (coupling,)
-
-        for args, kwargs in (
-            ((), {"ac": is_ac}),
-            ((), {"coupling": coupling}),
-            ((pos_args, {}) if pos_args else ((), {})),
-            ((), {}),
-        ):
-            try:
-                sig.bind(*args, **kwargs)
-            except TypeError:
-                continue
-            return hook(*args, **kwargs)
-
-        raise TypeError("voltage_reader must accept no arguments or optional coupling/ac settings")
+        values = {"ac": is_ac, "coupling": coupling}
+        args = []
+        kwargs = {}
+        positional = [p for p in params if p.kind == inspect.Parameter.POSITIONAL_ONLY]
+        requested_positions = [i for i, p in enumerate(positional) if p.name in values]
+        if requested_positions:
+            for p in positional[:max(requested_positions) + 1]:
+                if p.name in values:
+                    args.append(values[p.name])
+                elif p.default is not inspect.Parameter.empty:
+                    args.append(p.default)
+                else:
+                    raise TypeError("voltage_reader has an unsupported required positional parameter")
+        for p in params:
+            if p.name in values and p.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY,
+            ):
+                kwargs[p.name] = values[p.name]
+        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
+            kwargs.update({name: value for name, value in values.items() if name not in sig.parameters})
+        # Binding failures precede invocation; exceptions from the hook are never caught.
+        try:
+            sig.bind(*args, **kwargs)
+        except TypeError as error:
+            raise TypeError("voltage_reader must accept no arguments or coupling/ac settings") from error
+        return hook(*args, **kwargs)
 
     @staticmethod
     def _validate_voltage(response: Any) -> float:
