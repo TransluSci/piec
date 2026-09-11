@@ -17,6 +17,8 @@ Physical validation: **PENDING**. The protocol template is complete; physical ex
 
 Before physical execution, the operator must complete and sign these bench setup parameters. This document specifies no synthetic or universal pass criteria; acceptance limits must derive from instrument specifications, calibration uncertainty, and laboratory electrical safety guidelines.
 
+Numerical component values, amplitudes and timing below are illustrative starting examples, not approved bench settings. Record the actual supported instrument configuration, wiring, amplitude/current limits, discharge criterion, shutdown latency limit and justification before execution. Use measured tolerances and reference-load behavior when assessing the scientific examples.
+
 | Required Record | Field / Setting | Status / Recorded Value |
 |---|---|---|
 | **Operator & Date** | Name, date, time of execution | PENDING |
@@ -50,8 +52,8 @@ In accordance with Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md`:
    - Run in-memory hysteresis analysis (`process_hysteresis`).
    - Confirm linear dielectric ellipse/straight line with zero remanent polarization ($P_r \approx 0.00\text{ }\mu\text{C/cm}^2$) and zero coercive voltage ($V_c \approx 0.00\text{ V}$).
 5. **Safing Verification**:
-   - Verify that upon cycle completion, AWG output relay immediately disengages (`:OUTP OFF`).
-   - Issue cooperative Stop mid-run; verify AWG output relay is disengaged immediately without lingering excitation.
+   - Record the supported output-disable procedure for the actual AWG and independently verify the output and sample discharge meet justified bench limits after completion. An output-off command does not establish a physical relay position.
+   - Issue cooperative Stop mid-run; measure Stop-to-output-safe latency and residual excitation against recorded bench limits, including acquisition timeout and blocking command durations. Cooperative Stop is not an instantaneous hardware interlock.
 
 ### Stage 2: PUND Pulse-Sequence Verification on Linear Capacitor
 *Goal: Validate Three-Pulse PUND timing, polarity, in-memory subtraction, and artifact staging on a benign linear load.*
@@ -98,7 +100,7 @@ The following checklist must be completed and signed by the test operator before
 |---|---|---|---|---|
 | 1 | **Stage 1: Strict Trigger Sequencing** | Scope armed $\to$ AWG output enabled $\to$ trigger fired | *Pending bench execution* | PENDING |
 | 2 | **Stage 1: WaveformReader Data Integrity** | Finite, non-empty arrays with declared units ('s', 'V') | *Pending bench execution* | PENDING |
-| 3 | **Stage 1: AWG Output Safing on Completion** | AWG output relay opens (`:OUTP OFF`) immediately | *Pending bench execution* | PENDING |
+| 3 | **Stage 1: AWG Output Safing on Completion and Stop** | Supported output-disable action confirmed independently; residual output, discharge and latency within justified bench limits | *Pending bench execution* | PENDING |
 | 4 | **Stage 1: Linear Capacitor Hysteresis** | $P_r \approx 0.00\text{ }\mu\text{C/cm}^2$, $V_c \approx 0.00\text{ V}$ on 10 nF standard | *Pending bench execution* | PENDING |
 | 5 | **Stage 2: PUND Pulse Polarity and Timing** | Scope trace matches commanded amplitudes, widths, delays | *Pending bench execution* | PENDING |
 | 6 | **Stage 2: Linear Capacitor PUND Subtraction** | $\Delta P = \hat{P} - P^* \approx 0.00\text{ }\mu\text{C/cm}^2$ within noise floor | *Pending bench execution* | PENDING |

@@ -1,9 +1,19 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 26 (AMR physical validation record: PENDING) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 25 corrections and checkpoint 26 protocol corrections are complete; physical execution is PENDING.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **checkpoint 24d onward / 27 (additional AMR electrical adapters / role-specific simulation contracts)**, as numbered in the roadmap.
+Next: **Checkpoint 27 (role-specific simulation contracts)**. Implement only this checkpoint, validate it, commit it separately, update this handoff, then stop for review.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Review corrections for checkpoints 25 and 26
+
+- Recoverable runner startup failures release connections before restoring controls, so Run becomes enabled when ownership is clear.
+- Autodetect tracks each returned connection before reading its address or updating widgets. Cleanup runs even on address-update failure. Failed closes retain the handle, disable Run, halt the scan and block window destruction until an explicit close retry succeeds.
+- Regression coverage checks startup button state, successful/failed autodetect cleanup, close retry, and address-update exceptions.
+- Physical records use justified bench-specific latency and excitation limits. Output-disable commands do not prove relay position, zero sample excitation or zero residual magnetic field. Acquisition preserves manual lock-in settings; the declared shutdown procedure may make documented changes.
+- Checkpoints 17, 22 and 26 remain PENDING until dated physical evidence and operator sign-off exist. Offline work may continue.
+- Checkpoint 27 scope: role-specific units, reset behavior, deterministic time/RNG and voltage/current-source electrical loads. Preserve plain columns and metadata units, explicit excitation ownership and manual lock-in settings by default. Do not introduce compatibility shims, fabricated X/Y, assumed current, extra electrical adapters or checkpoint 28/29 implementation in this commit.
+- Validation: full repository suite with Agg backend, **1624 passed, 1 skipped in 61.32s**; `git diff --check` passed. No physical hardware validation performed.
 
 ## Checkpoint 26 report (authoritative)
 
@@ -16,8 +26,8 @@ Additional electrical adapters remain separate later work; do not bundle them in
   - `docs/physical_validation_iv_moke.md`: Authoritative physical validation record and staged protocol for IV & MOKE (Checkpoint 17).
 - **Staged AMR Validation Protocol** (per Section 13: "AMR validates motion and field roles independently before combining them"):
   - **Stage 1: Motion Role Validation (Orientation Controller Alone)**: Evaluates stepper motor / rotation stage without magnetic field or sample excitation. Verifies angular scaling (`steps_per_degree`), forward and reverse angular sweeps, stop latency, serial timeout handling, and confirms repair of defect `AMR-ANGLE-001` (motor halts at final commanded angle with zero extra steps).
-  - **Stage 2: Field Role Validation (Field Source + Field Readback Alone)**: Evaluates electromagnet power supply (calibrator) and field readback DMM / Hall probe without sample excitation or motion. Verifies voltage-to-field calibration factor (`AMR-FIELD-001` repair: $10000\text{ Oe/V}$ produces $0.01\text{ V}$ for $100\text{ Oe}$), bipolar zero-crossing across negative fields, and attempt-all de-energization safing to 0 Oe.
-  - **Stage 3: Transport Readout & Excitation Safing Role Validation (Lock-In Alone)**: Evaluates lock-in amplifier terminated into a known benign standard resistor. Verifies default preservation of front-panel manual settings (`initialize_lockin=False`, `readout_configuration="preserve"`), execution of declared physical excitation shutdown policy (amplitude drops to $0.000\text{ V}$), and retention of open connections on simulated shutdown failure (`SafetyStatus.UNSAFE`).
+  - **Stage 2: Field Role Validation (Field Source + Field Readback Alone)**: Evaluates electromagnet power supply (calibrator) and field readback DMM / Hall probe without sample excitation or motion. Verifies voltage-to-field calibration factor (`AMR-FIELD-001` repair: $10000\text{ Oe/V}$ produces $0.01\text{ V}$ for $100\text{ Oe}$), bipolar zero-crossing across negative fields, and attempt-all electrical de-energization, with residual field independently measured against a justified bench limit.
+  - **Stage 3: Transport Readout & Excitation Safing Role Validation (Lock-In Alone)**: Evaluates lock-in amplifier terminated into a known benign standard resistor. Verifies default preservation of front-panel manual settings (`initialize_lockin=False`, `readout_configuration="preserve"`), execution of declared physical excitation shutdown policy (supported shutdown action and independently measured excitation within a justified bench limit), and retention of open connections on simulated shutdown failure (`SafetyStatus.UNSAFE`).
   - **Stage 4: Integrated Low-Field AMR Measurement**: Reference thin-film AMR sample (e.g. 20 nm NiFe stripe) mounted in electromagnet pole gap. $0^\circ \to 180^\circ$ rotation sweep at $H = 100\text{ Oe}$. Verifies bounded `raw_window` display updates, authoritative terminal delivery, atomic CSV publication under canonical schema `amr` v1 with metadata units (`deg`, `Oe`, `V`, `V`), and characteristic $\cos^2(\theta)$ anisotropic curve.
 - **Physical Validation Matrix**:
   - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)

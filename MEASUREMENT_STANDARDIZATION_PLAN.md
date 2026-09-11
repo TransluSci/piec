@@ -663,8 +663,14 @@ worker thread exit; UNSAFE connection retention with run button locking; and
 auxiliary action (stepper test, autodetect, refresh) hardening. Preserved notebook
 execution order, virtual-only shutdown checks, NOT_NEEDED abort cleanup, and display
 error handling. Targeted GUI suite: 35 passed; focused suite: 215 passed; full
-suite with Agg: 1621 passed, 1 skipped in 62.07s. Next is checkpoint 24d onward
-(additional AMR electrical adapters) / 26. Physical 17/22 remain PENDING.
+suite with Agg: 1621 passed, 1 skipped in 62.07s (original checkpoint run).
+Follow-up review repaired Run-button recovery after startup failure and tracked
+autodetect connections through address errors and failed closes, with explicit
+close retry and regression tests. Physical protocols now distinguish electrical
+shutdown commands from measured excitation/residual field and require justified
+bench limits rather than universal timing or relay assumptions. Next is checkpoint
+27 (role-specific simulation contracts); additional electrical adapters remain
+separate later work. Physical 17/22/26 remain PENDING.
 
 24c follow-up review restored executable notebook setup/acquisition/plot ordering
 and a runtime-checked all-virtual shutdown policy. Notebook results are read in
@@ -979,8 +985,8 @@ for physical hardware validation.
 Per Section 13: "AMR validates motion and field roles independently before combining them."
 Hardware validation is staged:
 1. Motion role alone: Stepper motor / orientation controller verification without magnetic field or sample excitation. Verifies angular scaling, forward/reverse directional handling, stop latency, and confirms repair of defect `AMR-ANGLE-001` (zero extra motor step; endpoint strictly matches commanded angle).
-2. Field role alone: Calibrator / electromagnet power supply and field readback DMM / Hall probe without sample excitation or motion. Verifies voltage-to-field calibration (`AMR-FIELD-001` repair: $10000\text{ Oe/V}$ gives $0.01\text{ V}$ for $100\text{ Oe}$), bipolar zero-crossing, and attempt-all de-energization safing to $0\text{ Oe}$.
-3. Transport readout & excitation safing role alone: Lock-in amplifier into a known benign resistor standard (e.g. 1 kΩ). Verifies preservation of front-panel manual settings by default (`initialize_lockin=False`, `readout_configuration="preserve"`), execution of declared physical excitation shutdown policy (amplitude drops to $0.000\text{ V}$), and retention of open connections on simulated shutdown failure (`SafetyStatus.UNSAFE`).
+2. Field role alone: Calibrator / electromagnet power supply and field readback DMM / Hall probe without sample excitation or motion. Verifies voltage-to-field calibration (`AMR-FIELD-001` repair: $10000\text{ Oe/V}$ gives $0.01\text{ V}$ for $100\text{ Oe}$), bipolar zero-crossing, and attempt-all electrical de-energization, with residual field independently measured against a justified bench limit.
+3. Transport readout & excitation safing role alone: Lock-in amplifier into a known benign resistor standard (e.g. 1 kΩ). Verifies preservation of front-panel manual settings by default (`initialize_lockin=False`, `readout_configuration="preserve"`), execution of declared physical excitation shutdown policy (supported shutdown action and independently measured excitation within a justified bench limit), and retention of open connections on simulated shutdown failure (`SafetyStatus.UNSAFE`).
 4. Integrated low-field AMR measurement: Reference thin-film AMR sample (e.g. 20 nm NiFe stripe) mounted in electromagnet gap. $0^\circ \to 180^\circ$ rotation sweep at $H = 100\text{ Oe}$. Verifies bounded `raw_window` display updates, authoritative terminal delivery, atomic CSV publication under canonical schema `amr` v1 with declared units (`deg`, `Oe`, `V`, `V`), and characteristic $\cos^2(\theta)$ anisotropic magnetoresistance curve.
 
 Keep checkpoint 26 PENDING until dated physical execution and sign-off exist.

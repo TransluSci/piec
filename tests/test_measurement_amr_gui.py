@@ -666,6 +666,45 @@ def test_amr_gui_start_validation_failure_restores_idle(monkeypatch):
     assert not app.is_measuring
     assert len(app._instruments) == 0
     app.status_label.config.assert_called_with(text="Idle")
+    app.run_button.config.assert_called_with(state="normal")
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_autodetect_tracks_connections_through_cleanup(monkeypatch, close_fails):
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+    instrument = MagicMock()
+    instrument.instrument.resource_name = "TEST"
+    if close_fails:
+        instrument.close.side_effect = IOError("close failed")
+    with patch("piec.drivers.autodetect.autodetect", side_effect=[instrument, None, None, None]) as detect:
+        app.autodetect_instruments()
+    instrument.close.assert_called_once()
+    assert app._instruments == ([instrument] if close_fails else [])
+    assert app._busy() is close_fails
+    app.run_button.config.assert_called_with(state="disabled" if close_fails else "normal")
+    assert detect.call_count == (1 if close_fails else 4)
+    if close_fails:
+        app._finish_close = MagicMock()
+        app.on_closing()
+        app._finish_close.assert_not_called()
+        instrument.close.side_effect = None
+        app.on_closing()
+        app._finish_close.assert_called_once()
+        assert app._instruments == []
+
+
+def test_autodetect_closes_connection_when_address_update_fails(monkeypatch):
+    app = make_headless_amr_gui()
+    monkeypatch.setattr(gui_mod.messagebox, "showerror", MagicMock())
+    instrument = MagicMock()
+    app.dmm_address_entry.set.side_effect = ValueError("address update failed")
+    with patch("piec.drivers.autodetect.autodetect", return_value=instrument) as detect:
+        app.autodetect_instruments()
+    instrument.close.assert_called_once()
+    detect.assert_called_once()
+    assert not app._busy()
+    assert not app._instruments
 
 
 def test_amr_gui_start_failure_retains_active_ownership_if_cannot_close(monkeypatch):

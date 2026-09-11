@@ -17,6 +17,8 @@ Physical validation: **PENDING**. The protocol template is complete; physical ex
 
 Before physical execution, the operator must complete and sign these bench setup parameters. This document specifies no synthetic or universal pass criteria; acceptance limits must derive from instrument specifications, sensor calibrations, and laboratory safety standards.
 
+All numerical sweep examples below are illustrative, not bench authorization or universal acceptance limits. Replace them with approved values for the actual wiring, calibrated range and mechanical limits. The default 10000 Oe/V arithmetic is a software regression check, not a measured bench calibration. Record electrical shutdown commands separately from measured residual field; electrical zero does not imply zero field.
+
 | Required Record | Field / Setting | Status / Recorded Value |
 |---|---|---|
 | **Operator & Date** | Name, date, time of execution | PENDING |
@@ -76,10 +78,10 @@ In accordance with Section 13 of `MEASUREMENT_STANDARDIZATION_PLAN.md`:
 2. **Settings Preservation**:
    - Manually set sensitivity, time constant, and frequency on the lock-in front panel.
    - Run a test measurement with `initialize_lockin=False` (`readout_configuration="preserve"`).
-   - Verify front-panel settings remain completely unmodified; zero configuration commands sent to lock-in.
+   - Verify acquisition preserves the manually selected sensitivity, time constant, frequency and other readout settings. Record separately any changes required by the declared excitation shutdown procedure.
 3. **Excitation Shutdown Policy**:
-   - Provide an explicit physical excitation shutdown handler (e.g. reducing oscillator amplitude to 0.000 V or switching off external source).
-   - Verify that upon experiment completion, the excitation amplitude is physically verified as 0.000 V.
+   - Provide an explicit physical excitation shutdown handler using a supported bench procedure (for example, isolating sample excitation or disabling an external source). Record the actual action, verification method, acceptance limit and its justification; do not assume every lock-in supports a zero-amplitude command.
+   - Independently measure sample excitation after completion and Stop, and verify it meets that recorded limit. A successful software command alone is not evidence of physical shutdown.
 4. **Fault Injection & UNSAFE Retention**:
    - Inject a deliberate fault into the excitation shutdown handler (e.g. disconnecting lock-in communication prior to shutdown).
    - Verify system transitions to `SafetyStatus.UNSAFE`.
@@ -106,13 +108,13 @@ The following checklist must be completed and signed by the test operator before
 | Item # | Verification Parameter | Target Specification | Observed Physical Result | Status |
 |---|---|---|---|---|
 | 1 | **Stage 1: Stepper Endpoint Accuracy (AMR-ANGLE-001)** | Motor halts at final commanded angle with 0 extra steps | *Pending bench execution* | PENDING |
-| 2 | **Stage 1: Stepper Stop Latency** | Deceleration and full halt within < 500 ms of Stop click | *Pending bench execution* | PENDING |
+| 2 | **Stage 1: Stepper Stop Latency** | Record measured Stop-to-halt latency and compare with a justified bench limit, including any blocking motor command duration | *Pending bench execution* | PENDING |
 | 3 | **Stage 1: Stepper Disconnect Resilience** | Disconnect mid-rotation raises error without software lockup | *Pending bench execution* | PENDING |
 | 4 | **Stage 2: Field Calibration Accuracy (AMR-FIELD-001)** | Calibrated field vs. Hall readback within bench tolerance | *Pending bench execution* | PENDING |
 | 5 | **Stage 2: Bipolar Zero-Crossing** | Smooth transition through 0 Oe across negative fields | *Pending bench execution* | PENDING |
 | 6 | **Stage 2: Field Safing Residual Field** | Source commanded to 0 V; residual field <= bench limit | *Pending bench execution* | PENDING |
 | 7 | **Stage 3: Manual Lock-In Settings Preservation** | Front-panel sensitivity/time constant unchanged by run | *Pending bench execution* | PENDING |
-| 8 | **Stage 3: Physical Excitation Shutdown** | Excitation amplitude physically drops to 0.000 V on safe exit | *Pending bench execution* | PENDING |
+| 8 | **Stage 3: Physical Excitation Shutdown** | Independent measurement confirms excitation meets the declared, justified bench shutdown limit | *Pending bench execution* | PENDING |
 | 9 | **Stage 3: UNSAFE Connection Retention** | Shutdown failure retains handles, locks Run, defers window close | *Pending bench execution* | PENDING |
 | 10 | **Stage 4: Integrated Angle Sweep Fidelity** | $\cos^2(\theta)$ AMR curve observed on standard Permalloy film | *Pending bench execution* | PENDING |
 | 11 | **Stage 4: Schema v1 CSV Publication** | Atomic publish with plain columns and declared units | *Pending bench execution* | PENDING |
@@ -129,4 +131,4 @@ The following checklist must be completed and signed by the test operator before
   - Headless GUI interaction audit suite (`tests/test_measurement_amr_gui.py`): **35 passed** in 26.91s.
 - **Next Steps**:
   - Physical execution will be scheduled when physical bench instruments (stepper, electromagnet, lock-in) are physically cabled and operational.
-  - Offline work proceeds per roadmap to **Checkpoint 24d onward** (additional AMR electrical adapters) or **Checkpoint 27** (role-specific simulation contracts).
+  - Offline work proceeds to **Checkpoint 27** (role-specific simulation contracts); additional AMR electrical adapters remain separate later work.

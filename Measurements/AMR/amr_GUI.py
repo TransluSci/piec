@@ -272,39 +272,31 @@ class AMRApp(MeasurementApp):
 
         print("Autodetecting instruments... this may take a moment.")
         try:
-            from piec.drivers.autodetect import autodetect, _safe_close
+            from piec.drivers.autodetect import autodetect
             from piec.drivers.dmm.dmm import DMM
             from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
             from piec.drivers.stepper_motor.stepper_motor import Stepper
             from piec.drivers.lockin.lockin import Lockin
 
-            inst = autodetect(address="dmm", verbose=True, required_type=DMM)
-            if inst:
-                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-                self.dmm_address_entry.set(addr)
-                _safe_close(inst)
-                print(f"Detected DMM at {addr}")
-
-            inst = autodetect(address="dc_calibrator", verbose=True, required_type=DCCalibrator)
-            if inst:
-                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-                self.calibrator_address_entry.set(addr)
-                _safe_close(inst)
-                print(f"Detected Calibrator at {addr}")
-
-            inst = autodetect(address="stepper_motor", verbose=True, required_type=Stepper)
-            if inst:
-                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-                self.stepper_address_entry.set(addr)
-                _safe_close(inst)
-                print(f"Detected Stepper at {addr}")
-
-            inst = autodetect(address="lockin", verbose=True, required_type=Lockin)
-            if inst:
-                addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-                self.lockin_address_entry.set(addr)
-                _safe_close(inst)
-                print(f"Detected Lockin at {addr}")
+            for category, driver_type, entry in (
+                ("dmm", DMM, self.dmm_address_entry),
+                ("dc_calibrator", DCCalibrator, self.calibrator_address_entry),
+                ("stepper_motor", Stepper, self.stepper_address_entry),
+                ("lockin", Lockin, self.lockin_address_entry),
+            ):
+                inst = autodetect(address=category, verbose=True, required_type=driver_type)
+                if inst is None:
+                    continue
+                self._instruments.append(inst)
+                try:
+                    addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
+                    entry.set(addr)
+                    print(f"Detected {category} at {addr}")
+                finally:
+                    self._close_instruments()
+                    self.cleanup_controls()
+                if self._instruments:
+                    raise RuntimeError("Autodetect connection could not be closed; retained for explicit close retry.")
 
             print("Autodetect complete.")
         except Exception as error:
@@ -509,8 +501,8 @@ class AMRApp(MeasurementApp):
                 self.is_measuring = False
                 self._awaiting_terminal = False
                 self._terminal_event = None
-                self.cleanup_controls()
                 self._close_instruments()
+                self.cleanup_controls()
                 if hasattr(self, "status_label") and self.status_label is not None:
                     self.status_label.config(text="Idle")
             else:
