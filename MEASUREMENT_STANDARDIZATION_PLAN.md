@@ -631,6 +631,14 @@ Do not add a fictitious `read_waveform()` requirement to every oscilloscope driv
 
 ### 9.5 General AMR setups and the existing four-instrument profile
 
+Checkpoint 21 review corrections completed: FE measurement selection is locked
+while busy and queued selection events restore the active type. Failed startup
+without active ownership resets terminal-wait state and restores idle controls.
+Gated Hysteresis/PUND Stop-before-start tests require ABORTED/NOT_NEEDED with no
+configuration, acquisition or shutdown hooks. Targeted: 62 passed; full Agg:
+1546 passed, 1 skipped, 1 xfailed in 30.01s. Next is 24a only; physical 17/22
+remain PENDING.
+
 **Adapter review correction:** `bd0d10b` was labeled checkpoint 21 in error;
 its AMR role work belongs to 23/23a. The Section 13 numbering is authoritative:
 21 FE GUI hardening is next and still requires its audit; 22 FE physical record

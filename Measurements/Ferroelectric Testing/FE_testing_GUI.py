@@ -269,6 +269,10 @@ class FEMeasurementApp(MeasurementApp):
 
     def update_dynamic_inputs(self, event):
         if self._busy():
+            # Tk updates the combobox value before delivering its selection event.
+            selected = getattr(self, "_run_measurement_type", None)
+            if selected is not None and self.measurement_type.get() != selected:
+                self.measurement_type.set(selected)
             return
         # Save current dynamic values before clearing (so switching back preserves edits)
         dynamic_title = self.dynamic_frame.cget("text").strip()
@@ -400,6 +404,8 @@ class FEMeasurementApp(MeasurementApp):
                 self._plot_units = dict(self.experiment.column_units)
                 self._terminal_event = None
                 self.runner = MeasurementRunner(self.experiment)
+                self._run_measurement_type = self.measurement_type.get()
+                self.measurement_type.config(state="disabled")
                 self.run_button.config(state="disabled")
                 self.stop_button.config(state="normal")
                 self.status_label.config(text="Running")
@@ -409,7 +415,12 @@ class FEMeasurementApp(MeasurementApp):
         except Exception as error:
             messagebox.showerror("FE measurement error", str(error))
             if self.runner is None or self.runner.can_close():
+                # Validation can fail before reservation, so no terminal event
+                # is guaranteed. Reset the GUI latch only after ownership ends.
+                self._awaiting_terminal = False
+                self._terminal_event = None
                 self._close_instruments()
+                self.measurement_type.config(state="readonly")
                 self.run_button.config(state="normal")
                 self.stop_button.config(state="disabled")
 
@@ -700,6 +711,7 @@ class FEMeasurementApp(MeasurementApp):
                 self.update_dynamic_defaults()
                 if self.runner.can_close():
                     self._close_instruments()
+                    self.measurement_type.config(state="readonly")
                     if hasattr(self, "run_button") and self.run_button is not None:
                         self.run_button.config(state="normal")
 

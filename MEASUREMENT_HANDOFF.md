@@ -5,6 +5,30 @@ Next: **checkpoint 24a only, MagnetoTransport lifecycle and consumers**, as numb
 Checkpoint 22 is the FE physical record; without hardware execution record it
 remains PENDING. Checkpoint 17 also remains explicitly PENDING.
 
+## Checkpoint 21 review corrections
+
+- Measurement selection is disabled while a run owns the instruments and restored
+  only when they can be released safely. A queued combobox event restores the
+  active run's type, keeping the selected type and dynamic fields consistent.
+- A startup failure with no active ownership clears the pending-terminal latch,
+  closes the GUI-owned connections, and restores idle controls. This handles both
+  pre-reservation failures with no terminal event and failed thread launch with a
+  terminal event. Active/unsafe ownership still blocks reuse and close.
+- Stop-before-start tests gate the worker before lifecycle execution, request Stop,
+  then release it. Both Hysteresis and PUND must finish ABORTED/NOT_NEEDED without
+  calling configuration, acquisition or shutdown hooks; timing races cannot turn
+  the test into a normal in-flight Stop.
+- Targeted review suites: 62 passed. Full suite with Agg: **1546 passed,
+  1 skipped, 1 xfailed** in 30.01s. No physical hardware was used.
+
+Proceed with **checkpoint 24a only: MagnetoTransport lifecycle and consumers**.
+Use the shared engine and the reviewed AMR roles, preserve manual lock-in settings,
+validate the declared excitation shutdown policy before energizing, and propagate
+role shutdown errors to UNSAFE while retaining connections. Update the 24a
+consumers and meaningful lifecycle/fault tests, commit separately, then stop for
+review. Keep the endpoint-step repair (AMR-ANGLE-001) for 24b and physical records
+17/22 PENDING; do not roll acquisition/schema/GUI migration into this commit.
+
 ## Checkpoint 21: FE GUI interaction/ownership hardening
 
 - **Pre-Connection Parameter Validation**: Enforced strict parameter validation in `FEMeasurementApp._create_experiment()` before any hardware driver (`VirtualAwg`, `VirtualScope`, `Keysight81150a`, `KeysightDSOX3024a`) is instantiated. Rejects non-finite, zero, or negative values across all static and dynamic inputs (`vdiv`, `area` expression, `time_offset`, `frequency`, `amplitude`, `offset`, `n_cycles`, `reset_amp`, `reset_width`, `reset_delay`, `p_u_amp`, `p_u_width`, `p_u_delay`). If validation fails, `self._instruments` remains empty, guaranteeing zero connection leaks.

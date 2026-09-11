@@ -15,6 +15,7 @@ for both HysteresisLoop and ThreePulsePund:
 """
 
 import importlib.util
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 import numpy as np
@@ -318,25 +319,41 @@ def test_fe_gui_save_policy(tmp_path):
         mock_start.assert_called_once_with(save=True)
 
 
-def test_fe_gui_stop_before_start():
+@pytest.mark.parametrize("meas_type", ["HysteresisLoop", "ThreePulsePund"])
+def test_fe_gui_stop_before_start(meas_type):
     """Verify Stop-before-start aborts with zero hardware I/O."""
-    app = make_headless_fe_gui("HysteresisLoop")
+    app = make_headless_fe_gui(meas_type)
+    entered, release = threading.Event(), threading.Event()
+    original_entry = MeasurementRunner._worker_entry
 
-    original_start = MeasurementRunner.start
+    def gated_entry(runner_self, *args):
+        entered.set()
+        assert release.wait(5)
+        original_entry(runner_self, *args)
 
-    def stopping_start(runner_self, *args, **kwargs):
-        token = original_start(runner_self, *args, **kwargs)
-        app.stop_measurement()
-        return token
-
-    with patch.object(MeasurementRunner, "start", stopping_start):
+    with patch.object(MeasurementRunner, "_worker_entry", gated_entry):
         app.run_measurement()
-
-    assert app.runner.join(timeout=5)
+    try:
+        assert entered.wait(5)
+        # All measurement instrument I/O is behind these lifecycle hooks.
+        # Install spies while execution is gated, before requesting Stop.
+        with patch.object(app.experiment, "_configure_instruments") as configure, \
+             patch.object(app.experiment, "_capture_data") as capture, \
+             patch.object(app.experiment, "_safe_shutdown") as shutdown:
+            app.stop_measurement()
+            release.set()
+            assert app.runner.join(timeout=5)
+            configure.assert_not_called()
+            capture.assert_not_called()
+            shutdown.assert_not_called()
+    finally:
+        release.set()
+        app.stop_measurement()
+        app.runner.join(timeout=5)
     app._poll_events()
 
     assert app.runner.run_state == RunState.ABORTED
-    assert app.runner.safety_status in (SafetyStatus.NOT_NEEDED, SafetyStatus.SAFE)
+    assert app.runner.safety_status == SafetyStatus.NOT_NEEDED
     assert app.runner.can_close()
     assert len(app._instruments) == 0
 
