@@ -70,7 +70,7 @@ Suggested implementation prompt:
 | 20a | Completed | Standardized `DiscreteWaveform` base acquisition onto `BaseMeasurement` shared lifecycle with zero constructor I/O, WaveformReader oscilloscope adapter, strict trigger order, and attempt-all safing. Targeted suites: 294 passed; full suite with Agg: 1367 passed, 1 skipped, 2 xfailed. Checkpoint 17 physical validation remains PENDING. |
 | 20b | Completed | Standardized `HysteresisLoop` onto `DiscreteWaveform` and `BaseMeasurement` with in-memory scientific processing (`process_hysteresis`), plain schema `hysteresis` v1 columns/units, multi-artifact plot staging (`_PV.png`, `_IV.png`, `_trace.png`), and runner-based GUI with in-memory plotting and safe close coordination. Retired private file bridge `_process_raw_hyst_file`. Full suite with Agg: 1393 passed, 1 skipped, 2 xfailed. Checkpoint 17 physical validation remains PENDING. |
 | 20c | Completed | Standardized `ThreePulsePund` onto `DiscreteWaveform` and `BaseMeasurement` with in-memory scientific processing (`process_pund`), plain schema `three_pulse_pund` v1 columns/units, multi-artifact plot staging (`_dPvst.png`, `_trace.png`), and runner-based GUI with in-memory plotting and safe close coordination. Retired private file bridge `_process_raw_3pp_file` and removed `_LegacyWaveformSupport`. Full suite: 1411 passed, 1 skipped, 2 xfailed in 28.18s. Checkpoint 17 physical validation remains PENDING. Checkpoint 21 is next. |
-| 21 | Completed | Implemented AMR setup-role adapters (`FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, `AMRSetupProfile`) with default preservation of manual lock-in settings (`readout_configuration="preserve"`), internal/external excitation, linear/table/native field modes, tolerance verification across zero/negative fields, and attempt-all safing. Repaired `AMR-FIELD-001` in `convert_field_to_voltage` and added `convert_voltage_to_field`. Added 37 comprehensive contract and virtual driver tests in `tests/test_amr_contract.py`. Full suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2. Checkpoint 17 physical validation remains PENDING. |
+| 23/23a (implemented early; original commit mislabeled 21) | Reviewed adapter implementation | Implemented AMR setup-role adapters (`FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, `AMRSetupProfile`) with default preservation of manual lock-in settings (`readout_configuration="preserve"`), internal/external excitation, linear/table/native field modes, tolerance verification across zero/negative fields, and attempt-all safing. Repaired `AMR-FIELD-001` in `convert_field_to_voltage` and added `convert_voltage_to_field`. Added 37 comprehensive contract and virtual driver tests in `tests/test_amr_contract.py`. Full suite with Agg: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2. Checkpoint 17 physical validation remains PENDING. |
 
 
 Checkpoint 16 review completed: geometry choices now restore independent session-local
@@ -628,6 +628,23 @@ Existing `get_data()` signatures and returned column names differ. Measurements 
 Do not add a fictitious `read_waveform()` requirement to every oscilloscope driver, and do not make scientific measurement code parse driver-specific tables.
 
 ### 9.5 General AMR setups and the existing four-instrument profile
+
+**Adapter review correction:** `bd0d10b` was labeled checkpoint 21 in error;
+its AMR role work belongs to 23/23a. The Section 13 numbering is authoritative:
+21 FE GUI hardening is next and still requires its audit; 22 FE physical record
+remains PENDING without actual execution. AMR lifecycle work starts at 24a.
+
+The current role API requires an explicit no-argument excitation shutdown_handler
+for confirmed software safing, independent of preserve/configure. A missing
+handler or any failed role action must remain unconfirmed/UNSAFE at lifecycle
+integration; do not release ownership on an error result. External excitation
+requires a named external_source_owner. Manual external ownership alone does not
+confirm shutdown. Generic software-controlled external-source configuration,
+limits and device ownership remain a separate tested adapter requirement.
+Calibrated sources select V/A output mode explicitly; analog DMM readers currently
+require V. Native field methods have no voltage fallback. Source/readback units
+must match exactly unless a separate explicit conversion adapter is supplied.
+
 
 AMR studies electrical transport versus orientation under declared magnetic-field and excitation conditions. The angle recorded is the apparatus/sample-current geometry, not a claim to have independently measured the magnetization direction. Retain this geometry definition and the angle zero in metadata. A simple cos-squared response is a test model, not an assumption to impose on every sample.
 

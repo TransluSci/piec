@@ -1,22 +1,56 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. Checkpoint 21 is complete. Checkpoint 17
-physical validation remains explicitly **PENDING**. Next is
-**checkpoint 22: FE physical record (PENDING)** or subsequent AMR lifecycle checkpoints,
-following the measurement standardization plan. Validate and commit checkpoints separately.
+**Uncommitted review fixes: validate and commit these before proceeding.**
+The last full Agg run had 1494 passed, 1 skipped, 1 xfailed and two failures
+from outdated commanded_field assertions. Those assertions are now corrected;
+an additional computed-output overflow regression was also added. The final
+rerun was blocked by automatic approval review reporting a usage limit.
+Therefore the current working tree is not yet fully verified. Run the targeted
+AMR suites and full suite with Agg, resolve any failures, and commit the review
+corrections separately before starting checkpoint 21. Do not discard these edits.
 
-## Checkpoint 21 AMR driver and field angle contract
+Continue on `measuremnt-standarization`. **Next: checkpoint 21 only, FE GUI
+interaction/ownership hardening**, as numbered in the Section 13 roadmap.
+The AMR adapter commit `bd0d10b` was mislabeled checkpoint 21; it belongs to
+checkpoint 23/23a and was implemented early. Do not skip the FE GUI audit.
+Checkpoint 22 is the FE physical record; without hardware execution record it
+must be PENDING. Checkpoint 17 also remains explicitly PENDING.
 
-- **AMR Setup Roles & Profile**: Implemented `FieldSource`, `FieldReader`, `TransportReadout`, `OrientationController`, and composite `AMRSetupProfile` in `piec.measurement.adapters.amr` and re-exported in `piec.measurement.adapters` and `piec.measurement.amr`.
-- **Manual Lock-In Setting Preservation**: Default profile policy is strictly `readout_configuration="preserve"`, sending no `initialize()`, `reset()`, clear, autorange, or parameter writes to the lock-in, preserving manual front-panel operator settings per agreed lab workflow. Automated configuration is only triggered when `readout_configuration="configure"`.
-- **Internal & External Excitation**: Automated mode configures oscillator reference when `excitation_source="internal"`, and suppresses oscillator writes when `excitation_source="external"`.
-- **Field Calibration & Command Modes**: `FieldSource` supports linear scaling (`calibration=10000.0` Oe/V default, $V = H / \text{cal}$), lookup tables via `FieldCalibration` (`output_at_field`), and native field controllers (`calibration="native"`), bounded by optional `field_range` and `output_range`. Safe shutdown de-energizes output to 0.0 V, disables output, and retains open connection.
-- **Sensor Readback & Tolerance**: `FieldReader` supports linear sensor factors, `FieldCalibration.field_at_output`, and native fields. Field verification checks `abs(actual - target) <= absolute_tolerance + relative_tolerance * abs(target)`, valid across positive, zero, and negative fields, with configurable `"warn"` or `"raise"` policy.
-- **Orientation Control**: `OrientationController` converts commanded angles to steps via `convert_angle_to_steps`, manages CW (`1`) and CCW (`0`) directions, tracks cumulative position with residual-step awareness, respects `angle_limits`, and observes `settling_time`.
-- **Attempt-All Safe Shutdown**: `AMRSetupProfile` orchestrates the four roles (`dmm`, `calibrator`, `arduino`, `lockin`), deduplicates unique physical instruments, and executes attempt-all safing without closing open connections.
-- **Defect Repair**: Repaired `AMR-FIELD-001` in `convert_field_to_voltage` (divides by `voltage_calibration` instead of multiplying by 0.1; 100 Oe gives 0.01 V). Added `convert_voltage_to_field`. Standardized `convert_angle_to_steps` and `convert_steps_to_angle`. Removed `xfail` from `test_convert_field_to_voltage_matches_documented_calibration` in `tests/test_measurement_amr_compatibility.py`. `AMR-ANGLE-001` remains tracked and xfailed until Checkpoint 24b.
-- **Validation**: Dedicated contract test suite `tests/test_amr_contract.py` (37 passed) verifying conversion math, input validation, setup roles, profiles, and integration with virtual drivers (`VirtualCalibrator`, `VirtualDMM`, `VirtualStepper`, `VirtualLockin`). Full test suite with Agg backend: **1478 passed, 1 skipped, 1 xfailed** in 28.54s on Python 3.13.2.
-- **Physical Validation**: Checkpoint 17 physical validation remains explicitly **PENDING**.
+## AMR adapter review corrections (checkpoint 23/23a work performed early)
+
+- Native field commands/readers use only set_field/get_field. Electrical sources
+  explicitly select voltage or current from calibration units. Analog DMM
+  readback supports voltage calibration only; unsupported current sensing is
+  rejected. Source and reader field units must match exactly; callers must use
+  an explicit conversion adapter for different units, never relabel H/B.
+- Shutdown exceptions reach the profile's per-role error results while remaining
+  roles are attempted. Connections are retained. Electrical zero does not imply
+  zero calibrated field; failed source shutdown clears optimistic state.
+- TransportReadout/from_instruments accept a no-argument shutdown_handler for
+  the actual bench excitation safe action, independent of preserve/configure.
+  The handler must raise on failure and remain on the instrument-owning worker.
+  No lock-in is assumed to support zero oscillator amplitude. Missing handlers
+  report shutdown unconfirmed, never safe. During lifecycle integration, validate
+  required handlers before energizing and propagate any role error to UNSAFE.
+- Preserve mode still sends no configuration writes. Configure mode explicitly
+  selects internal/external reference without resetting unrelated settings.
+  External mode sends no oscillator amplitude/frequency commands and requires
+  external_source_owner naming who controls/de-energizes the source. A manually
+  owned source without a handler remains unconfirmed. No generic software-owned
+  external source lifecycle is advertised; binding/configuration/limits/ownership
+  of such a source needs a dedicated tested setup adapter.
+- Quantized motor positions are checked against limits before I/O. Nonfinite
+  bounds, tolerances, timing and excitation numbers are rejected.
+- The original successful virtual workflow does not prove physical excitation
+  shutdown. The virtual test now explicitly checks the unconfirmed result.
+
+For checkpoint 21: audit the FE GUI for Hysteresis and PUND against the roadmap,
+including virtual selection, settings, Stop-before-start, active close, worker
+ownership, main-thread plotting, save policies and terminal/error behavior.
+Reuse the existing runner integration. Add meaningful regressions for gaps,
+update the plan/handoff, commit this checkpoint separately, and stop for review.
+Do not start AMR lifecycle checkpoint 24a in the same commit. AMR-ANGLE-001 stays
+tracked until 24b; do not mark the entire AMR migration complete.
 
 ## Checkpoint 20c PUND integration and consumers
 
@@ -29,7 +63,7 @@ following the measurement standardization plan. Validate and commit checkpoints 
 - **Consumer Updates**: Updated `Measurements/Ferroelectric Testing/FE_testing.ipynb` cells 21, 26, 29, 30 to use `output_dir` and plain column lookups (`delta_polarization`, `time`).
 - **Validation**: Dedicated test suites `tests/test_measurement_pund.py` (13 passed) and `tests/test_pund_review.py` (6 passed) covering lifecycle, zero constructor I/O, parameter validation, plot artifact generation and suppression, cooperative cancellation, safe shutdown, runner integration, and GUI connection retention. Full test suite: **1411 passed, 1 skipped, 2 xfailed** in 28.18s on Python 3.13.2.
 - **Physical Validation**: Hardware testing was not performed; Checkpoint 17 physical validation remains explicitly **PENDING**.
-- **Next Step**: Stop after checkpoint 20c. Proceed with **checkpoint 21 only: AMR driver and field angle contract** once authorized.
+- **Next Step**: Stop after checkpoint 20c. Proceed with **checkpoint 21 only: FE GUI interaction/ownership hardening** once authorized.
 
 ## Checkpoint 20b review corrections
 

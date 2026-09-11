@@ -170,21 +170,21 @@ class TestFieldSourceAdapter:
         assert res == 500.0
         assert source.commanded_field == 500.0
         assert source.current_output == pytest.approx(0.05)
-        inst.set_output.assert_called_once_with(pytest.approx(0.05))
+        inst.set_output.assert_called_once_with(pytest.approx(0.05), mode="voltage")
 
         # Set negative field
         inst.reset_mock()
         source.set_field(-200.0)
         assert source.commanded_field == -200.0
         assert source.current_output == pytest.approx(-0.02)
-        inst.set_output.assert_called_once_with(pytest.approx(-0.02))
+        inst.set_output.assert_called_once_with(pytest.approx(-0.02), mode="voltage")
 
         # Set zero field
         inst.reset_mock()
         source.set_field(0.0)
         assert source.commanded_field == 0.0
         assert source.current_output == pytest.approx(0.0)
-        inst.set_output.assert_called_once_with(0.0)
+        inst.set_output.assert_called_once_with(0.0, mode="voltage")
 
     def test_field_source_table_mode(self):
         cal = FieldCalibration([(-0.1, -1000.0), (0.0, 0.0), (0.1, 1000.0)], output_unit="V", field_unit="Oe")
@@ -195,7 +195,7 @@ class TestFieldSourceAdapter:
         source.set_field(500.0)
         assert source.commanded_field == 500.0
         assert source.current_output == pytest.approx(0.05)
-        inst.set_output.assert_called_with(pytest.approx(0.05))
+        inst.set_output.assert_called_with(pytest.approx(0.05), mode="voltage")
 
         # Outside calibration range raises ValueError
         with pytest.raises(ValueError, match="outside the calibrated range"):
@@ -242,9 +242,9 @@ class TestFieldSourceAdapter:
         source.set_field(500.0)
 
         source.safe_shutdown()
-        assert source.commanded_field == 0.0
+        assert source.commanded_field is None
         assert source.current_output == 0.0
-        inst.set_output.assert_called_with(0.0)
+        inst.set_output.assert_called_with(0.0, mode="voltage")
         inst.output.assert_called_once_with(on=False)
         # Connection NOT closed
         assert not hasattr(inst, "close") or inst.close.call_count == 0
@@ -262,9 +262,9 @@ class TestFieldReaderAdapter:
             FieldReader(None)
 
         inst = Mock()
-        with pytest.raises(ValueError, match="absolute_tolerance must be non-negative"):
+        with pytest.raises(ValueError, match="absolute_tolerance must be finite"):
             FieldReader(inst, absolute_tolerance=-1.0)
-        with pytest.raises(ValueError, match="relative_tolerance must be non-negative"):
+        with pytest.raises(ValueError, match="relative_tolerance must be finite"):
             FieldReader(inst, relative_tolerance=-0.1)
         with pytest.raises(ValueError, match="mismatch_policy must be"):
             FieldReader(inst, mismatch_policy="ignore")
@@ -370,8 +370,8 @@ class TestTransportReadoutAdapter:
         )
 
         readout.configure()
-        lockin.initialize.assert_called_once()
-        lockin.configure_reference.assert_called_once_with(voltage=0.5, frequency=13.0)
+        lockin.initialize.assert_not_called()
+        lockin.configure_reference.assert_called_once_with(source="internal", voltage=0.5, frequency=13.0)
         lockin.configure_input.assert_called_once_with(input_configuration="a-b")
         lockin.configure_gain_filters.assert_called_once_with(sensitivity="100uv/pa")
 
@@ -381,12 +381,13 @@ class TestTransportReadoutAdapter:
             lockin,
             readout_configuration="configure",
             excitation_source="external",
+            external_source_owner="bench operator",
             sensitivity="200uv/pa",
         )
 
         readout.configure()
         # External excitation does NOT send internal oscillator reference settings
-        assert lockin.configure_reference.call_count == 0
+        lockin.configure_reference.assert_called_once_with(source="external")
         lockin.configure_input.assert_called_once()
         lockin.configure_gain_filters.assert_called_once_with(sensitivity="200uv/pa")
 
@@ -431,15 +432,18 @@ class TestTransportReadoutAdapter:
 
     def test_transport_readout_safe_shutdown(self):
         lockin = Mock()
-        # Preserve mode: no shutdown write
-        readout_preserve = TransportReadout(lockin, readout_configuration="preserve")
-        readout_preserve.safe_shutdown()
-        assert lockin.configure_reference.call_count == 0
-
-        # Configure mode internal: zeroes excitation
-        readout_cfg = TransportReadout(lockin, readout_configuration="configure", excitation_source="internal")
-        readout_cfg.safe_shutdown()
-        lockin.configure_reference.assert_called_once_with(voltage=0.0)
+        # Safing is independent of settings preservation and propagates failure.
+        shutdown = Mock()
+        for policy in ("preserve", "configure"):
+            readout = TransportReadout(lockin, readout_configuration=policy, shutdown_handler=shutdown)
+            if policy == "preserve":
+                readout.configure()
+            readout.safe_shutdown()
+        assert shutdown.call_count == 2
+        lockin.configure_reference.assert_not_called()
+        shutdown.side_effect = RuntimeError("relay failure")
+        with pytest.raises(RuntimeError, match="relay failure"):
+            readout.safe_shutdown()
 
 
 # ============================================================================
@@ -586,6 +590,7 @@ class TestAMRSetupProfileContract:
             arduino=stepper,
             lockin=lockin,
             readout_configuration="configure",
+            shutdown_handler=Mock(),
         )
 
         # Safing attempts all roles even if calibrator raises error
@@ -642,8 +647,9 @@ class TestVirtualDriverIntegration:
         assert math.isfinite(signals["y"])
 
         # 4. Safe shutdown
-        profile.safe_shutdown()
-        assert profile.field_source.commanded_field == 0.0
+        results = profile.safe_shutdown()
+        assert "unconfirmed" in results["transport_readout"]
+        assert profile.field_source.commanded_field is None
         assert profile.field_source.current_output == 0.0
         # VirtualCalibrator output disabled
         assert getattr(cal, "_output_enabled", None) is False

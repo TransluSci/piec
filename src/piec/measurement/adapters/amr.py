@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import warnings
 
 import numpy as np
@@ -25,6 +25,25 @@ from piec.measurement.magneto_transport import (
     convert_field_to_voltage,
     convert_voltage_to_field,
 )
+
+
+def _finite(value, name, minimum=None):
+    value = float(value)
+    if not math.isfinite(value) or (minimum is not None and value < minimum):
+        requirement = "finite" if minimum is None else f"finite and >= {minimum}"
+        raise ValueError(f"{name} must be {requirement}")
+    return value
+
+
+def _limits(value, name):
+    if value is None:
+        return None
+    if len(value) != 2:
+        raise ValueError(f"{name} must be (min, max)")
+    low, high = (_finite(v, name) for v in value)
+    if low > high:
+        raise ValueError(f"{name} must be (min, max)")
+    return low, high
 
 
 class FieldSource:
@@ -73,19 +92,14 @@ class FieldSource:
                 f"calibration must be a positive float, FieldCalibration instance, or 'native', got {type(calibration).__name__}"
             )
 
-        if field_range is not None:
-            if len(field_range) != 2 or field_range[0] > field_range[1]:
-                raise ValueError(f"field_range must be (min_field, max_field), got {field_range!r}")
-            self.field_range: Optional[Tuple[float, float]] = (float(field_range[0]), float(field_range[1]))
-        else:
-            self.field_range = None
-
-        if output_range is not None:
-            if len(output_range) != 2 or output_range[0] > output_range[1]:
-                raise ValueError(f"output_range must be (min_output, max_output), got {output_range!r}")
-            self.output_range: Optional[Tuple[float, float]] = (float(output_range[0]), float(output_range[1]))
-        else:
-            self.output_range = None
+        self.field_range = _limits(field_range, "field_range")
+        self.output_range = _limits(output_range, "output_range")
+        if not self.field_unit.strip():
+            raise ValueError("field_unit must be non-empty")
+        if self.mode == "native":
+            self.output_unit = self.field_unit
+        elif self.output_unit not in ("V", "A"):
+            raise ValueError("output_unit must be V or A")
 
         self.commanded_field: Optional[float] = None
         self.current_output: Optional[float] = None
@@ -112,6 +126,7 @@ class FieldSource:
         else:
             raise RuntimeError(f"Unknown FieldSource mode: {self.mode}")
 
+        output_val = _finite(output_val, "computed output")
         if self.output_range is not None:
             if output_val < self.output_range[0] or output_val > self.output_range[1]:
                 raise ValueError(
@@ -123,24 +138,18 @@ class FieldSource:
     def set_field(self, field: float) -> float:
         """Set the magnetic field on the underlying instrument."""
         output_val = self.compute_output(field)
-        if self.mode == "native":
-            if hasattr(self.instrument, "set_field"):
-                self.instrument.set_field(output_val)
-            elif hasattr(self.instrument, "set_output"):
-                self.instrument.set_output(output_val)
-            else:
-                raise AttributeError(f"Instrument {self.instrument!r} has neither set_field nor set_output")
-        else:
-            if hasattr(self.instrument, "set_output"):
-                self.instrument.set_output(output_val)
-            elif hasattr(self.instrument, "set_field"):
-                self.instrument.set_field(output_val)
-            else:
-                raise AttributeError(f"Instrument {self.instrument!r} does not have set_output")
+        self._write_output(output_val)
 
         self.commanded_field = float(field)
         self.current_output = output_val
         return self.commanded_field
+
+    def _write_output(self, value):
+        # Never substitute electrical output for a native field command.
+        if self.mode == "native":
+            self.instrument.set_field(value)
+        else:
+            self.instrument.set_output(value, mode={"V": "voltage", "A": "current"}[self.output_unit])
 
     def safe_shutdown(self) -> None:
         """
@@ -152,10 +161,7 @@ class FieldSource:
         """
         errors = []
         try:
-            if hasattr(self.instrument, "set_output"):
-                self.instrument.set_output(0.0)
-            elif hasattr(self.instrument, "set_field"):
-                self.instrument.set_field(0.0)
+            self._write_output(0.0)
         except Exception as exc:
             errors.append(exc)
 
@@ -163,19 +169,15 @@ class FieldSource:
         if callable(output_fn):
             try:
                 output_fn(on=False)
-            except TypeError:
-                try:
-                    output_fn(False)
-                except Exception as exc:
-                    errors.append(exc)
             except Exception as exc:
                 errors.append(exc)
 
-        self.commanded_field = 0.0
-        self.current_output = 0.0
-
         if errors:
+            self.commanded_field = None
+            self.current_output = None
             raise RuntimeError(f"FieldSource safe_shutdown encountered errors: {errors}")
+        self.commanded_field = None  # electrical zero need not mean zero calibrated field
+        self.current_output = 0.0
 
     def de_energize(self) -> None:
         """Alias for safe_shutdown."""
@@ -229,12 +231,12 @@ class FieldReader:
                 f"calibration must be a positive float, FieldCalibration instance, or 'native', got {type(calibration).__name__}"
             )
 
-        if absolute_tolerance < 0:
-            raise ValueError(f"absolute_tolerance must be non-negative, got {absolute_tolerance!r}")
-        if relative_tolerance < 0:
-            raise ValueError(f"relative_tolerance must be non-negative, got {relative_tolerance!r}")
-        self.absolute_tolerance = float(absolute_tolerance)
-        self.relative_tolerance = float(relative_tolerance)
+        if not self.field_unit.strip():
+            raise ValueError("field_unit must be non-empty")
+        if self.mode != "native" and self.sensor_unit != "V":
+            raise ValueError("Analog field reader requires a voltage calibration (V)")
+        self.absolute_tolerance = _finite(absolute_tolerance, "absolute_tolerance", 0)
+        self.relative_tolerance = _finite(relative_tolerance, "relative_tolerance", 0)
 
         policy = str(mismatch_policy).lower()
         if policy not in ("warn", "raise"):
@@ -252,20 +254,9 @@ class FieldReader:
             Tuple[float, float]: (measured_field, timestamp)
         """
         if self.mode == "native":
-            if hasattr(self.instrument, "get_field"):
-                raw = self.instrument.get_field()
-            elif hasattr(self.instrument, "get_voltage"):
-                raw = self.instrument.get_voltage()
-            else:
-                raise AttributeError(f"Instrument {self.instrument!r} has neither get_field nor get_voltage")
-            field_val = float(raw)
+            field_val = float(self.instrument.get_field())
         else:
-            if hasattr(self.instrument, "get_voltage"):
-                v_raw = self.instrument.get_voltage()
-            elif hasattr(self.instrument, "get_field"):
-                v_raw = self.instrument.get_field()
-            else:
-                raise AttributeError(f"Instrument {self.instrument!r} does not have get_voltage")
+            v_raw = self.instrument.get_voltage()
 
             v = float(v_raw)
             if not math.isfinite(v):
@@ -343,6 +334,8 @@ class TransportReadout:
         measure_time: float = 1.0,
         sample_interval: float = 0.1,
         name: str = "lockin",
+        shutdown_handler: Optional[Callable[[], None]] = None,
+        external_source_owner: Optional[str] = None,
     ):
         if instrument is None:
             raise ValueError("instrument must not be None")
@@ -363,12 +356,18 @@ class TransportReadout:
             raise ValueError(f"excitation_source must be 'internal' or 'external', got {excitation_source!r}")
         self.excitation_source = exc
 
-        self.amplitude = float(amplitude)
-        self.frequency = float(frequency)
+        if shutdown_handler is not None and not callable(shutdown_handler):
+            raise TypeError("shutdown_handler must be callable")
+        if exc == "external" and not str(external_source_owner or "").strip():
+            raise ValueError("external_source_owner must name who controls and de-energizes the external source")
+        self.shutdown_handler = shutdown_handler
+        self.external_source_owner = external_source_owner
+        self.amplitude = _finite(amplitude, "amplitude", 0)
+        self.frequency = _finite(frequency, "frequency", 0)
         self.sensitivity = str(sensitivity)
         self.input_configuration = str(input_configuration)
-        self.measure_time = float(measure_time)
-        self.sample_interval = float(sample_interval)
+        self.measure_time = _finite(measure_time, "measure_time", 0)
+        self.sample_interval = _finite(sample_interval, "sample_interval", 0)
         self.name = str(name)
 
     def configure(self) -> None:
@@ -382,22 +381,13 @@ class TransportReadout:
             # Confirmed lab workflow: NEVER overwrite manual settings!
             return
 
-        # Automated configuration mode:
+        # Select reference explicitly, without resetting unrelated settings.
         if self.excitation_source == "internal":
-            init_fn = getattr(self.instrument, "initialize", None)
-            if callable(init_fn):
-                init_fn()
-            cfg_ref = getattr(self.instrument, "configure_reference", None)
-            if callable(cfg_ref):
-                cfg_ref(voltage=self.amplitude, frequency=self.frequency)
-
-        cfg_inp = getattr(self.instrument, "configure_input", None)
-        if callable(cfg_inp):
-            cfg_inp(input_configuration=self.input_configuration)
-
-        cfg_gain = getattr(self.instrument, "configure_gain_filters", None)
-        if callable(cfg_gain):
-            cfg_gain(sensitivity=self.sensitivity)
+            self.instrument.configure_reference(source="internal", voltage=self.amplitude, frequency=self.frequency)
+        else:
+            self.instrument.configure_reference(source="external")
+        self.instrument.configure_input(input_configuration=self.input_configuration)
+        self.instrument.configure_gain_filters(sensitivity=self.sensitivity)
 
     def read_signals(self) -> Dict[str, float]:
         """
@@ -440,6 +430,8 @@ class TransportReadout:
         duration = self.measure_time if measure_time is None else float(measure_time)
         dt = self.sample_interval if sample_interval is None else float(sample_interval)
 
+        duration = _finite(duration, "measure_time", 0)
+        dt = _finite(dt, "sample_interval", 0)
         if duration <= 0 or dt <= 0:
             return self.read_signals()
 
@@ -458,20 +450,17 @@ class TransportReadout:
         return {"x": float(np.mean(x_list)), "y": float(np.mean(y_list))}
 
     def safe_shutdown(self) -> None:
-        """
-        Safing for electrical readout.
+        """Run the setup's declared excitation shutdown independently of configure policy.
 
-        When configured automatically with internal excitation, sets oscillator amplitude to 0.
-        When preserving manual configuration, leaves excitation alone.
-        Preserves connection open (does NOT close connection).
+        A lock-in is not assumed to support zero amplitude or output disable.
+        Supply a no-argument handler that performs the bench's actual safe action
+        and raises on failure. Without one, safety remains unconfirmed, including
+        for a manually controlled external source. Connections stay open.
         """
-        if self.readout_configuration == "configure" and self.excitation_source == "internal":
-            cfg_ref = getattr(self.instrument, "configure_reference", None)
-            if callable(cfg_ref):
-                try:
-                    cfg_ref(voltage=0.0)
-                except Exception:
-                    pass
+        if self.shutdown_handler is None:
+            raise RuntimeError("Excitation shutdown unconfirmed: a setup shutdown_handler is required; "
+                               f"owner={self.external_source_owner or 'internal excitation operator'}")
+        self.shutdown_handler()
 
 
 class OrientationController:
@@ -500,14 +489,8 @@ class OrientationController:
             raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
         self.steps_per_revolution = int(steps_per_revolution)
 
-        if angle_limits is not None:
-            if len(angle_limits) != 2 or angle_limits[0] > angle_limits[1]:
-                raise ValueError(f"angle_limits must be (min_angle, max_angle), got {angle_limits!r}")
-            self.angle_limits: Optional[Tuple[float, float]] = (float(angle_limits[0]), float(angle_limits[1]))
-        else:
-            self.angle_limits = None
-
-        self.settling_time = max(0.0, float(settling_time))
+        self.angle_limits = _limits(angle_limits, "angle_limits")
+        self.settling_time = _finite(settling_time, "settling_time", 0)
         self.cw_direction = int(cw_direction)
         self.ccw_direction = int(ccw_direction)
         self.name = str(name)
@@ -535,6 +518,9 @@ class OrientationController:
         delta_angle = target_f - self.current_angle
         # Compute steps needed
         steps = convert_angle_to_steps(delta_angle, self.steps_per_revolution)
+        achieved = self.current_angle + convert_steps_to_angle(steps, self.steps_per_revolution)
+        if self.angle_limits is not None and not self.angle_limits[0] <= achieved <= self.angle_limits[1]:
+            raise ValueError(f"Quantized angle {achieved} is outside angle_limits {self.angle_limits}")
         if steps != 0:
             direction = self.cw_direction if steps > 0 else self.ccw_direction
             num_steps = abs(steps)
@@ -558,19 +544,17 @@ class OrientationController:
 
     def set_zero(self, angle: float = 0.0) -> None:
         """Reset internal angle tracking to zero or declared value."""
-        self.current_angle = float(angle)
+        angle = _finite(angle, "angle")
         set_zero_fn = getattr(self.instrument, "set_zero", None)
         if callable(set_zero_fn):
             set_zero_fn()
+        self.current_angle = angle
 
     def safe_shutdown(self) -> None:
         """Halt motion if supported. Preserves connection open."""
         halt_fn = getattr(self.instrument, "halt", None) or getattr(self.instrument, "stop", None)
         if callable(halt_fn):
-            try:
-                halt_fn()
-            except Exception:
-                pass
+            halt_fn()
 
 
 class AMRSetupProfile:
@@ -601,6 +585,8 @@ class AMRSetupProfile:
         if not isinstance(orientation_controller, OrientationController):
             raise TypeError(f"orientation_controller must be an OrientationController, got {type(orientation_controller).__name__}")
 
+        if field_reader is not None and field_reader.field_unit != field_source.field_unit:
+            raise ValueError("Source and reader field units must match; convert explicitly, never relabel H/B")
         self.field_source = field_source
         self.field_reader = field_reader
         self.transport_readout = transport_readout
@@ -632,6 +618,8 @@ class AMRSetupProfile:
         output_range: Optional[Tuple[float, float]] = None,
         angle_limits: Optional[Tuple[float, float]] = None,
         name: str = "working_lab_amr",
+        shutdown_handler: Optional[Callable[[], None]] = None,
+        external_source_owner: Optional[str] = None,
     ) -> AMRSetupProfile:
         """
         Build an AMRSetupProfile from the four standard lab instruments.
@@ -671,6 +659,8 @@ class AMRSetupProfile:
             sensitivity=sensitivity,
             input_configuration=input_configuration,
             name="lockin",
+            shutdown_handler=shutdown_handler,
+            external_source_owner=external_source_owner,
         )
 
         orientation = OrientationController(
