@@ -1,9 +1,41 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 25 corrections and checkpoint 26 protocol corrections are complete; physical execution is PENDING.**
+Continue on `measuremnt-standarization`. **Checkpoint 27 (role-specific simulation contracts) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 27 (role-specific simulation contracts)**. Implement only this checkpoint, validate it, commit it separately, update this handoff, then stop for review.
+Next: **Checkpoint 24d onward (additional AMR electrical adapters)** or **Checkpoint 28a onward (generic per-instance virtual hooks)** as directed by the user. Do not bundle them into past checkpoints.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 27 report (authoritative)
+
+- **Status**: **Completed**. Role-specific simulation contracts implemented and tested.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Role-Specific Simulation Contracts Delivered** (`src/piec/simulation/contracts.py`):
+  - **Explicit Physical Units**: Declared unit mappings strictly adhering to SI / standard CGS-EMU (`V`, `A`, `Ohm`, `s`, `Oe`, `deg`). Frozen immutable `LoadResponse` dataclass with finite numeric validation.
+  - **Backward-Compatible Voltage Response**: `VoltageResponse(float)` subclass ensuring existing Level 2 virtual lock-in callers expecting a float scalar continue to function seamlessly while supporting tuple unpacking `(x, y)` in Volts.
+  - **Deterministic Time & RNG**: `SimulationRole` base abstract contract requiring `declared_units`, `reset(seed=None, **kwargs)`, `seed(seed)`, `timebase`, and `rng`. `DeterministicTimebase` providing monotonically increasing, controllable time advancement (`advance(delta_t)`, `set_time(t)`, `reset()`). Deterministic RNG sequences via `np.random.default_rng(seed)`.
+  - **Two-Terminal Electrical Load Contracts**: `ElectricalLoadContract` with `LoadMode.VOLTAGE_SOURCE` and `LoadMode.CURRENT_SOURCE`, bidirectional compliance limiting, time, and internal state:
+    - `ResistorLoad`: Linear resistor evaluating Ohm's law ($V = IR$, $I = V/R$) across both driving modes with compliance limiting ($I_{\text{comp}}$ in voltage mode, $V_{\text{comp}}$ in current mode), temperature coefficient support, and deterministic noise.
+    - `DiodeLoad`: Non-linear Shockley diode model ($I = I_s (e^{V / n V_t} - 1)$) with series resistance $R_s$, reverse saturation, forward exponential rise, and compliance limits under both voltage and current drives.
+    - `CapacitiveLoad`: Stateful capacitor tracking charge $Q(t)$ and voltage across arbitrary time increments with displacement current evaluation, $dV/dt$ integration, and compliance clamping.
+  - **Material Response Contracts**:
+    - `FieldResponsiveMaterialContract`: Magnetic field response ($H$ in Oe), dimensionless magnetization ($M/M_s$), stateful hysteresis, and deterministic reset. `HystereticMagneticMaterial` updated to inherit and satisfy contract.
+    - `AngleDependentResistanceContract`: Magneto-transport AMR response ($\theta$ in deg, $H$ in Oe, $R$ in Ohm, dual-channel $(X, Y)$ in V). `MagneticMaterial` updated to inherit and conform.
+    - `WaveformResponsiveMaterialContract`: Dynamic response to $v(t)$ waveforms. `Ferroelectric` updated to inherit and conform.
+  - **Virtual Hook Protocols**: Formal type definitions for `DmmVoltageReaderHook`, `LockinTransportHook`, `ScopeChannelHook`, `CalibratorFieldHook`, and `StepperAngleHook` establishing contract foundations for Checkpoint 28.
+- **Invariants Preserved**:
+  - Manual lock-in settings preserved by default (`initialize_lockin=False`, `readout_configuration="preserve"`).
+  - Explicit excitation ownership preserved (no fabricated X/Y, no assumed current).
+  - Plain columns with metadata units preserved across all schemas.
+  - Checkpoint 24d onward (additional AMR electrical adapters) and Checkpoints 28/29 (`VirtualBench` / driver per-instance hook injections) kept separate.
+- **Validation**:
+  - Dedicated simulation contract test suite: 33 tests in `tests/test_simulation_contracts.py` passed in 0.62s.
+  - Targeted GUI suites: 82 passed in 28.96s (`test_measurement_amr_gui.py`, `test_measurement_fe_gui.py`).
+  - Full repository test suite with Agg backend: **1657 passed, 1 skipped** in 62.01s on Python 3.13.2. Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly.
+
 
 ## Review corrections for checkpoints 25 and 26
 

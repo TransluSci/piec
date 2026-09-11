@@ -37,7 +37,10 @@ class Dielectric(Material):
         self.name = "dielectric"
 
 
-class Ferroelectric(Material):
+from piec.simulation.contracts import WaveformResponsiveMaterialContract
+
+
+class Ferroelectric(Material, WaveformResponsiveMaterialContract):
     """
     Simulates a ferroelectric material using Landau-Devonshire theory.
 
@@ -57,12 +60,22 @@ class Ferroelectric(Material):
         c_tilde = c
     """
 
-    def __init__(self, material_dict, temperature=300):
+    def __init__(self, material_dict, temperature=300, seed=None, start_time=0.0):
+        Material.__init__(self)
+        WaveformResponsiveMaterialContract.__init__(self, seed=seed, start_time=start_time)
         self.name = None
         self.material_dict = material_dict
         self.temperature = temperature
         self.output_voltage = None
         self.t = None
+
+    def reset(self, seed=None, **kwargs):
+        """Reset output voltage, time, timebase, and RNG."""
+        self.output_voltage = None
+        self.t = None
+        self._timebase.reset(start_time=kwargs.get("start_time", 0.0))
+        effective_seed = seed if seed is not None else self._initial_seed
+        self.seed(effective_seed)
 
     # ------------------------------------------------------------------
     # Internal helpers
