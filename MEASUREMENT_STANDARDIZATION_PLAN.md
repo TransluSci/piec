@@ -190,6 +190,13 @@ Checkpoint 26 recorded: AMR physical validation record is **PENDING** as physica
 
 ## 1. Purpose and non-negotiable constraints
 
+Checkpoint 28d follow-up: reject fractional/non-finite directions before mutation;
+repair mixed hook binding and preserve unrelated optional defaults; report the
+actual reset delta and notify recalculated angles after steps-per-revolution
+changes. Regression tests cover delta-only setup consistency and unconfirmed
+notification failures. See the current handoff for validation results. Next is
+checkpoint 28e, one additional family only; physical 17/22/26 remain PENDING.
+
 Checkpoint 28c follow-up review: calibrator hooks report effective electrical
 outputs, zero inactive quantities and zero both on crowbar/off/reset; crowbar
 notifications retain the electrical mode. Hook failures leave output state

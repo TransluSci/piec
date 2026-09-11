@@ -90,9 +90,15 @@ class VirtualStepper(VirtualInstrument, Stepper):
         if not math.isfinite(spr_f) or not spr_f.is_integer() or spr_f <= 0:
             raise ValueError("steps_per_revolution must be a positive integer")
         spr = int(spr_f)
+        old_angle = self.get_angle()
         self._steps_per_revolution = spr
         self.state["steps_per_revolution"] = spr
         self.state["angle"] = self.get_angle()
+        if self._angle_hook is not None:
+            self._notify_hook(self.get_angle() - old_angle, self.get_angle(), self.current_pos,
+                              moving=self.state["moving"])
+        elif self.mag_sample is not None:
+            self.mag_sample.current_angle += self.get_angle() - old_angle
 
     @property
     def angle_hook(self) -> Optional[Callable[..., Any]]:
@@ -207,9 +213,9 @@ class VirtualStepper(VirtualInstrument, Stepper):
 
         if isinstance(direction, bool) or not isinstance(direction, Real):
             raise TypeError(f"direction must be an integer, got {type(direction).__name__}")
-        dir_int = int(direction)
-        if dir_int not in (1, 0, -1):
+        if not math.isfinite(direction) or direction not in (1, 0, -1):
             raise ValueError(f"direction must be 1 (CW) or 0 / -1 (CCW), got {direction!r}")
+        dir_int = int(direction)
 
         signed_delta = steps_int if dir_int == 1 else -steps_int
         new_pos = self.current_pos + signed_delta
@@ -337,27 +343,29 @@ class VirtualStepper(VirtualInstrument, Stepper):
             for i, p in enumerate(positional):
                 if p.name in values:
                     args.append(values[p.name])
+                elif p.default is not inspect.Parameter.empty:
+                    args.append(p.default)
                 elif i == 0:
                     args.append(total_angle)
                 elif i == 1:
                     args.append(delta_angle)
-                elif p.default is not inspect.Parameter.empty:
-                    args.append(p.default)
                 else:
                     raise TypeError(f"angle_hook has unsupported required positional parameter {p.name!r}")
 
-        # 2. Positional or keyword parameters
+        # Use keyword binding for ordinary parameters, including unnamed aliases,
+        # so a later positional value cannot accidentally bind an earlier name twice.
         for i, p in enumerate(params):
             if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
-                if not positional and i == 0 and p.name not in values:
-                    args.append(total_angle)
-                elif not positional and i == 1 and p.name not in values:
-                    args.append(delta_angle)
-                elif p.name in values:
-                    kwargs[p.name] = values[p.name]
-            elif p.kind == inspect.Parameter.KEYWORD_ONLY:
                 if p.name in values:
                     kwargs[p.name] = values[p.name]
+                elif p.default is not inspect.Parameter.empty:
+                    continue
+                elif not positional and i == 0:
+                    kwargs[p.name] = total_angle
+                elif not positional and i == 1:
+                    kwargs[p.name] = delta_angle
+            elif p.kind == inspect.Parameter.KEYWORD_ONLY and p.name in values:
+                kwargs[p.name] = values[p.name]
 
         # 3. Variadic *args and **kwargs
         if any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params) and not args and not kwargs:
@@ -385,6 +393,7 @@ class VirtualStepper(VirtualInstrument, Stepper):
         models, timebase clocks, and RNG seeds are owned by the test fixture or
         VirtualBench and must be reset there.
         """
+        old_angle = self.get_angle()
         self._steps_per_revolution = self._initial_steps_per_revolution
         self.current_pos = 0
         self.state = {
@@ -395,7 +404,7 @@ class VirtualStepper(VirtualInstrument, Stepper):
         }
 
         if self._angle_hook is not None:
-            self._notify_hook(0.0, 0.0, 0, moving=False)
+            self._notify_hook(-old_angle, 0.0, 0, moving=False)
         elif hasattr(self, "mag_sample") and self.mag_sample is not None:
             self.mag_sample.current_angle = 0.0
 

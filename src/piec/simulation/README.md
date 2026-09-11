@@ -115,6 +115,14 @@ output. Pure `*args` hooks receive the effective value as their first argument.
 
 ## Driver virtual hooks: Stepper Motor family (checkpoint 28d)
 
+Directions are validated exactly (1, 0 or -1); fractional values are never
+truncated. Named motion parameters and unnamed required angle/delta arguments
+can be mixed; unrelated optional arguments keep their defaults. Reset sends
+the actual delta from the previous angle to zero, so delta-only models remain
+consistent with absolute-angle models. Changing steps-per-revolution recalculates
+the coordinate angle and notifies the setup; this is not a physical move.
+Reset and scale notifications retain the same error/unknown-motion rules as step.
+
 - `VirtualStepper` (stepper motor driver family) supports generic per-instance hook injection via
   `angle_hook`, `position_hook`, or `step_hook` (in constructor, via property, or via `set_angle_hook`).
 - Injected hooks take strict precedence over the deprecated global `mag_sample` fallback.

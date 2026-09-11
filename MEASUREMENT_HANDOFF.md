@@ -7,6 +7,14 @@ Additional electrical adapters remain separate later work; do not bundle them in
 
 ## Checkpoint 28d report (authoritative)
 
+### Review corrections
+
+- Direction validation rejects fractional and non-finite values before any position update or hook invocation; values are no longer truncated into a valid direction.
+- Mixed named/unnamed ordinary hook arguments bind correctly without duplicate positional binding. Unrelated optional parameters retain their defaults, including positional-only defaults. Hook errors still propagate without retry.
+- Reset reports the actual change from the previous angle to zero, keeping delta-only models synchronized. Updating steps-per-revolution notifies the hook of the recalculated angle (or updates the retained shared-sample fallback); it is a coordinate-scale update, not a physical move. Notification failure leaves motion unconfirmed.
+- Added regressions for invalid directions, mixed/defaulted signatures, delta-only model consistency across scale/reset and unchanged failure identity.
+- Corrective validation: full suite with Agg **1931 passed, 1 skipped in 62.85s**; `git diff --check` passed. Next remains checkpoint 28e, one additional family only. Extra AMR adapters and VirtualBench remain separate; physical 17/22/26 remain PENDING.
+
 - **Status**: **Completed**. Selected driver family: **Stepper Motor (`VirtualStepper`)**.
 - **Physical Validation Matrix**:
   - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
