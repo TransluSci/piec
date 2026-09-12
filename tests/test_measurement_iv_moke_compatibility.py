@@ -162,20 +162,11 @@ class TestMokeMeasurementCompatibility:
         return FieldCalibration([(-5.0, -500.0), (0.0, 0.0), (5.0, 500.0)], name="golden_cal")
 
     def _create_moke_setup(self, calibration, save_dir, field_reader=None, field_reader_unit=None):
-        source = Mock()
-        source.idn.return_value = "TEST_SOURCEMETER"
-        source.voltage = (-100, 100)
-        source.current_compliance = (0, 0.1)
-
-        dmm = Mock()
-        dmm.idn.return_value = "TEST_DMM"
-        last_v = [0.0]
-
-        def set_v(voltage):
-            last_v[0] = float(voltage)
-
-        source.set_source_voltage.side_effect = set_v
-        dmm.get_voltage.side_effect = lambda: 0.5 + 0.0004 * (last_v[0] * 100.0)
+        from tests.fixtures.virtual_setups import moke_bench
+        bench, source, dmm = moke_bench(linear=True)
+        source.idn = Mock(wraps=source.idn)
+        source.output = Mock(wraps=source.output)
+        dmm.idn = Mock(wraps=dmm.idn)
 
         kwargs = dict(
             sourcemeter=source,

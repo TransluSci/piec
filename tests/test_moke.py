@@ -21,20 +21,12 @@ def calibration():
 
 
 def measurement(**kwargs):
-    source = VirtualSourcemeter()
-    material = HystereticMagneticMaterial()
-    detector = Mock(spec=DMM)
-    detector.idn.return_value = "test voltage reader"
+    from tests.fixtures.virtual_setups import moke_bench
+    unit = kwargs.get('calibration', calibration()).output_unit
+    bench, source, detector = moke_bench(output_unit=unit)
+    for method in ('get_voltage', 'set_sense_function', 'set_measurement_coupling'):
+        setattr(detector, method, Mock(wraps=getattr(detector, method)))
 
-    # Test-only wiring. Neither instrument nor measurement knows about MOKE
-    # simulation. Keep the simulated plant calibration separate from the input
-    # calibration under test so a measurement-conversion bug cannot cancel out.
-    def read_detector():
-        state = source.get_state()
-        command = state["source_voltage"] if state["output_on"] else 0.0
-        return 0.5 + 0.02 * material.apply_field(100.0 * command)
-
-    detector.get_voltage.side_effect = read_detector
     options = dict(
         calibration=calibration(), output_values=[-5, 0, 5, 0, -5],
         compliance=0.01, max_output_step=1.0, dwell_time=0,

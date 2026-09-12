@@ -2,8 +2,12 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 30b: migrate MOKE simulation fixtures to VirtualBench.** User authorized continuing sequentially after each verified checkpoint commit. Keep FE/AMR migrations for 30c–30d, fallback retirement for 31, and additional AMR adapters separate.
+Next: **Checkpoint 30c: migrate FE simulation fixtures to VirtualBench.** User authorized continuing sequentially after each verified checkpoint commit. Keep AMR migration for 30d, fallback retirement for 31, and additional AMR adapters separate.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 30b completed
+
+MOKE linear golden and hysteresis/lifecycle fixtures now use bench-owned electrical loads, materials, sources and DMM routes. The linear fixture remains explicitly linear; its numerical goldens were not regenerated into hysteresis curves. Plant calibration remains independent of measurement calibration. Driver identity metadata now reflects real virtual drivers. Isolated unit/schema and GUI connection tests retain their appropriate doubles. Focused: **83 passed**. Full Python 3.13: **2153 passed, 1 skipped in 64.30s**. Physical gates remain PENDING; Python 3.9 unavailable locally.
 
 ## Checkpoint 30a completed
 
