@@ -251,24 +251,13 @@ class TestComplianceClampingAndTripping:
         assert vsm.get_voltage(1) == pytest.approx(3.0)
         assert vsm.get_current(1) == pytest.approx(0.003)
 
-    def test_callable_compliance_clamping_for_tuple_return(self):
-        # Callable returning (v, i) tuple exceeding compliance
-        vsm = VirtualSourcemeter(load_hook=lambda v, i: (v, 1.0))
-        vsm.output(1, on=True)
-        vsm.configure_voltage_source(channel=1, voltage=5.0, current_compliance=0.05)
-
-        assert vsm.compliance_tripped is True
-        assert vsm.get_current(1) == pytest.approx(0.05)
-        assert vsm.get_voltage(1) == pytest.approx(5.0)
-
-    def test_callable_compliance_clamping_for_scalar_return(self):
-        # In voltage source mode, scalar return is current
-        vsm = VirtualSourcemeter(load_hook=lambda v: 0.5)
-        vsm.output(1, on=True)
-        vsm.configure_voltage_source(channel=1, voltage=5.0, current_compliance=0.1)
-
-        assert vsm.compliance_tripped is True
-        assert vsm.get_current(1) == pytest.approx(0.1)
+    @pytest.mark.parametrize("response", [(5.0, 1.0), 0.5])
+    def test_callable_exceeding_compliance_is_rejected(self, response):
+        vsm = VirtualSourcemeter(load_hook=lambda: response)
+        vsm.configure_voltage_source(voltage=5.0, current_compliance=0.05)
+        with pytest.raises(ValueError, match="exceeds compliance"):
+            vsm.output(on=True)
+        assert vsm.state["output_on"] is None
 
 
 # ============================================================================
@@ -475,12 +464,11 @@ class TestReturnValueNormalization:
         assert vsm.get_voltage(1) == 3.3
         assert vsm.get_current(1) == 0.0033
 
-    def test_none_return_observer(self):
+    def test_none_return_cannot_fabricate_measurements(self):
         vsm = VirtualSourcemeter(load_hook=lambda *args: None)
-        vsm.output(1, on=True)
-        vsm.set_source_voltage(1, 6.0)
-        assert vsm.get_voltage(1) == 6.0
-        assert vsm.get_current(1) == 0.0
+        vsm.output(on=False)
+        with pytest.raises(TypeError, match="Invalid return type"):
+            vsm.output(on=True)
 
     def test_malformed_return_type_raises_type_error(self):
         vsm = VirtualSourcemeter(load_hook=lambda *args: "invalid_string_return")
@@ -730,7 +718,7 @@ class TestScpiHookInteraction:
 
     def test_scpi_reset_command(self):
         calls = []
-        vsm = VirtualSourcemeter(load_hook=lambda **kwargs: calls.append(kwargs))
+        vsm = VirtualSourcemeter(load_hook=lambda **kwargs: (calls.append(kwargs) or (0.0, 0.0)))
         vsm.write(":OUTP ON")
         vsm.write(":SOUR:VOLT:LEV 10.0")
 

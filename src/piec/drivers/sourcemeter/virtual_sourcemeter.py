@@ -25,7 +25,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     Supports generic per-instance hook injection (`load_hook` and aliases
     `source_hook`, `measure_hook`, `transport_hook`) taking strict precedence
     over default unhooked fallback. Supports both voltage-source and current-source
-    modes, compliance limit clamping, and tracking of effective terminal output.
+    modes, load-solved compliance, and tracking of effective terminal output.
     """
 
     channel = [1]
@@ -92,23 +92,28 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     @property
     def compliance_tripped(self) -> bool:
         """Whether compliance was tripped during the last output evaluation."""
+        self._require_confirmed_output()
         return self._compliance_tripped
 
     @property
     def effective_voltage(self) -> float:
         """Effective terminal voltage in Volts (0.0 V when output is off)."""
+        self._require_confirmed_output()
         if self.state.get('output_on') is not True:
             return 0.0
         if self._load_hook is not None:
+            self._notify_or_evaluate_hook(True)
             return self._effective_voltage
         return float(self.state['source_voltage'])
 
     @property
     def effective_current(self) -> float:
         """Effective terminal current in Amperes (0.0 A when output is off)."""
+        self._require_confirmed_output()
         if self.state.get('output_on') is not True:
             return 0.0
         if self._load_hook is not None:
+            self._notify_or_evaluate_hook(True)
             return self._effective_current
         return float(self.state['source_current'])
 
@@ -167,6 +172,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
                     f"load_hook must be callable or implement evaluate(), got {type(hook).__name__}"
                 )
         self._load_hook = hook
+        self._evaluation_key = None
 
     def set_source_hook(self, hook: Optional[Any]) -> None:
         """Alias for set_load_hook."""
@@ -243,23 +249,25 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         if hasattr(hook, "evaluate") and callable(getattr(hook, "evaluate")):
             if not output_on:
                 if callable(hook):
-                    try:
-                        self._invoke_callable_hook(hook, mode, stimulus, compliance, output_on)
-                    except TypeError:
-                        pass
+                    self._invoke_callable_hook(hook, mode, stimulus, compliance, output_on)
                 self._effective_voltage = 0.0
                 self._effective_current = 0.0
                 self._compliance_tripped = False
                 self.state['compliance_tripped'] = False
                 return
 
-            resp = hook.evaluate(mode, stimulus, compliance, time=0.0)
+            # The setup owns simulated time. Re-reading a clocked load at the
+            # same operating point must not integrate it twice.
+            clock = getattr(hook, "timebase", None)
+            timestamp = clock.current_time if clock is not None else None
+            key = (mode, stimulus, compliance, timestamp)
+            if clock is not None and self._evaluation_key == key:
+                return
+            resp = hook.evaluate(mode, stimulus, compliance, time=timestamp)
             if not isinstance(resp, LoadResponse):
                 raise TypeError(f"load.evaluate must return LoadResponse, got {type(resp).__name__}")
-            self._effective_voltage = float(resp.voltage)
-            self._effective_current = float(resp.current)
-            self._compliance_tripped = bool(resp.compliance_tripped)
-            self.state['compliance_tripped'] = self._compliance_tripped
+            self._process_callable_result(resp, source_func, stimulus, compliance, True)
+            self._evaluation_key = key
             return
 
         # Case 2: Generic callable
@@ -280,8 +288,10 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             return hook(mode, stimulus, compliance)
 
         source_func = self.state['source_func']
-        eff_v = stimulus if (output_on and source_func == 'VOLT') else (0.0 if not output_on else self.state['source_voltage'])
-        eff_i = stimulus if (output_on and source_func == 'CURR') else (0.0 if not output_on else self.state['source_current'])
+        eff_v = stimulus if (output_on and source_func == 'VOLT') else 0.0
+        eff_i = stimulus if (output_on and source_func == 'CURR') else 0.0
+        clock = getattr(hook, 'timebase', None)
+        timestamp = clock.current_time if clock is not None else None
 
         values: dict[str, Any] = {
             "mode": mode,
@@ -306,8 +316,8 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             "on": output_on,
             "channel": 1,
             "ch": 1,
-            "time": 0.0,
-            "t": 0.0,
+            "time": timestamp,
+            "t": timestamp,
         }
 
         params = list(sig.parameters.values())
@@ -317,46 +327,30 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         args: list[Any] = []
         kwargs: dict[str, Any] = {}
 
-        # 1. Positional-only parameters
-        positional = [p for p in params if p.kind == inspect.Parameter.POSITIONAL_ONLY]
-        if positional:
-            for i, p in enumerate(positional):
-                if p.name in values:
-                    args.append(values[p.name])
-                elif len(positional) == 1:
-                    args.append(stimulus)
-                elif len(positional) == 2:
-                    args.append(eff_v if i == 0 else eff_i)
-                elif len(positional) == 3:
-                    args.append([mode, stimulus, compliance][i])
-                elif p.default is not inspect.Parameter.empty:
-                    args.append(p.default)
-                else:
-                    raise TypeError(f"load_hook has unsupported required positional parameter {p.name!r}")
-
-        # 2. Positional or keyword parameters
-        pos_kw = [p for p in params if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD]
-        for i, p in enumerate(params):
-            if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
-                if not positional and p.name not in values:
-                    if i == 0:
-                        args.append(stimulus)
-                    elif i == 1 and len([x for x in pos_kw if x.default is inspect.Parameter.empty]) >= 2:
-                        args.append(eff_i if source_func == 'VOLT' else eff_v)
-                    elif p.default is not inspect.Parameter.empty:
-                        pass
-                    else:
-                        raise TypeError(f"load_hook parameter {p.name!r} cannot be bound")
-                elif p.name in values:
-                    kwargs[p.name] = values[p.name]
-            elif p.kind == inspect.Parameter.KEYWORD_ONLY:
-                if p.name in values:
-                    kwargs[p.name] = values[p.name]
-                elif p.default is inspect.Parameter.empty:
-                    raise TypeError(f"load_hook keyword-only parameter {p.name!r} cannot be bound")
-
-        # 3. *args
-        if any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params) and not args and not kwargs:
+        required = [p for p in params if p.kind in (
+            inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD
+        ) and p.default is inspect.Parameter.empty]
+        fallback = {1: [stimulus], 2: [eff_v, eff_i],
+                    3: [mode, stimulus, compliance]}.get(len(required), [])
+        for p in params:
+            if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            if p.name in values:
+                value = values[p.name]
+            elif p.default is not inspect.Parameter.empty:
+                value = p.default
+            elif p in required and fallback:
+                value = fallback[required.index(p)]
+            else:
+                raise TypeError(f"load_hook parameter {p.name!r} cannot be bound")
+            if p.kind == inspect.Parameter.POSITIONAL_ONLY:
+                args.append(value)
+            else:
+                kwargs[p.name] = value
+        if any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params) and not any(
+            p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            for p in params
+        ):
             args.append(stimulus)
 
         # 4. **kwargs
@@ -389,91 +383,37 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             self.state['compliance_tripped'] = False
             return
 
+        tripped = None
         if isinstance(result, LoadResponse):
-            self._effective_voltage = float(result.voltage)
-            self._effective_current = float(result.current)
-            self._compliance_tripped = bool(result.compliance_tripped)
-            self.state['compliance_tripped'] = self._compliance_tripped
-            return
+            v_val, i_val = result.voltage, result.current
+            tripped = result.compliance_tripped
+        elif isinstance(result, (tuple, list)) and len(result) == 2:
+            v_val, i_val = result
+        elif isinstance(result, Mapping):
+            v_val = result.get('voltage', result.get('v'))
+            i_val = result.get('current', result.get('i'))
+            if v_val is None or i_val is None:
+                raise ValueError("load_hook mapping must contain voltage and current")
+            tripped = result.get('compliance_tripped')
+        elif isinstance(result, Real) and not isinstance(result, bool):
+            v_val, i_val = (stimulus, result) if source_func == 'VOLT' else (result, stimulus)
+        else:
+            raise TypeError(f"Invalid return type from load_hook: {type(result).__name__}")
+        v_val, i_val = float(v_val), float(i_val)
+        if not math.isfinite(v_val) or not math.isfinite(i_val):
+            raise ValueError("load_hook returned non-finite values")
+        measured = abs(i_val if source_func == 'VOLT' else v_val)
+        if measured > compliance and not math.isclose(measured, compliance, rel_tol=1e-12, abs_tol=0.0):
+            raise ValueError("load_hook response exceeds compliance; the load must solve both terminal quantities")
+        if tripped is not None and not isinstance(tripped, bool):
+            raise TypeError("compliance_tripped must be boolean")
+        self._effective_voltage, self._effective_current = v_val, i_val
+        self._compliance_tripped = measured >= compliance if tripped is None else tripped
+        self.state['compliance_tripped'] = self._compliance_tripped
 
-        if isinstance(result, (tuple, list)) and len(result) == 2:
-            v_val = float(result[0])
-            i_val = float(result[1])
-            if not math.isfinite(v_val) or not math.isfinite(i_val):
-                raise ValueError("load_hook returned non-finite values")
-            if source_func == 'VOLT':
-                if abs(i_val) >= compliance:
-                    i_val = math.copysign(compliance, i_val)
-                    tripped = True
-                else:
-                    tripped = False
-            else:
-                if abs(v_val) >= compliance:
-                    v_val = math.copysign(compliance, v_val)
-                    tripped = True
-                else:
-                    tripped = False
-            self._effective_voltage = v_val
-            self._effective_current = i_val
-            self._compliance_tripped = tripped
-            self.state['compliance_tripped'] = tripped
-            return
-
-        if isinstance(result, Mapping):
-            v_val = float(result.get('voltage', result.get('v', stimulus if source_func == 'VOLT' else self.state['source_voltage'])))
-            i_val = float(result.get('current', result.get('i', stimulus if source_func == 'CURR' else self.state['source_current'])))
-            if not math.isfinite(v_val) or not math.isfinite(i_val):
-                raise ValueError("load_hook returned non-finite values")
-            tripped = result.get('compliance_tripped', None)
-            if tripped is None:
-                if source_func == 'VOLT':
-                    tripped = abs(i_val) >= compliance
-                    if tripped:
-                        i_val = math.copysign(compliance, i_val)
-                else:
-                    tripped = abs(v_val) >= compliance
-                    if tripped:
-                        v_val = math.copysign(compliance, v_val)
-            self._effective_voltage = v_val
-            self._effective_current = i_val
-            self._compliance_tripped = bool(tripped)
-            self.state['compliance_tripped'] = self._compliance_tripped
-            return
-
-        if isinstance(result, Real) and not isinstance(result, bool):
-            val_f = float(result)
-            if not math.isfinite(val_f):
-                raise ValueError("load_hook returned non-finite value")
-            if source_func == 'VOLT':
-                v_val = stimulus
-                i_val = val_f
-                tripped = abs(i_val) >= compliance
-                if tripped:
-                    i_val = math.copysign(compliance, i_val)
-            else:
-                i_val = stimulus
-                v_val = val_f
-                tripped = abs(v_val) >= compliance
-                if tripped:
-                    v_val = math.copysign(compliance, v_val)
-            self._effective_voltage = v_val
-            self._effective_current = i_val
-            self._compliance_tripped = tripped
-            self.state['compliance_tripped'] = tripped
-            return
-
-        if result is None:
-            if source_func == 'VOLT':
-                self._effective_voltage = stimulus
-                self._effective_current = self.state['source_current']
-            else:
-                self._effective_voltage = self.state['source_voltage']
-                self._effective_current = stimulus
-            self._compliance_tripped = False
-            self.state['compliance_tripped'] = False
-            return
-
-        raise TypeError(f"Invalid return type from load_hook: {type(result).__name__}")
+    def _require_confirmed_output(self):
+        if self.state.get('output_on') is None:
+            raise RuntimeError("Sourcemeter output is unconfirmed after a failed command")
 
     def _notify_hook_shutdown(self) -> None:
         if self._load_hook is None:
@@ -494,24 +434,21 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         cmd = command.upper().strip()
 
         if ':OUTP' in cmd:
-            self.output(channel=1, on='ON' in cmd)
+            token = cmd.split()[-1]
+            if token not in ('ON', 'OFF', '1', '0'):
+                raise ValueError("Invalid output command")
+            self.output(channel=1, on=token in ('ON', '1'))
         elif ':SOUR:FUNC' in cmd:
             if 'VOLT' in cmd:
                 self.set_source_function(channel=1, source_func='VOLT')
             elif 'CURR' in cmd:
                 self.set_source_function(channel=1, source_func='CURR')
         elif ':SOUR:VOLT:LEV' in cmd:
-            try:
-                val = self._extract_value(cmd)
-                self.set_source_voltage(channel=1, voltage=val)
-            except ValueError:
-                pass
+            val = self._extract_value(cmd)
+            self.set_source_voltage(channel=1, voltage=val)
         elif ':SOUR:CURR:LEV' in cmd:
-            try:
-                val = self._extract_value(cmd)
-                self.set_source_current(channel=1, current=val)
-            except ValueError:
-                pass
+            val = self._extract_value(cmd)
+            self.set_source_current(channel=1, current=val)
         elif ':SENS:FUNC' in cmd:
             if 'VOLT' in cmd:
                 self.set_sense_function(channel=1, sense_func='VOLT')
@@ -520,17 +457,11 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             elif 'RES' in cmd:
                 self.set_sense_function(channel=1, sense_func='RES')
         elif ':SENS:VOLT:PROT' in cmd:
-            try:
-                val = self._extract_value(cmd)
-                self.set_voltage_compliance(channel=1, voltage_compliance=val)
-            except ValueError:
-                pass
+            val = self._extract_value(cmd)
+            self.set_voltage_compliance(channel=1, voltage_compliance=val)
         elif ':SENS:CURR:PROT' in cmd:
-            try:
-                val = self._extract_value(cmd)
-                self.set_current_compliance(channel=1, current_compliance=val)
-            except ValueError:
-                pass
+            val = self._extract_value(cmd)
+            self.set_current_compliance(channel=1, current_compliance=val)
         elif ':SYST:RSEN' in cmd:
             self.set_sense_mode(channel=1, sense_mode='4W' if 'ON' in cmd else '2W')
         elif cmd == '*RST':
@@ -548,6 +479,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         elif cmd == '*OPC?':
             return '1'
         elif ':READ?' in cmd:
+            self._require_confirmed_output()
             if self._load_hook is not None and self.state['output_on'] is True:
                 self._notify_or_evaluate_hook(output_on=True)
                 v = self._effective_voltage
@@ -593,10 +525,11 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     # Core Instrument State Control
 
     def output(self, channel: int = 1, on: bool = True) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if not isinstance(on, (bool, int)) or on not in (False, True, 0, 1):
             raise TypeError(f"on must be a boolean or 0/1, got {type(on).__name__}")
+        self._evaluation_key = None
         on_bool = bool(on)
         self.state['output_on'] = on_bool
         self._output_enabled = on_bool
@@ -605,7 +538,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             self._notify_or_evaluate_hook(output_on=on_bool)
 
     def set_source_function(self, channel: int = 1, source_func: Optional[str] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if source_func is None:
             raise ValueError("source_func must be provided")
@@ -617,7 +550,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             self._notify_or_evaluate_hook(output_on=True)
 
     def set_sense_function(self, channel: int = 1, sense_func: Optional[str] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if sense_func is None:
             raise ValueError("sense_func must be provided")
@@ -627,7 +560,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         self.state['sense_func'] = norm
 
     def set_sense_mode(self, channel: int = 1, sense_mode: Optional[str] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if sense_mode is None:
             raise ValueError("sense_mode must be provided")
@@ -639,7 +572,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     # Source Configuration
 
     def set_source_voltage(self, channel: int = 1, voltage: Optional[float] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage is None:
             raise ValueError("voltage must be provided")
@@ -653,7 +586,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             self._notify_or_evaluate_hook(output_on=True)
 
     def set_source_current(self, channel: int = 1, current: Optional[float] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current is None:
             raise ValueError("current must be provided")
@@ -667,7 +600,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             self._notify_or_evaluate_hook(output_on=True)
 
     def set_voltage_compliance(self, channel: int = 1, voltage_compliance: Optional[float] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage_compliance is None:
             raise ValueError("voltage_compliance must be provided")
@@ -681,7 +614,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
             self._notify_or_evaluate_hook(output_on=True)
 
     def set_current_compliance(self, channel: int = 1, current_compliance: Optional[float] = None) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current_compliance is None:
             raise ValueError("current_compliance must be provided")
@@ -702,7 +635,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         voltage: float = 0.0,
         current_compliance: float = 1.05,
     ) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage is None:
             raise ValueError("voltage must be provided")
@@ -732,7 +665,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         current: float = 0.0,
         voltage_compliance: float = 210.0,
     ) -> None:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current is None:
             raise ValueError("current must be provided")
@@ -759,7 +692,7 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
     # Measurement (Read) Methods
 
     def quick_read(self, channel: int = 1) -> float:
-        if channel not in self.channel:
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         sense = self.state['sense_func']
         if sense == 'VOLT':
@@ -771,7 +704,8 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         return self.get_voltage(channel=channel)
 
     def get_voltage(self, channel: int = 1) -> float:
-        if channel not in self.channel:
+        self._require_confirmed_output()
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['sense_func'] = 'VOLT'
         if self._load_hook is not None:
@@ -782,7 +716,8 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         return self.state['source_voltage']
 
     def get_current(self, channel: int = 1) -> float:
-        if channel not in self.channel:
+        self._require_confirmed_output()
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['sense_func'] = 'CURR'
         if self._load_hook is not None:
@@ -793,7 +728,8 @@ class VirtualSourcemeter(VirtualInstrument, Scpi, Sourcemeter):
         return self.state['source_current']
 
     def get_resistance(self, channel: int = 1) -> float:
-        if channel not in self.channel:
+        self._require_confirmed_output()
+        if isinstance(channel, bool) or not isinstance(channel, Real) or channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['sense_func'] = 'RES'
         if self._load_hook is not None:

@@ -211,9 +211,14 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
 - Supports both `ElectricalLoadContract` instances (e.g. `ResistorLoad`, `DiodeLoad`, `CapacitiveLoad`)
   and general callables.
 - Supports voltage-source mode (`source_func == 'VOLT'`) and current-source mode (`source_func == 'CURR'`).
-- Compliance limiting:
-  - In voltage-source mode: clamps current to $\pm I_{\text{comp}}$ and sets `compliance_tripped = True`.
-  - In current-source mode: clamps voltage to $\pm V_{\text{comp}}$ and sets `compliance_tripped = True`.
+- The load must solve both terminal quantities under compliance. Responses exceeding the current
+  limit in voltage mode or voltage limit in current mode are rejected, including responses that
+  declare a compliance flag. The driver does not clip one quantity and fabricate a new load relation.
+- Clocked load contracts use their setup-owned timebase and share a cached evaluation across
+  repeated reads at the same time/operating point. Advance the clock before the first capacitor
+  evaluation and subsequent integration steps. The driver never advances or resets that clock.
+  Output-off isolates the simulated terminal readback but does not discharge/reset external load state.
+  Callable `time`/`t` arguments use the callable's timebase when provided, otherwise `None`.
 - Distinguishes stored settings from effective terminal output:
   - `source_voltage`, `source_current`, `voltage_compliance`, and `current_compliance` are stored setpoints
     available in `state` and via SCPI queries (`:SOUR:VOLT:LEV?`, `:SOUR:CURR:LEV?`).
@@ -225,14 +230,16 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
   - If a hook raises an exception during output enable/disable (`output()`), setpoint updates
     (`set_source_voltage()`, `set_source_current()`), convenience configuration (`configure_voltage_source()`,
     `configure_current_source()`), or `reset()`, `state['output_on']` and `_output_enabled` become `None` (unconfirmed).
-  - Failed commands never falsely confirm shutdown or stopped state until a subsequent command succeeds.
+  - Unconfirmed output causes measurement/effective-output/compliance readbacks to raise until
+    an explicit output command succeeds; it is never reported as confirmed zero.
   - Exceptions propagate unchanged without retries or masking.
 - Flexible signature binding:
   - Binds `(mode, stimulus, compliance)`, `(v, i)`, named parameters (`mode`, `source_func`, `stimulus`, `value`,
     `voltage`, `current`, `v`, `i`, `compliance`, `output_on`, `channel`, `time`), single-arg `(stimulus)`,
     zero-arg `()`, positional-only, `*args`, and `**kwargs`.
   - Unrelated optional parameters retain their defaults.
-- Normalizes and validates return values: `LoadResponse`, `(v, i)` tuple, dict mapping, scalar numeric, or `None`.
+- Normalizes and validates return values: `LoadResponse`, `(v, i)` tuple, complete voltage/current dict mapping, or scalar numeric.
+  `None` is allowed only for output-off notification; it cannot provide active measurements.
   Rejects non-numeric types with `TypeError` and non-finite numbers with `ValueError`.
 - Declared units are `{"voltage": "V", "current": "A", "resistance": "Ohm", "time": "s"}`.
   Validates channel, numeric types, finiteness, and positive compliance before mutating state.
