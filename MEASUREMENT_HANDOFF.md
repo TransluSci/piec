@@ -1,9 +1,37 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28g (generic per-instance virtual hooks: Sourcemeter family) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 28h (virtual-driver family audit and Checkpoint 28 completion) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 28h: audit remaining virtual-driver families and implement one concrete remaining family.** If none remain, report checkpoint 28 complete before advancing to VirtualBench (29). Run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters remain separate later work.
+Next: **Checkpoint 29: VirtualBench** (Section 11.3: bench routing, reset isolation, deterministic noise/time, and two-bench concurrency). Keep physical checkpoints 17/22/26 PENDING. Run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters remain separate later work.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 28h report (authoritative)
+
+- **Status**: **Completed**. Checkpoint 28 virtual-driver hook modernisation is **COMPLETE** across all driver families.
+- **Physical Validation Matrix**:
+  - Checkpoint 17 (IV/MOKE): **PENDING** (`docs/physical_validation_iv_moke.md`, Section 13.1)
+  - Checkpoint 22 (FE): **PENDING** (`docs/physical_validation_fe.md`, Section 13.2)
+  - Checkpoint 26 (AMR): **PENDING** (`docs/physical_validation_amr.md`, Section 13.3)
+- **Comprehensive Virtual Driver Family Audit**:
+  - **Audited 10 Virtual Driver Implementations and 2 Emulator Adapters**:
+    1. `VirtualLockin` (`src/piec/drivers/lockin/virtual_lockin.py`): **Checkpoint 28a (Completed)**. Generic `xy_reader` / `transport_hook`, material decoupling, plain `(X, Y)` tuple in V, declared excitation current forwarding, reset ownership, instance isolation.
+    2. `VirtualDMM` (`src/piec/drivers/dmm/virtual_dmm.py`): **Checkpoint 28b (Completed)**. Generic `voltage_reader` / `reader_hook`, material decoupling, scalar float V, IEEE-754 overload preservation, non-scalar rejection, declared units, reset ownership, instance isolation.
+    3. `VirtualCalibrator` (`src/piec/drivers/dc_calibrator/virtual_calibrator.py`): **Checkpoint 28c (Completed)**. Generic `output_hook` / `field_hook`, material decoupling, commanded output binding, unconfirmed state on failure (`output_on=None`), declared units, reset ownership, instance isolation.
+    4. `VirtualStepper` (`src/piec/drivers/stepper_motor/virtual_stepper.py`): **Checkpoint 28d (Completed)**. Generic `angle_hook` / `position_hook` / `step_hook`, motion decoupling, delta/absolute parameter binding, unconfirmed shutdown on failure (`moving=None`), declared units, reset ownership, instance isolation.
+    5. `VirtualScope` (`src/piec/drivers/oscilloscope/virtual_oscilloscope.py`): **Checkpoint 28e (Completed)**. Generic `waveform_hook` / `channel_hook` / `data_hook`, ferroelectric/material decoupling, flexible signature binding, standardized DataFrame/tuple output normalization, pre-trigger timestamp support, scale consistency, reset ownership, instance isolation.
+    6. `VirtualAwg` (`src/piec/drivers/awg/virtual_awg.py`): **Checkpoint 28f (Completed)**. Generic `waveform_hook` / `apply_hook` / `trigger_hook`, Landau/PUND physics decoupling, flexible signature binding, atomic configuration validation, SCPI trigger dispatch and queries, per-instance RNG noise seed, reset ownership, instance isolation.
+    7. `VirtualSourcemeter` (`src/piec/drivers/sourcemeter/virtual_sourcemeter.py`): **Checkpoint 28g (Completed)**. Generic `load_hook` / `source_hook` / `measure_hook` / `transport_hook`, `ElectricalLoadContract` integration (`ResistorLoad`, `DiodeLoad`, `CapacitiveLoad`), voltage/current source modes, load-solved compliance tripping, configured vs effective output (0.0 V / 0.0 A when disabled), setup-clocked capacitor integration, unconfirmed state on failure (`output_on=None`), reset ownership, instance isolation.
+    8. `VirtualDaq` (`src/piec/drivers/daq/virtual_daq.py`): **Audited**. Does not consume shared sample state (`_shared_fe_sample`, `_shared_mag_sample`). Generates fixed synthetic 10 Hz sine wave for scans and returns stored scalar 0.0 V. Not used in any PIEC measurement family.
+    9. `DaqAsAwg` & `DaqAsOscilloscope` (`src/piec/drivers/emulators/`): **Audited**. Per Section 11.1 ("DAQ-to-AWG/scope adapters only if their own interface tests expose a defect"): interface test suites (`tests/test_awg_contract.py`, `tests/test_daq_contract.py`, `tests/test_daq_trigger_pulses.py`) pass 100% (61 passed, 0 failures, 0 defects). Neither consumes shared sample state.
+    10. `VirtualPulser` (`src/piec/drivers/pulser/virtual_pulser.py`): **Audited**. Pure parameter state tracker. Does not consume shared sample state. Not used in any PIEC measurement family.
+    11. `VirtualRFSource` (`src/piec/drivers/rf_source/virtual_rf_source.py`): **Audited**. Pure parameter state tracker. Does not consume shared sample state. Not used in any PIEC measurement family.
+  - **Conclusion & Inventory Exhaustion**:
+    All 7 consumers of shared virtual sample state identified in Section 11.1 of `MEASUREMENT_STANDARDIZATION_PLAN.md` and all 7 generic hook roles specified in Section 11.2 have been completely implemented and verified with dedicated contract and regression suites. The remaining virtual driver families do not consume shared sample state, contain no material coupling, and participate in no measurement families. No remaining driver families require per-instance hooks. Checkpoint 28 is **COMPLETE**.
+- **Validation**:
+  - Focused virtual driver & hook suites: **517 passed** in 1.90s (`test_virtual_sourcemeter_hook.py`, `test_virtual_awg_hook.py`, `test_virtual_oscilloscope_hook.py`, `test_virtual_stepper_hook.py`, `test_virtual_calibrator_hook.py`, `test_virtual_dmm_hook.py`, `test_virtual_lockin_hook.py`, `test_simulation_contracts.py`, `test_daq_contract.py`, `test_daq_trigger_pulses.py`, `test_awg_contract.py`, `test_virtual_dispatch.py`).
+  - Measurement compatibility & GUI test suites: **195 passed** in 33.90s (`test_measurement_iv_review.py`, `test_measurement_iv_gui.py`, `test_moke.py`, `test_moke_gui.py`, `test_measurement_fe_pund_compatibility.py`, `test_measurement_magneto_transport.py`, `test_measurement_amr_gui.py`, `test_measurement_amr_compatibility.py`).
+  - Full repository test suite: **2133 passed, 1 skipped** in 62.20s on Python 3.13.2 (`MPLBACKEND=Agg`). Zero failures, zero errors, zero xfails.
+  - `git diff --check` passed cleanly with 0 whitespace errors.
 
 ## Checkpoint 28g report (authoritative)
 

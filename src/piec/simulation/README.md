@@ -251,7 +251,24 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
 - Driver reset does not reset setup-owned closures, external load/material models, clocks, or RNG seeds:
   that state is owned by the setup / fixture and must be reset there. A future VirtualBench will coordinate resets.
 
-Other driver families and VirtualBench wiring remain separate later checkpoints.
+## Virtual driver family audit & Checkpoint 28 completion (checkpoint 28h)
+
+The comprehensive audit of all virtual drivers in PIEC confirmed:
+- All 7 driver families consuming shared virtual sample state (`sample` / `mag_sample`)
+  or participating in Section 11.2 generic hooks are fully completed:
+  1. `VirtualLockin` (28a): X/Y transport hook (`xy_reader`, `transport_hook`).
+  2. `VirtualDMM` (28b): DC voltage reader hook (`voltage_reader`, `reader_hook`).
+  3. `VirtualCalibrator` (28c): commanded field/output hook (`output_hook`, `field_hook`).
+  4. `VirtualStepper` (28d): mechanical angle/motion hook (`angle_hook`, `position_hook`, `step_hook`).
+  5. `VirtualScope` (28e): high-speed waveform hook (`waveform_hook`, `channel_hook`, `data_hook`).
+  6. `VirtualAwg` (28f): high-speed excitation waveform hook (`waveform_hook`, `apply_hook`, `trigger_hook`).
+  7. `VirtualSourcemeter` (28g): two-terminal electrical load hook (`load_hook`, `source_hook`, `measure_hook`, `transport_hook`).
+- Remaining virtual drivers (`VirtualDaq`, `VirtualPulser`, `VirtualRFSource`) do not consume shared
+  sample state (`sample`, `mag_sample`), require no material decoupling, and participate in no measurement families.
+- DAQ-to-AWG and DAQ-to-Scope adapters (`DaqAsAwg`, `DaqAsOscilloscope`) expose no defects in their contract
+  and trigger test suites.
+- No remaining virtual-driver families require per-instance hook implementation. Checkpoint 28 is complete.
+- Next milestone is Checkpoint 29: VirtualBench (multi-instrument wiring, reset isolation, deterministic time/noise).
 
 ## Contents
 
