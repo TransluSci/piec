@@ -2,8 +2,12 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 30a: migrate IV simulation fixtures to VirtualBench only.** Preserve deterministic numerical references, lifecycle/safing checks, and physical/virtual schema parity. Keep MOKE/FE/AMR fixture migration for 30b–30d, shared fallback retirement for 31, and additional AMR adapters separate. Run focused and full tests, commit separately, and stop for review.
+Next: **Checkpoint 30b: migrate MOKE simulation fixtures to VirtualBench.** User authorized continuing sequentially after each verified checkpoint commit. Keep FE/AMR migrations for 30c–30d, fallback retirement for 31, and additional AMR adapters separate.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 30a completed
+
+IV numerical/golden and virtual lifecycle regression fixtures now use `tests/fixtures/virtual_setups.py::iv_bench` with a bench-owned resistor and sourcemeter. Command spies preserve zero-I/O and safing assertions. Isolated fault-injection/interface mocks remain. Golden numerical values and standardized columns/units are unchanged; the instrument ID now truthfully identifies VirtualSourcemeter. Full Python 3.13 suite: **2153 passed, 1 skipped in 62.98s**. Python 3.9 remains unavailable; physical 17/22/26 remain PENDING.
 
 ## Checkpoint 29 report (authoritative)
 

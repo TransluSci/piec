@@ -1009,7 +1009,8 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 28h | Completed | Driver family audit & completion of Checkpoint 28: audited all remaining virtual drivers (`VirtualDaq`, `VirtualPulser`, `VirtualRFSource`) and DAQ emulator adapters (`DaqAsAwg`, `DaqAsOscilloscope`); confirmed that the seven Section 11.2 generic hook roles are completed (28a–28g); DAQ/AWG/trigger tests pass (61); direct DAQ-to-scope adapter coverage is absent; no additional virtual driver hook family is required within checkpoint 28 scope. Checkpoint 28 is complete. Ready to advance to VirtualBench (Checkpoint 29). |
 
 | 29 | Completed | VirtualBench owns fresh models/instruments, electrical and MOKE routes, direct triggered waveform transport, deterministic clock/RNG/reset, and concurrent bench isolation. IV/MOKE hardware-interface schema checks added. See MEASUREMENT_HANDOFF.md for validation. |
-| 30a–30d | Migrate IV/MOKE/FE/AMR simulation fixtures one family per commit | Physical/virtual schemas agree; preserve applicable generic-driver fallback tests |
+| 30a | Completed | IV numerical/golden and virtual lifecycle fixtures use owned VirtualBench resistor/source; numerical reference preserved, truthful virtual ID. Full suite 2153 passed, 1 skipped. |
+| 30b–30d | Migrate MOKE/FE/AMR simulation fixtures one family per commit | Physical/virtual schemas agree; preserve applicable generic-driver fallback tests |
 | 31 | Retire internal global-sample use after consumers migrate | Keep external generic-driver fallback unless separately authorized to remove it |
 | 32 | Optional scientific additions, only if separately requested | One algorithm/reference dataset/unit/tolerance/review per commit; outside this standardization |
 | 33 | Final documentation, workflows and release notes | Offline notebooks, docs build, full tests; list replaced APIs/formats without implementing converters |

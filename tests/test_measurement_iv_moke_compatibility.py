@@ -34,29 +34,16 @@ MOKE_MEAS_GOLDEN_PATH = FIXTURES_DIR / "moke_measured_golden.csv"
 class TestIVSweepCompatibility:
     """Verify standardized IVSweep behavior and regression goldens."""
 
-    def _create_mock_sourcemeter(self, resistance: float = 100.0) -> Mock:
-        sm = Mock()
-        sm.idn.return_value = "KEITHLEY INSTRUMENTS INC.,MODEL 2400,1234567,1.0"
-        current_v = [0.0]
-
-        def set_v(*args, **kwargs):
-            if "voltage" in kwargs:
-                v = kwargs["voltage"]
-            elif len(args) == 2:
-                v = args[1]
-            elif len(args) == 1:
-                v = args[0]
-            else:
-                v = 0.0
-            current_v[0] = float(v)
-
-        sm.set_source_voltage.side_effect = set_v
-        sm.get_voltage.side_effect = lambda *args, **kwargs: current_v[0]
-        sm.get_current.side_effect = lambda *args, **kwargs: current_v[0] / resistance
+    def _create_sourcemeter(self, resistance=100.0):
+        from tests.fixtures.virtual_setups import iv_bench
+        bench, sm = iv_bench(resistance)
+        # Spies retain command assertions while electrical behavior uses the bench.
+        for method in ('idn', 'output', 'configure_voltage_source', 'set_sense_mode'):
+            setattr(sm, method, Mock(wraps=getattr(sm, method)))
         return sm
 
     def test_iv_sweep_constructor_and_attributes(self, tmp_path):
-        sm = self._create_mock_sourcemeter()
+        sm = self._create_sourcemeter()
         iv = IVSweep(
             sourcemeter=sm,
             v_start=-1.0,
@@ -90,7 +77,7 @@ class TestIVSweepCompatibility:
         assert sm.idn.call_count == 0
 
     def test_iv_sweep_configure_instruments(self):
-        sm = self._create_mock_sourcemeter()
+        sm = self._create_sourcemeter()
         iv = IVSweep(sm, v_start=0.5, current_compliance=0.02, sense_mode="4W")
         iv.configure_instruments()
 
@@ -101,7 +88,7 @@ class TestIVSweepCompatibility:
         assert sm.output.call_count == 2
 
     def test_iv_sweep_sweep_execution(self):
-        sm = self._create_mock_sourcemeter(resistance=50.0)
+        sm = self._create_sourcemeter(resistance=50.0)
         iv = IVSweep(sm, v_start=0.0, v_stop=2.0, num_steps=5, dwell_time=0.0)
         with iv.session(save=False) as sess:
             sess.configure_instruments()
@@ -118,7 +105,7 @@ class TestIVSweepCompatibility:
         assert currents == pytest.approx([0.0, 0.01, 0.02, 0.03, 0.04])
 
     def test_iv_sweep_save_data(self, tmp_path):
-        sm = self._create_mock_sourcemeter()
+        sm = self._create_sourcemeter()
         iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=3, dwell_time=0.0, output_dir=str(tmp_path))
         df = iv.run_experiment(save=True)
 
@@ -132,7 +119,7 @@ class TestIVSweepCompatibility:
         assert_data_columns_match(data, ["voltage", "current"], exact_order=True)
 
     def test_iv_sweep_run_experiment_lifecycle(self, tmp_path):
-        sm = self._create_mock_sourcemeter()
+        sm = self._create_sourcemeter()
         iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, output_dir=str(tmp_path))
 
         result = iv.run_experiment()
@@ -145,7 +132,7 @@ class TestIVSweepCompatibility:
 
     def test_iv_sweep_golden_csv_regression(self, tmp_path):
         """Verify that deterministic execution produces exact match against golden CSV."""
-        sm = self._create_mock_sourcemeter(resistance=100.0)
+        sm = self._create_sourcemeter(resistance=100.0)
         iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, sense_mode="2W", output_dir=str(tmp_path))
         iv.run_experiment()
 
@@ -158,7 +145,7 @@ class TestIVSweepCompatibility:
     def test_iv_sweep_numerical_equivalence_with_mapping(self, tmp_path):
         """Verify numerical equivalence using the harness old_to_new_column_mapping."""
         from piec.measurement.persistence import read_measurement_csv
-        sm = self._create_mock_sourcemeter(resistance=100.0)
+        sm = self._create_sourcemeter(resistance=100.0)
         iv = IVSweep(sm, v_start=0.0, v_stop=1.0, num_steps=5, dwell_time=0.0, sense_mode="2W", output_dir=str(tmp_path))
         iv.run_experiment()
 
