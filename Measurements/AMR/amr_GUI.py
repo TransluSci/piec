@@ -21,6 +21,7 @@ from piec.drivers.dmm.virtual_dmm import VirtualDMM
 from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
 from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
 from piec.drivers.lockin.virtual_lockin import VirtualLockin
+from piec.simulation.setups import connect_amr_plant
 from piec.measurement.amr import AMR
 from piec.measurement import MeasurementRunner
 from piec.measurement.contracts import SafetyAlertEvent, SafetyStatus, TerminalEvent
@@ -439,6 +440,11 @@ class AMRApp(MeasurementApp):
                 lockin = SRS830(lock_addr)
             self._instruments.append(lockin)
             self._active_lockin = lockin
+            if all(addr.upper() == "VIRTUAL" for addr in (dmm_addr, cal_addr, step_addr, lock_addr)):
+                self._virtual_plant = connect_amr_plant(
+                    calibrator, dmm, stepper, lockin,
+                    field_scale=float(DEFAULTS["voltage_calibration"]),
+                )
         except Exception as error:
             messagebox.showerror("Driver initialization error", str(error))
             print(f"Driver initialization error: {error}")

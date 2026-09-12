@@ -2,8 +2,12 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 31: retire internal reliance on global virtual samples.** User authorized continuing sequentially after each verified checkpoint commit. Preserve the external generic-driver fallback; skip optional checkpoint 32 unless separately requested, then proceed to 33. Additional AMR adapters remain separate.
+Next: **Checkpoint 33: final documentation, workflows and release notes.** Checkpoint 32 is optional scientific work and was not requested. User authorized sequential continuation. Physical gates remain PENDING; additional AMR adapters remain separate.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 31 completed
+
+Remaining FE/AMR GUI and notebook simulation consumers now install private plants through `piec.simulation.setups`, including the virtual quickstart. Packaged example FE parameters are copied per setup; no consumer installs a shared sample. MOKE already used explicit per-instance wiring. External generic-driver fallback and its tests remain intact. Notebook stale outputs were cleared. Consumer plants preserve manual lock-in settings and explicit excitation. Focused consumer/GUI checks: **86 passed**. Full Python 3.13: **2159 passed, 1 skipped in 63.72s**. Python 3.9 unavailable locally; physical gates remain PENDING.
 
 ## Checkpoint 30d completed
 

@@ -1,0 +1,23 @@
+{
+  "ferroelectric": {
+    "a0": 536200.0,
+    "b": -1287000000.0,
+    "c": 5000000000.0,
+    "T0": 673.0,
+    "Q12": -0.046,
+    "s11": 1.41e-11,
+    "s12": -4.56e-12,
+    "lattice_a": 3.95e-10,
+    "film_thickness": 2e-08,
+    "epsilon_r": 50,
+    "leakage_resistance": 10000000000000.0
+  },
+  "substrate": {
+    "lattice_a": 3.95e-10
+  },
+  "electrode": {
+    "screening_lambda": 5e-11,
+    "permittivity_e": 1000000.0,
+    "area": 1e-10
+  }
+}

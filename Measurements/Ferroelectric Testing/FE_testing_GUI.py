@@ -11,6 +11,7 @@ from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 from piec.drivers.awg.k_81150a import Keysight81150a
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.simulation.setups import connect_fe_plant
 from piec.measurement.gui_utils import MeasurementApp
 from piec.measurement import MeasurementRunner, TerminalEvent, SafetyAlertEvent
 
@@ -590,6 +591,8 @@ class FEMeasurementApp(MeasurementApp):
         else:
             osc = KeysightDSOX3024a(osc_address)
         self._instruments.append(osc)
+        if awg_address == "VIRTUAL" and osc_address == "VIRTUAL":
+            self._virtual_plant = connect_fe_plant(awg, osc)
 
         if meas_type == "HysteresisLoop":
             self.experiment = HysteresisLoop(

@@ -17,9 +17,11 @@ Running a virtual hysteresis measurement
    from piec.drivers.awg.k_81150a import Keysight81150a
    from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
    from piec.measurement.discrete_waveform import HysteresisLoop
+   from piec.simulation.setups import connect_fe_plant
 
    awg = Keysight81150a("VIRTUAL")
    osc = KeysightDSOX3024a("VIRTUAL")
+   plant = connect_fe_plant(awg, osc)  # independent example material and routing
    experiment = HysteresisLoop(awg, osc, output_dir='.')
    experiment.run_experiment()  # configures, captures, saves, and analyzes
 
