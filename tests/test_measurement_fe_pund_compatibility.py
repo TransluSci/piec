@@ -13,8 +13,7 @@ import pandas as pd
 import pytest
 
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from tests.fixtures.virtual_setups import fe_bench
 from piec.analysis.hysteresis import (
     STANDARD_HYSTERESIS_COLUMNS,
     STANDARD_HYSTERESIS_UNITS,
@@ -48,8 +47,7 @@ class TestDiscreteWaveformCompatibility:
     """Verify standardized DiscreteWaveform behavior and regression goldens."""
 
     def test_discrete_waveform_constructor_and_attributes(self, tmp_path):
-        awg = VirtualAwg()
-        osc = VirtualScope()
+        bench, awg, osc = fe_bench()
         dw = DiscreteWaveform(
             awg=awg,
             osc=osc,
@@ -78,8 +76,7 @@ class TestDiscreteWaveformCompatibility:
         assert osc.state["armed"] is False
 
     def test_discrete_waveform_instrument_configuration(self, tmp_path):
-        awg = VirtualAwg()
-        osc = VirtualScope()
+        bench, awg, osc = fe_bench()
         dw = DiscreteWaveform(
             awg=awg,
             osc=osc,
@@ -100,8 +97,7 @@ class TestDiscreteWaveformCompatibility:
         assert str(osc.state["trigger_sweep"]).upper() == "NORM"
 
     def test_discrete_waveform_raw_capture_and_save(self, tmp_path):
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         dw = DiscreteWaveform(
             awg=awg,
             osc=osc,
@@ -126,8 +122,7 @@ class TestDiscreteWaveformCompatibility:
 
     def test_discrete_waveform_golden_csv_regression(self, tmp_path):
         """Verify that deterministic raw capture matches golden CSV."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         dw = DiscreteWaveform(
             awg=awg,
             osc=osc,
@@ -147,8 +142,7 @@ class TestDiscreteWaveformCompatibility:
         """Verify numerical equivalence using the harness old_to_new_column_mapping with view='raw'."""
         from piec.measurement.persistence import read_measurement_csv
 
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         dw = DiscreteWaveform(
             awg=awg,
             osc=osc,
@@ -166,8 +160,7 @@ class TestHysteresisLoopCompatibility:
     """Characterize migrated HysteresisLoop behavior and verify regression goldens."""
 
     def test_hysteresis_constructor_and_attributes(self, tmp_path):
-        awg = VirtualAwg()
-        osc = VirtualScope()
+        bench, awg, osc = fe_bench()
         hl = HysteresisLoop(
             awg=awg,
             osc=osc,
@@ -214,8 +207,7 @@ class TestHysteresisLoopCompatibility:
             HysteresisLoop(awg=awg, osc=osc, save_dir=str(tmp_path))
 
     def test_hysteresis_configure_awg(self):
-        awg = VirtualAwg()
-        osc = VirtualScope()
+        bench, awg, osc = fe_bench()
         hl = HysteresisLoop(awg=awg, osc=osc, frequency=1000.0, amplitude=1.5, offset=0.0)
         hl.configure_awg()
 
@@ -225,8 +217,7 @@ class TestHysteresisLoopCompatibility:
         assert str(awg.state["polarity"][1]).upper() == "NORM"
 
     def test_hysteresis_run_experiment_lifecycle(self, tmp_path):
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         hl = HysteresisLoop(
             awg=awg,
             osc=osc,
@@ -254,8 +245,7 @@ class TestHysteresisLoopCompatibility:
 
     def test_hysteresis_golden_csv_regression(self, tmp_path):
         """Verify deterministic hysteresis run matches golden CSV."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         hl = HysteresisLoop(
             awg=awg,
             osc=osc,
@@ -280,8 +270,7 @@ class TestHysteresisLoopCompatibility:
 
     def test_hysteresis_numerical_equivalence(self, tmp_path):
         """Verify numerical equivalence against golden CSV."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         hl = HysteresisLoop(
             awg=awg,
             osc=osc,
@@ -303,8 +292,7 @@ class TestHysteresisLoopCompatibility:
 
     def test_hysteresis_polarization_calculations(self, tmp_path):
         """Verify physical polarization calculation from current and area."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         area = 1e-5
         hl = HysteresisLoop(
             awg=awg,
@@ -333,8 +321,7 @@ class TestHysteresisLoopCompatibility:
 
     def test_hysteresis_auto_timeshift(self, tmp_path):
         """Verify auto_timeshift detects time alignment offset."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
 
         # auto_timeshift=False retains configured time_offset
         hl_manual = HysteresisLoop(
@@ -366,8 +353,7 @@ class TestHysteresisLoopCompatibility:
 
     def test_hysteresis_plot_artifacts(self, tmp_path):
         """Verify that save_plots=True creates _PV.png, _IV.png, and _trace.png."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
 
         # Run with save_plots=True
         hl_save = HysteresisLoop(
@@ -424,8 +410,7 @@ class TestThreePulsePundCompatibility:
     """Verify standardized ThreePulsePund behavior and regression goldens."""
 
     def test_pund_constructor_and_attributes(self, tmp_path):
-        awg = VirtualAwg()
-        osc = VirtualScope()
+        bench, awg, osc = fe_bench()
         pund = ThreePulsePund(
             awg=awg,
             osc=osc,
@@ -478,8 +463,7 @@ class TestThreePulsePundCompatibility:
             ThreePulsePund(awg=awg, osc=osc, save_dir=str(tmp_path))
 
     def test_pund_configure_awg(self):
-        awg = VirtualAwg()
-        osc = VirtualScope()
+        bench, awg, osc = fe_bench()
         pund = ThreePulsePund(
             awg=awg,
             osc=osc,
@@ -494,8 +478,7 @@ class TestThreePulsePundCompatibility:
         assert awg.state["frequency"][1] == pytest.approx(1 / pund.length)
 
     def test_pund_run_experiment_lifecycle(self, tmp_path):
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         pund = ThreePulsePund(
             awg=awg,
             osc=osc,
@@ -518,8 +501,7 @@ class TestThreePulsePundCompatibility:
 
     def test_pund_golden_csv_regression(self, tmp_path):
         """Verify deterministic PUND run matches golden CSV."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         pund = ThreePulsePund(
             awg=awg,
             osc=osc,
@@ -547,8 +529,7 @@ class TestThreePulsePundCompatibility:
 
     def test_pund_numerical_equivalence(self, tmp_path):
         """Verify numerical equivalence against golden CSV."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         pund = ThreePulsePund(
             awg=awg,
             osc=osc,
@@ -573,8 +554,7 @@ class TestThreePulsePundCompatibility:
 
     def test_pund_polarization_calculations(self, tmp_path):
         """Verify PUND polarization calculations and array zeroing."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
         pund = ThreePulsePund(
             awg=awg,
             osc=osc,
@@ -598,8 +578,7 @@ class TestThreePulsePundCompatibility:
 
     def test_pund_auto_timeshift(self, tmp_path):
         """Verify auto_timeshift detects PUND pulse onset."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
 
         pund_auto = ThreePulsePund(
             awg=awg,
@@ -629,8 +608,7 @@ class TestThreePulsePundCompatibility:
 
     def test_pund_plot_artifacts(self, tmp_path):
         """Verify that save_plots=True creates _dPvst.png and _trace.png."""
-        awg = VirtualAwg(simulation_points=50)
-        osc = VirtualScope(simulation_points=50)
+        bench, awg, osc = fe_bench()
 
         # Run with save_plots=True
         pund_save = ThreePulsePund(

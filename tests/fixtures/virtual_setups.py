@@ -33,3 +33,32 @@ def iv_bench(resistance=100.0):
     bench.add_model('load', ResistorLoad, resistance=resistance)
     bench.connect_load('electrical', 'source', 'load')
     return bench, source
+
+
+def fe_bench(points=50):
+    """Explicit FE plant and preparation waveform matching the reference fixtures."""
+    import json
+    from pathlib import Path
+    import numpy as np
+    from piec.drivers.awg.virtual_awg import VirtualAwg
+    from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+    from piec.simulation import Ferroelectric
+
+    bench = VirtualBench(seed=42)
+    material_parameters = json.loads((Path(__file__).parent / 'fe_material.json').read_text(encoding='utf-8'))
+    material = bench.add_model('material', Ferroelectric, material_dict=material_parameters)
+    material.prep_points = 20
+    awg = bench.add_instrument('awg', VirtualAwg, simulation_points=points)
+    scope = bench.add_instrument('scope', VirtualScope, simulation_points=points)
+
+    def capture(v, t):
+        voltage = np.concatenate([np.zeros(material.prep_points), v])
+        time = np.linspace(0., (t[-1] - t[0]) * len(voltage) / len(v), len(voltage))
+        material.apply_waveform(voltage, time)
+        # The waveform contract integrates its local duration. Coordinate the
+        # bench clock explicitly after this fixture's synchronous acquisition.
+        bench.advance(time[-1] - time[0])
+
+    awg.waveform_hook = capture
+    scope.waveform_hook = lambda: material.get_voltage_response()
+    return bench, awg, scope

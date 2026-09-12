@@ -44,9 +44,8 @@ def test_invalid_options_rejected_before_reservation_or_io(family, option, value
 
 @pytest.mark.parametrize('family', [HysteresisLoop, ThreePulsePund])
 def test_boolean_false_options_remain_false(family, tmp_path):
-    from piec.drivers.awg.virtual_awg import VirtualAwg
-    from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
-    run = family(VirtualAwg(simulation_points=50), VirtualScope(simulation_points=50),
+    from tests.fixtures.virtual_setups import fe_bench
+    run = family(*fe_bench()[1:],
                  output_dir=tmp_path, auto_timeshift=True, save_plots=True, time_offset=0)
     run.run_experiment(save=True, options={'save_plots':False,'show_plots':False,'auto_timeshift':False})
     assert not list(tmp_path.glob('*.png'))

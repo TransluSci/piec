@@ -32,8 +32,7 @@ from piec.analysis.hysteresis import (
     STANDARD_HYSTERESIS_COLUMNS,
     STANDARD_HYSTERESIS_UNITS,
 )
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from tests.fixtures.virtual_setups import fe_bench
 from piec.measurement.contracts import (
     ConcurrentRunError,
     HardwareSafetyError,
@@ -53,8 +52,7 @@ from tests.fixtures.measurement_compatibility import (
 
 def create_instrument_pair():
     """Create a paired VirtualAwg and VirtualScope for testing."""
-    awg = VirtualAwg(simulation_points=50)
-    osc = VirtualScope(simulation_points=50)
+    bench, awg, osc = fe_bench()
     return awg, osc
 
 

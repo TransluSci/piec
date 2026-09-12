@@ -26,8 +26,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from tests.fixtures.virtual_setups import fe_bench
 from piec.measurement.contracts import (
     ConcurrentRunError,
     HardwareSafetyError,
@@ -43,8 +42,7 @@ from piec.measurement.runner import MeasurementRunner
 
 def create_instrument_pair():
     """Create a paired VirtualAwg and VirtualScope for testing."""
-    awg = VirtualAwg(simulation_points=50)
-    osc = VirtualScope(simulation_points=50)
+    bench, awg, osc = fe_bench()
     return awg, osc
 
 

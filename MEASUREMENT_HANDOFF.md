@@ -2,8 +2,12 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 30c: migrate FE simulation fixtures to VirtualBench.** User authorized continuing sequentially after each verified checkpoint commit. Keep AMR migration for 30d, fallback retirement for 31, and additional AMR adapters separate.
+Next: **Checkpoint 30d: migrate AMR simulation fixtures to VirtualBench.** User authorized continuing sequentially after each verified checkpoint commit. Keep fallback retirement for 31 and additional AMR adapters separate.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 30c completed
+
+FE/DiscreteWaveform/Hysteresis/PUND numerical and virtual lifecycle fixtures now use `fe_bench`, with an explicit copied material parameter fixture and the original 20-point preparation waveform outside generic drivers. Waveform-duration time coordination is explicit in the setup. All existing numerical goldens are unchanged. Independent acquisition/reset replay is tested. Focused FE suite: **78 passed**; full Python 3.13: **2154 passed, 1 skipped in 64.15s**; final polarity-fixture and replay check: **30 passed**. Python 3.9 remains unavailable and physical gates remain PENDING.
 
 ## Checkpoint 30b completed
 

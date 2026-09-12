@@ -6,14 +6,13 @@ import pytest
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from piec.measurement import HysteresisLoop
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from tests.fixtures.virtual_setups import fe_bench
 from piec.measurement.contracts import SafetyStatus, RunState
 
 ROOT = Path(__file__).resolve().parents[1]
 
 def measurement(tmp_path, **kwargs):
-    return HysteresisLoop(VirtualAwg(simulation_points=50), VirtualScope(simulation_points=50), output_dir=tmp_path, **kwargs)
+    return HysteresisLoop(*fe_bench()[1:], output_dir=tmp_path, **kwargs)
 
 @pytest.mark.parametrize('failure_index', [1, 2, 3])
 def test_plot_failure_cleans_all_pngs_and_figures(tmp_path, monkeypatch, failure_index):
