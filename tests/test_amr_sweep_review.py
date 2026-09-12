@@ -5,11 +5,11 @@ import pytest
 
 from piec.measurement import AMR
 from piec.measurement.contracts import RunState, SafetyStatus, TerminalEvent
-from tests.test_measurement_amr_compatibility import create_mock_amr_instruments
+from tests.test_measurement_amr_compatibility import create_bench_amr_instruments
 
 
 def sweep(**kwargs):
-    instruments = create_mock_amr_instruments()
+    instruments = create_bench_amr_instruments()
     run = AMR(dmm=instruments['dmm'], calibrator=instruments['calibrator'],
         stepper=instruments['arduino'], lockin=instruments['lockin'],
         shutdown_handler=Mock(), measure_time=kwargs.pop('measure_time', 0),
@@ -39,7 +39,7 @@ def test_sweep_limit_preflight_happens_before_any_instrument_io():
     with pytest.raises(ValueError, match='Quantized'):
         run.run_experiment(save=False)
     for key in ('dmm', 'calibrator', 'arduino', 'lockin'):
-        assert not instruments[key].mock_calls
+        assert not any(value.mock_calls for value in vars(instruments[key]).values() if isinstance(value, Mock))
 
 
 def test_stop_during_motor_call_does_not_enter_uncancellable_settle_or_read():
@@ -80,7 +80,7 @@ def test_descending_sweep_has_no_extra_endpoint_move():
     run, instruments = sweep(angle_step=-90, total_angle=-180)
     result = run.run_experiment(save=False)
     assert list(result.angle) == [0, -90, -180]
-    assert instruments['current_angle'][0] == -180
+    assert instruments['arduino'].get_angle() == -180
     assert instruments['arduino'].step.call_count == 2
 
 

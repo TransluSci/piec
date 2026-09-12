@@ -2,8 +2,12 @@
 
 Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 30d: migrate AMR simulation fixtures to VirtualBench.** User authorized continuing sequentially after each verified checkpoint commit. Keep fallback retirement for 31 and additional AMR adapters separate.
+Next: **Checkpoint 31: retire internal reliance on global virtual samples.** User authorized continuing sequentially after each verified checkpoint commit. Preserve the external generic-driver fallback; skip optional checkpoint 32 unless separately requested, then proceed to 33. Additional AMR adapters remain separate.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 30d completed
+
+AMR golden/sweep and virtual magneto-transport fixtures now own the four instruments and material through VirtualBench. Field/angle/transport wiring is explicit. The golden material declares its noiseless 0.1 quadrature ratio and the lock-in declares 1 uA excitation; no generic driver fabricates Y. Existing numerical data is unchanged, instrument metadata identifies the virtual drivers. Dedicated fault mocks remain. Focused: **49 passed**. Full Python 3.13: **2155 passed, 1 skipped in 62.75s**. Python 3.9 unavailable; physical validation remains PENDING.
 
 ## Checkpoint 30c completed
 

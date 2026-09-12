@@ -56,58 +56,18 @@ AMR_SIGNAL_ATOL = 1e-10
 REPO_ROOT = Path(__file__).parent.parent
 
 
-def create_mock_amr_instruments(
-    resistance_baseline: float = 100.0,
-    amr_delta: float = 2.0,
-    field: float = 100.0,
-    voltage_calibration: float = 10000.0,
-):
-    """
-    Create a coordinated set of mock instruments simulating the AMR hardware setup.
-
-    - DMM: Reads hall sensor voltage (field / voltage_calibration).
-    - Calibrator: Sets output voltage to magnet power supply.
-    - Arduino: Stepper motor with tracking of current mechanical angle.
-    - Lockin: Measures in-phase X following cos^2(theta) AMR and quadrature Y.
-    """
-    current_angle = [0.0]
-
-    def mock_step(steps: int, direction: int):
-        delta = steps * 360.0 / 200.0
-        if direction == 1:
-            current_angle[0] += delta
-        else:
-            current_angle[0] -= delta
-
-    def mock_get_xy():
-        theta_rad = math.radians(current_angle[0])
-        x = (resistance_baseline + amr_delta * (math.cos(theta_rad) ** 2)) * 1e-6
-        y = 0.1 * x
-        return x, y
-
-    dmm = Mock()
-    dmm.idn.return_value = "TEST_DMM"
-    dmm.get_voltage.return_value = field / voltage_calibration
-
-    calibrator = Mock()
-    calibrator.idn.return_value = "TEST_CALIBRATOR"
-    calibrator.__str__ = lambda self: "TEST_CALIBRATOR"
-
-    arduino = Mock()
-    arduino.idn.return_value = "TEST_STEPPER"
-    arduino.step.side_effect = mock_step
-
-    lockin = Mock()
-    lockin.idn.return_value = "TEST_LOCKIN"
-    lockin.get_X_Y.side_effect = mock_get_xy
-
-    return {
-        "dmm": dmm,
-        "calibrator": calibrator,
-        "arduino": arduino,
-        "lockin": lockin,
-        "current_angle": current_angle,
-    }
+def create_bench_amr_instruments(resistance_baseline=100., amr_delta=2., field=100., voltage_calibration=10000.):
+    from tests.fixtures.virtual_setups import amr_bench
+    bench, instruments = amr_bench(resistance_baseline, amr_delta, voltage_calibration, golden=True)
+    for instrument in instruments.values():
+        instrument.idn = Mock(wraps=instrument.idn)
+    instruments['arduino'].step = Mock(wraps=instruments['arduino'].step)
+    instruments['lockin'].get_X_Y = Mock(wraps=instruments['lockin'].get_X_Y)
+    cal, lockin = instruments['calibrator'], instruments['lockin']
+    cal.set_output = Mock(wraps=cal.set_output)
+    for method in ('configure_reference', 'configure_input', 'configure_gain_filters'):
+        setattr(lockin, method, Mock(wraps=getattr(lockin, method)))
+    return instruments
 
 
 class TestConversionHelpers:
@@ -143,7 +103,7 @@ class TestAMRCompatibility:
     """Standardized AMR measurement behavior, lifecycle, and golden regression."""
 
     def test_amr_constructor_and_attributes(self, tmp_path):
-        mocks = create_mock_amr_instruments()
+        mocks = create_bench_amr_instruments()
         shutdown = Mock()
         amr = AMR(
             dmm=mocks["dmm"],
@@ -191,7 +151,7 @@ class TestAMRCompatibility:
         assert amr.metadata["frequency"] == 10.0
 
     def test_amr_requires_excitation_shutdown_before_energizing(self, tmp_path):
-        mocks = create_mock_amr_instruments()
+        mocks = create_bench_amr_instruments()
         amr = AMR(
             dmm=mocks["dmm"],
             calibrator=mocks["calibrator"],
@@ -206,7 +166,7 @@ class TestAMRCompatibility:
             amr.run_experiment(save=False)
 
     def test_amr_configure_lockin_via_options(self, tmp_path):
-        mocks = create_mock_amr_instruments()
+        mocks = create_bench_amr_instruments()
         shutdown = Mock()
         amr = AMR(
             dmm=mocks["dmm"],
@@ -231,7 +191,7 @@ class TestAMRCompatibility:
 
     def test_amr_full_run_matches_scientific_golden(self, tmp_path):
         """Verify full standardized AMR execution produces exact scientific golden results."""
-        mocks = create_mock_amr_instruments(
+        mocks = create_bench_amr_instruments(
             resistance_baseline=100.0,
             amr_delta=2.0,
             field=100.0,
@@ -284,7 +244,7 @@ class TestAMRCompatibility:
         R(theta) = R_perp + delta_R * cos^2(theta).
         Signal x is maximal at theta = 0, 180 deg and minimal at theta = 90 deg.
         """
-        mocks = create_mock_amr_instruments(
+        mocks = create_bench_amr_instruments(
             resistance_baseline=100.0,
             amr_delta=10.0,  # 10 uV AMR contrast
             field=500.0,
@@ -346,7 +306,7 @@ class TestAMRCompatibility:
         Verify AMR-ANGLE-001 defect is repaired:
         Motor endpoint matches commanded angle (180.0 deg) exactly without an extra step.
         """
-        mocks = create_mock_amr_instruments()
+        mocks = create_bench_amr_instruments()
         shutdown = Mock()
         with patch("time.sleep", return_value=None):
             amr = AMR(
@@ -366,8 +326,8 @@ class TestAMRCompatibility:
 
         _, expected = assert_piec_csv_layout(AMR_GOLDEN_PATH)
         # Motor position ends at exactly 180.0 degrees (no extra step)
-        assert mocks["current_angle"][0] == pytest.approx(180.0)
-        actual_endpoint = [mocks["current_angle"][0], amr.data.iloc[-1]["x"], amr.data.iloc[-1]["y"]]
+        assert mocks["arduino"].get_angle() == pytest.approx(180.0)
+        actual_endpoint = [mocks["arduino"].get_angle(), amr.data.iloc[-1]["x"], amr.data.iloc[-1]["y"]]
         expected_endpoint = expected.iloc[-1][["angle", "x", "y"]].to_numpy()
         np.testing.assert_allclose(actual_endpoint, expected_endpoint, atol=AMR_SIGNAL_ATOL, rtol=1e-7)
 
@@ -388,7 +348,7 @@ class TestAMRCompatibility:
 
     def test_amr_pause_control(self, tmp_path):
         """Verify that request_pause pauses acquisition cooperatively until unpaused."""
-        mocks = create_mock_amr_instruments()
+        mocks = create_bench_amr_instruments()
         shutdown = Mock()
         amr = AMR(
             dmm=mocks["dmm"],
@@ -422,7 +382,7 @@ class TestAMRCompatibility:
 
     def test_amr_abort_control(self, tmp_path):
         """Verify that request_stop terminates measurement early and preserves collected data."""
-        mocks = create_mock_amr_instruments()
+        mocks = create_bench_amr_instruments()
         shutdown = Mock()
         amr = AMR(
             dmm=mocks["dmm"],

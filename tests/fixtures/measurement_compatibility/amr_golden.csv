@@ -1,5 +1,5 @@
 angle_step,total_angle,field,field_unit,frequency,amplitude,field_basis,signal_mode,field_source_mode,field_source_name,source_output_unit,excitation_source,excitation_settings_provenance,field_source_scale,field_reader_name,field_reader_mode,field_absolute_tolerance,field_relative_tolerance,field_mismatch_policy,field_reader_scale,instrument_0,instrument_1,instrument_2,instrument_3,readout_configuration,measurement_schema,measurement_schema_version,run_id,outcome,partial,save_requested,column_units_json,start_angle,angle_basis,measure_time
-45.0,180.0,100.0,Oe,10.0,1.0,commanded,lockin_xy,linear,calibrator,V,internal,user_declared_unverified,10000.0,dmm,linear,1.0,0.1,warn,10000.0,TEST_CALIBRATOR,TEST_LOCKIN,TEST_STEPPER,TEST_DMM,preserve,amr,1,__NORMALIZED_UUID__,COMPLETED,False,True,"{""angle"":""deg"",""field"":""Oe"",""x"":""V"",""y"":""V""}",0.0,commanded_quantized,0.01
+45.0,180.0,100.0,Oe,10.0,1.0,commanded,lockin_xy,linear,calibrator,V,internal,user_declared_unverified,10000.0,dmm,linear,1.0,0.1,warn,10000.0,Virtual Calibrator,Virtual Lock-in,Virtual Stepper,Virtual DMM,preserve,amr,1,__NORMALIZED_UUID__,COMPLETED,False,True,"{""angle"":""deg"",""field"":""Oe"",""x"":""V"",""y"":""V""}",0.0,commanded_quantized,0.01
 
 angle,field,x,y
 0.0,100.0,0.000102,1.02e-05

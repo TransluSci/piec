@@ -1012,7 +1012,7 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 30a | Completed | IV numerical/golden and virtual lifecycle fixtures use owned VirtualBench resistor/source; numerical reference preserved, truthful virtual ID. Full suite 2153 passed, 1 skipped. |
 | 30b | Completed | MOKE linear goldens and hysteresis/lifecycle fixtures use VirtualBench; numerical references preserved. Full suite 2153 passed, 1 skipped. |
 | 30c | Completed | Explicit FE material/preparation fixtures and owned bench pairs; goldens unchanged, reset/replay isolation tested. Full suite 2154 passed, 1 skipped; final polarity/replay checks 30 passed. |
-| 30d | Migrate AMR simulation fixtures | Physical/virtual schemas agree; preserve applicable generic-driver fallback tests |
+| 30d | Completed | AMR four-instrument golden/sweep and virtual lifecycle fixtures use owned bench state and explicit field/angle/XY hooks; numerical references preserved. Full suite 2155 passed, 1 skipped. |
 | 31 | Retire internal global-sample use after consumers migrate | Keep external generic-driver fallback unless separately authorized to remove it |
 | 32 | Optional scientific additions, only if separately requested | One algorithm/reference dataset/unit/tolerance/review per commit; outside this standardization |
 | 33 | Final documentation, workflows and release notes | Offline notebooks, docs build, full tests; list replaced APIs/formats without implementing converters |

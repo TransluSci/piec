@@ -4,6 +4,7 @@ from piec.simulation import ResistorLoad, VirtualBench
 from piec.analysis.field_calibration import FieldCalibration
 from piec.drivers.dmm.virtual_dmm import VirtualDMM
 from piec.simulation import HystereticMagneticMaterial
+from piec.simulation import MagneticSample
 
 
 class LinearFieldFixture(HystereticMagneticMaterial):
@@ -12,6 +13,54 @@ class LinearFieldFixture(HystereticMagneticMaterial):
     @property
     def magnetization(self):
         return self.current_field / 500.0
+
+
+class AmrGoldenMaterial(MagneticSample):
+    """Explicit noiseless reference with a declared 0.1 quadrature/in-phase ratio."""
+
+    def get_voltage_response(self, excitation_current, angle=None, field=None, time=None):
+        import math
+        theta = self.current_angle if angle is None else angle
+        if time is not None:
+            self.timebase.set_time(time)
+        resistance = self.r_base * (1. + self.amr_ratio * math.cos(math.radians(theta)) ** 2)
+        x = resistance * excitation_current
+        return x, .1 * x
+
+
+def amr_bench(resistance=100., delta=2., field_scale=10000., golden=False):
+    from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
+    from piec.drivers.lockin.virtual_lockin import VirtualLockin
+    from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
+    bench = VirtualBench(seed=42)
+    material = bench.add_model('material', AmrGoldenMaterial if golden else MagneticSample,
+                               r_base=resistance, amr_ratio=delta/resistance)
+    cal = bench.add_instrument('calibrator', VirtualCalibrator)
+    dmm = bench.add_instrument('dmm', VirtualDMM)
+    stepper = bench.add_instrument('arduino', VirtualStepper)
+    lockin = bench.add_instrument('lockin', VirtualLockin, excitation_current=1e-6)
+
+    def apply_field(voltage):
+        material.current_field = voltage * field_scale
+
+    def apply_angle(angle):
+        material.current_angle = angle
+
+    def field_voltage():
+        if cal.state['output_on'] is None:
+            raise RuntimeError('unconfirmed calibrator output')
+        return material.current_field / field_scale
+
+    def transport(excitation_current):
+        if stepper.state['moving'] is None or cal.state['output_on'] is None:
+            raise RuntimeError('unconfirmed AMR plant state')
+        return material.get_voltage_response(excitation_current, time=bench.timebase.current_time)
+
+    cal.output_hook = apply_field
+    stepper.angle_hook = apply_angle
+    dmm.voltage_reader = field_voltage
+    lockin.xy_reader = transport
+    return bench, dict(calibrator=cal, dmm=dmm, arduino=stepper, lockin=lockin)
 
 
 def moke_bench(linear=False, output_unit='V'):

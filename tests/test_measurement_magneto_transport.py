@@ -56,22 +56,9 @@ from piec.measurement.runner import MeasurementRunner
 
 
 def create_virtual_instruments():
-    """Create a complete set of virtual instruments for magneto-transport testing."""
-    cal = VirtualCalibrator()
-    cal._last_set_voltage = 0.0
-    orig_set_output = cal.set_output
-
-    def set_output_wrapper(val, *args, **kwargs):
-        cal._last_set_voltage = val
-        return orig_set_output(val, *args, **kwargs)
-
-    cal.set_output = set_output_wrapper
-
-    dmm = VirtualDMM()
-    dmm.set_voltage_reader(lambda: getattr(cal, "_last_set_voltage", 0.0))
-    stepper = VirtualStepper()
-    lockin = VirtualLockin()
-    return {"calibrator": cal, "dmm": dmm, "arduino": stepper, "lockin": lockin}
+    """Create owned field/angle/transport instruments with no shared sample."""
+    from tests.fixtures.virtual_setups import amr_bench
+    return amr_bench()[1]
 
 
 def create_mock_instruments():
