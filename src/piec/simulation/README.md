@@ -346,3 +346,15 @@ fe_sample = Ferroelectric(material_dict=material_props)
 fe_sample.apply_waveform(v, t)
 output_voltage, time = fe_sample.get_voltage_response()
 ```
+
+## VirtualBench (checkpoint 29)
+
+`from piec.simulation import VirtualBench, BenchResetError` provides owned virtual
+setups with electrical load, MOKE optical/field and direct triggered waveform routes.
+The bench owns model/driver creation, named seeds/RNGs, explicit simulated time and
+attempt-all reset with replay and preserved connections. Separate benches can run
+concurrently. See [VirtualBench usage and limitations](../../../docs/virtual_bench.md).
+
+Checkpoint 30a is next: migrate IV simulation fixtures only. Other family fixture
+migrations and retirement of global fallback remain later checkpoints. Physical
+validation remains PENDING.

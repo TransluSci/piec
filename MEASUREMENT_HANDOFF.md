@@ -1,9 +1,20 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 28h (virtual-driver family audit and Checkpoint 28 completion) is complete.**
+Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 29: VirtualBench** (Section 11.3: bench routing, reset isolation, deterministic noise/time, and two-bench concurrency). Keep physical checkpoints 17/22/26 PENDING. Run focused and full tests, update the handoff, commit separately, then stop for review. Additional AMR electrical adapters remain separate later work.
+Next: **Checkpoint 30a: migrate IV simulation fixtures to VirtualBench only.** Preserve deterministic numerical references, lifecycle/safing checks, and physical/virtual schema parity. Keep MOKE/FE/AMR fixture migration for 30b–30d, shared fallback retirement for 31, and additional AMR adapters separate. Run focused and full tests, commit separately, and stop for review.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 29 report (authoritative)
+
+- Added `VirtualBench` and `BenchResetError` in `src/piec/simulation/bench.py`, exported from `piec.simulation`. Bench-created models/drivers, copied model parameters, unique names and exclusive route ports prevent accidental object reuse and ambiguous drivers for a load.
+- Deterministic per-name seeds, named RNG streams, explicit time advancement and reset replay. All resets are attempted; failures retain component names and original exceptions. Connected hooks survive reset; instrument factory configuration is restored.
+- Electrical source/load routing supports both source modes, load-solved compliance and explicit capacitor time integration. MOKE routing uses a copied plant calibration on effective output, a hysteretic material, generic optical DMM hook and optional scalar field reader. AWG-to-scope routing copies triggered samples and records zeros for output-off triggers.
+- No production measurement classes or existing fixtures were migrated. Added IV/MOKE integration/schema checks using hardware-interface doubles; these are not physical validation. Existing shared fallback remains for checkpoint 31.
+- Read `docs/virtual_bench.md` for APIs, explicit timing, disconnected-charge limitations, reset ownership and the scope of direct waveform transport. FE/AMR material-specific setup wiring remains with their subsequent fixture checkpoints.
+- Validation: **20 new bench tests**, **58 focused bench/source/waveform tests passed**; full Python 3.13 suite with Agg **2153 passed, 1 skipped in 66.35s**. `git diff --check` passed. Python 3.9 is unavailable locally (installed: 3.13 and 3.8-32), so its compatibility gate is blocked pending CI or an available interpreter, not claimed passed. Physical 17/22/26 remain PENDING.
+
+The reports below are historical; follow the next checkpoint at the top of this file.
 
 ## Checkpoint 28h report (authoritative)
 

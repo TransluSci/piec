@@ -32,8 +32,11 @@ from .fe_material import (
 )
 from .hysteretic_magnetic_material import HystereticMagneticMaterial
 from .magnetic_material import MagneticSample
+from .bench import BenchResetError, VirtualBench
 
 __all__ = [
+    "BenchResetError",
+    "VirtualBench",
     "AngleDependentResistanceContract",
     "AwgWaveformHook",
     "CalibratorFieldHook",
