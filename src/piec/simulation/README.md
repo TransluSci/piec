@@ -253,9 +253,8 @@ Reset and scale notifications retain the same error/unknown-motion rules as step
 
 ## Virtual driver family audit & Checkpoint 28 completion (checkpoint 28h)
 
-The comprehensive audit of all virtual drivers in PIEC confirmed:
-- All 7 driver families consuming shared virtual sample state (`sample` / `mag_sample`)
-  or participating in Section 11.2 generic hooks are fully completed:
+The checkpoint 28 audit of virtual driver families found:
+- The seven driver families covering the Section 11.2 hook roles have implementations and regression coverage:
   1. `VirtualLockin` (28a): X/Y transport hook (`xy_reader`, `transport_hook`).
   2. `VirtualDMM` (28b): DC voltage reader hook (`voltage_reader`, `reader_hook`).
   3. `VirtualCalibrator` (28c): commanded field/output hook (`output_hook`, `field_hook`).
@@ -263,11 +262,15 @@ The comprehensive audit of all virtual drivers in PIEC confirmed:
   5. `VirtualScope` (28e): high-speed waveform hook (`waveform_hook`, `channel_hook`, `data_hook`).
   6. `VirtualAwg` (28f): high-speed excitation waveform hook (`waveform_hook`, `apply_hook`, `trigger_hook`).
   7. `VirtualSourcemeter` (28g): two-terminal electrical load hook (`load_hook`, `source_hook`, `measure_hook`, `transport_hook`).
-- Remaining virtual drivers (`VirtualDaq`, `VirtualPulser`, `VirtualRFSource`) do not consume shared
-  sample state (`sample`, `mag_sample`), require no material decoupling, and participate in no measurement families.
-- DAQ-to-AWG and DAQ-to-Scope adapters (`DaqAsAwg`, `DaqAsOscilloscope`) expose no defects in their contract
-  and trigger test suites.
-- No remaining virtual-driver families require per-instance hook implementation. Checkpoint 28 is complete.
+- Remaining virtual drivers (`VirtualDaq`, `VirtualPulser`, `VirtualRFSource`) have no direct
+  sample-dependent acquisition/output logic. They still inherit VirtualInstrument shared fallback
+  properties. No direct usage was found in current measurement implementations; generic interfaces
+  may still accept them. They are outside the seven hook roles scoped for checkpoint 28.
+- The cited DAQ/AWG/trigger suites pass 61 tests but do not directly exercise DaqAsOscilloscope.
+  A scope-shaped dictionary normalization test is not adapter integration coverage. Source inspection
+  found no direct shared-sample access in either adapter; passing tests do not establish zero defects.
+- No additional hook family is required within checkpoint 28 scope. Checkpoint 28 is complete.
+  VirtualInstrument global fallback remains until consumer migration and checkpoint 31.
 - Next milestone is Checkpoint 29: VirtualBench (multi-instrument wiring, reset isolation, deterministic time/noise).
 
 ## Contents
