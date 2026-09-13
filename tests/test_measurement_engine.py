@@ -415,3 +415,273 @@ class TestOptionValidation:
         # Did not reserve or change state
         assert meas.run_state == RunState.IDLE
         assert meas.last_run_record is None
+
+
+# ============================================================================
+# 7. State Transitions & Reservation Tokens
+# ============================================================================
+
+class TestStateTransitionsAndTokens:
+    """Verify RunState properties, legal transitions, and reservation token validation."""
+
+    def test_run_state_properties(self):
+        assert RunState.IDLE.is_terminal is False
+        assert RunState.IDLE.is_active is False
+        assert RunState.STARTING.is_active is True
+        assert RunState.RUNNING.is_active is True
+        assert RunState.COMPLETED.is_terminal is True
+        assert RunState.ABORTED.is_terminal is True
+        assert RunState.FAILED.is_terminal is True
+
+    def test_illegal_state_transition_raises_error(self):
+        from piec.measurement.contracts import IllegalStateTransitionError
+        meas = FakeMeasurement()
+        with pytest.raises(IllegalStateTransitionError):
+            meas._coordinator.transition_to(RunState.COMPLETED)
+
+    def test_reservation_tokens_and_stale_detection(self):
+        from piec.measurement.contracts import (
+            ConcurrentRunError,
+            DuplicateExecutionError,
+            ReservationToken,
+            StaleTokenError,
+        )
+        meas = FakeMeasurement()
+        token1 = meas._reserve()
+        assert token1.generation == 1
+
+        # Concurrent reservation fails
+        with pytest.raises(ConcurrentRunError):
+            meas._reserve()
+
+        # Stale token fails
+        stale_token = ReservationToken(run_id="stale_uuid", generation=999)
+        with pytest.raises(StaleTokenError):
+            meas.run_experiment(token=stale_token)
+
+        # Valid token succeeds
+        meas.run_experiment(token=token1)
+        assert meas.run_state == RunState.COMPLETED
+
+        # Reusing the consumed token fails
+        with pytest.raises(DuplicateExecutionError):
+            meas.run_experiment(token=token1)
+
+
+# ============================================================================
+# 8. Ownership Protection: Rejected Caller Does Not Safe Active Owner
+# ============================================================================
+
+class TestOwnershipProtection:
+    """Rejected execution attempts must have no side effects on the active owner."""
+
+    @pytest.mark.parametrize("attempt", ["duplicate", "stale", "concurrent", "stopped_stale"])
+    def test_rejected_caller_does_not_safe_or_clear_active_owner(self, attempt):
+        import threading
+        from piec.measurement.contracts import (
+            ConcurrentRunError,
+            DuplicateExecutionError,
+            ReservationToken,
+            StaleTokenError,
+        )
+        from piec.measurement.runner import MeasurementRunner
+
+        entered, release = threading.Event(), threading.Event()
+        shutdown_threads = []
+
+        class ProtectedMeasurement(BaseMeasurement):
+            def _capture_data(self, request, on_update=None):
+                self._raw_data = pd.DataFrame({"v": [42.0]})
+                entered.set()
+                assert release.wait(3)
+                return self._raw_data
+
+            def _safe_shutdown(self):
+                shutdown_threads.append(threading.get_ident())
+                return super()._safe_shutdown()
+
+        meas = ProtectedMeasurement()
+        runner = MeasurementRunner(meas)
+        token = runner.start(save=False)
+        try:
+            assert entered.wait(2)
+            owner = meas._active_owner_thread_id
+            if attempt == "stopped_stale":
+                runner.request_stop()
+            state = meas.run_state
+            kwargs = {"save": False}
+            if attempt == "duplicate":
+                kwargs["token"] = token
+                error = DuplicateExecutionError
+            elif attempt in ("stale", "stopped_stale"):
+                kwargs["token"] = ReservationToken(run_id="stale", generation=0)
+                error = StaleTokenError
+            else:
+                error = ConcurrentRunError
+            with pytest.raises(error):
+                meas.run_experiment(**kwargs)
+            assert shutdown_threads == []
+            assert meas._active_owner_thread_id == owner
+            assert meas.run_state == state
+            assert meas.raw_data["v"].tolist() == [42.0]
+        finally:
+            release.set()
+            assert runner.join(3)
+        assert runner.last_error is None
+        assert shutdown_threads == [owner]
+        assert len(meas.run_records) == 1
+
+
+# ============================================================================
+# 9. MeasurementSession & Standalone Scopes
+# ============================================================================
+
+class TestMeasurementSessions:
+    """Verify piecewise execution sessions and standalone scopes."""
+
+    def test_session_lifecycle_and_single_capture(self):
+        from piec.measurement.base import MeasurementSession
+        meas = FakeMeasurement()
+
+        with meas.session(save=False) as sess:
+            assert isinstance(sess, MeasurementSession)
+            assert meas.run_state in (RunState.STARTING, RunState.CONFIGURING)
+            df = sess.capture_data()
+            assert len(df) == 3
+            # Second capture in same session is rejected
+            with pytest.raises(RuntimeError, match="at most one capture"):
+                sess.capture_data()
+
+        assert meas.run_state == RunState.COMPLETED
+        assert meas.safety_status == SafetyStatus.SAFE
+
+    def test_standalone_scopes(self):
+        meas = FakeMeasurement()
+        meas.configure_instruments()
+        assert meas.run_state == RunState.COMPLETED
+        df = meas.capture_data()
+        assert len(df) == 3
+        assert meas.run_state == RunState.COMPLETED
+
+    @pytest.mark.parametrize("phase", ["configure", "capture", "block", None])
+    @pytest.mark.parametrize("shutdown_fails", [False, True])
+    def test_session_errors_and_shutdown_boundary(self, phase, shutdown_fails):
+        meas = FakeMeasurement()
+        primary = ValueError("primary session failure") if phase else None
+        if phase == "configure":
+            meas.config_error = primary
+        elif phase == "capture":
+            meas.capture_error = primary
+        if shutdown_fails:
+            meas.safing_error = OSError("shutdown failure")
+
+        def execute():
+            with meas.session(save=False) as session:
+                session.configure_instruments()
+                if phase == "block":
+                    raise primary
+                session.capture_data()
+
+        if primary is not None:
+            with pytest.raises(ValueError) as error:
+                execute()
+            assert error.value is primary
+            assert meas.last_run_record.primary_error_message == str(primary)
+        elif shutdown_fails:
+            with pytest.raises(HardwareSafetyError, match="Hardware safety could not be verified"):
+                execute()
+        else:
+            execute()
+        assert [name for name, _ in meas.call_log].count("safing") == 1
+        assert meas.safety_status == (SafetyStatus.UNSAFE if shutdown_fails else SafetyStatus.SAFE)
+        assert meas.run_state == (RunState.FAILED if primary or shutdown_fails else RunState.COMPLETED)
+        if primary and shutdown_fails:
+            assert any("shutdown failure" in error for error in meas.last_run_record.secondary_errors)
+        assert meas._active_session is None
+        assert meas._active_owner_thread_id is None
+
+    @pytest.mark.parametrize("operation", ["configure", "capture", "session", "shutdown"])
+    def test_session_rejects_non_owner_without_hardware_calls(self, operation):
+        import threading
+        from piec.measurement.contracts import ConcurrentRunError
+        meas = FakeMeasurement()
+        errors = []
+
+        def other_thread():
+            try:
+                if operation == "session":
+                    with meas.session():
+                        pass
+                else:
+                    method = {"configure": meas.configure_instruments,
+                              "capture": meas.capture_data, "shutdown": meas.safe_shutdown}[operation]
+                    method()
+            except BaseException as error:
+                errors.append(error)
+
+        with meas.session():
+            worker = threading.Thread(target=other_thread)
+            worker.start()
+            worker.join(timeout=2.)
+            assert not worker.is_alive()
+            assert len(errors) == 1
+            assert isinstance(errors[0], RuntimeError if operation == "shutdown" else ConcurrentRunError)
+            assert meas.call_log == []
+            assert meas._active_owner_thread_id == threading.get_ident()
+            if operation == "shutdown":
+                assert meas._coordinator.is_stop_requested
+
+    @pytest.mark.parametrize("nested", ["session", "run"])
+    def test_session_rejects_nested_execution_without_io(self, nested):
+        meas = FakeMeasurement()
+        with meas.session():
+            owner = meas._active_owner_thread_id
+            with pytest.raises(RuntimeError):
+                if nested == "session":
+                    with meas.session():
+                        pass
+                else:
+                    meas.run_experiment(save=False)
+            assert meas.call_log == []
+            assert meas._active_owner_thread_id == owner
+
+    @pytest.mark.parametrize("operation", ["configure_instruments", "capture_data", "safe_shutdown"])
+    def test_standalone_failure_reports_unsafe_and_releases_owner(self, operation):
+        meas = FakeMeasurement()
+        meas.safing_error = OSError("relay failed")
+        with pytest.raises(HardwareSafetyError):
+            getattr(meas, operation)()
+        assert meas.safety_status == SafetyStatus.UNSAFE
+        assert [name for name, _ in meas.call_log].count("safing") == 1
+        assert meas._active_owner_thread_id is None
+
+
+# ============================================================================
+# 10. Multi-Action Shutdown Guarantee
+# ============================================================================
+
+class TestMultiActionShutdownGuarantee:
+    """Verify all actions attempted via ShutdownAttemptRecorder even when earlier fails."""
+
+    def test_all_shutdown_actions_attempted(self):
+        from piec.measurement.contracts import ShutdownAttemptRecorder
+
+        actions_called = []
+
+        def action1():
+            actions_called.append("a1")
+            raise RuntimeError("a1 failure")
+
+        def action2():
+            actions_called.append("a2")
+
+        recorder = ShutdownAttemptRecorder()
+        recorder.record_action("zero_output", action1)
+        recorder.record_action("open_relay", action2)
+
+        assert actions_called == ["a1", "a2"]
+        report = recorder.build_report()
+        assert report.status == SafetyStatus.UNSAFE
+        assert len(report.actions) == 2
+        assert report.actions[0].succeeded is False
+        assert report.actions[1].succeeded is True
