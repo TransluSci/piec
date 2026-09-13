@@ -2,6 +2,7 @@
 AMR (Anisotropic Magnetoresistance) and MagnetoTransport measurement module.
 
 Standardized for Checkpoint 24b of MEASUREMENT_STANDARDIZATION_PLAN.md:
+
 - MagnetoTransport base lifecycle imported from ._magneto_transport_base;
 - AMR subclasses MagnetoTransport with shared BaseMeasurement lifecycle;
 - Target API and schema: schema 'amr', version 1;

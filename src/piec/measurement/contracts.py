@@ -2,6 +2,7 @@
 Measurement lifecycle contracts, states, tokens, records, and coordination.
 
 Fulfills Checkpoint 8 of MEASUREMENT_STANDARDIZATION_PLAN.md:
+
 - RunState enum and legal forward transition validation (Section 4.1);
 - SafetyStatus enum (Section 4.1);
 - ReservationToken, RunRequest, SafetyReport, and immutable RunRecord (Section 3.2 & 4.2);

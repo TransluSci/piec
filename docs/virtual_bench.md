@@ -96,8 +96,11 @@ or on an unconnected scope channel raise. Reset clears the stored snapshot.
 
 This route models sampled direct transport. It does not resample to scope settings,
 model hardware trigger delays, apply a ferroelectric material, or advance the bench
-clock by the waveform duration. FE/AMR setup wiring and fixture migration remain
-the later family-specific checkpoints; no scientific model is added to a driver.
+clock by the waveform duration. FE/AMR fixture wiring is explicit in their setup
+helpers; no scientific model is added to a driver. Interactive examples use
+`piec.simulation.setups.connect_fe_plant` and `connect_amr_plant` to attach private
+materials to caller-owned virtual instruments. These consumer helpers do not
+take ownership of connection closing or reset the caller's instruments.
 
 Checkpoint 29 integration tests compare IV/MOKE columns and unit metadata against
 hardware-interface doubles, not physical instruments. Physical validation records

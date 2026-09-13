@@ -2,6 +2,7 @@
 MeasurementRunner: thread-safe background runner for PIEC measurements.
 
 Fulfills Checkpoint 10b of MEASUREMENT_STANDARDIZATION_PLAN.md:
+
 - Synchronous reservation before worker launch (Section 4.2);
 - Non-daemon background worker execution (Section 3.2 & 6.3);
 - Worker thread-start failure recovery finalizing reservation as FAILED with NOT_NEEDED safety (Section 4.2);

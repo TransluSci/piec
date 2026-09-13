@@ -1,12 +1,12 @@
 # AMR Measurement Documentation
 
-> Planned generalization: [the standardization plan, section 9.5](../../MEASUREMENT_STANDARDIZATION_PLAN.md) defines field-command, optional field-readback, transport-readout and orientation roles. The existing calibrator + DMM + lock-in + stepper setup remains a required profile. Preserve manually selected lock-in settings by default; internal and external excitation are explicit choices. Calibration tables/linear maps command the field, while a gaussmeter or analog DMM reader measures it independently. Motorized positioning is the first supported mode; manual move-and-confirm is deferred. These are instructions for upcoming checkpoints 23–25, not claims that the current implementation already supports them.
+> AMR setup profiles separate field command, optional field readback, transport readout and orientation. The calibrator + DMM + lock-in + stepper profile preserves manually selected lock-in settings by default. Calibration tables or linear maps command the field; an independent reader supplies measured field when configured. Excitation and shutdown policies must be declared explicitly. Additional electrical adapters and manual move-and-confirm positioning remain separate work. See section 9.5 of `MEASUREMENT_STANDARDIZATION_PLAN.md` for the design requirements.
 
 This document explains the Anisotropic Magnetoresistance (AMR) measurement setup, the software architecture behind it, and how to operate the system using both the Jupyter Notebook and the Graphical User Interface (GUI).
 
 ## Overview
 
-**Anisotropic Magnetoresistance (AMR)** is a property of ferromagnetic materials where the electrical resistance depends on the angle between the current direction and the magnetization direction. This setup measures the resistance of a sample while rotating it in a magnetic field.
+**Anisotropic Magnetoresistance (AMR)** is a property of ferromagnetic materials where the electrical resistance depends on the angle between the current direction and the magnetization direction. The lock-in setup records X/Y voltages while rotating the sample in a magnetic field. Interpreting those voltages as resistance requires a known excitation current and the appropriate circuit conversion.
 
 ### Theory (AMR Equation)
 

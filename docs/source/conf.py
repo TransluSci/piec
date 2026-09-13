@@ -2,7 +2,7 @@
 import os
 import sys
 from pathlib import Path
-sys.path.insert(0, os.path.abspath('../../src/'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 
 
 # -- Project information
@@ -54,6 +54,8 @@ intersphinx_mapping = {
     'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
 }
 intersphinx_disabled_domains = ['std']
+if os.environ.get('PIEC_DOCS_OFFLINE') == '1':
+    intersphinx_mapping = {}
 
 templates_path = ['_templates']
 

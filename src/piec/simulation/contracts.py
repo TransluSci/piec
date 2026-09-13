@@ -2,6 +2,7 @@
 Role-specific simulation contracts, units, reset protocols, and deterministic time/RNG.
 
 Fulfills Checkpoint 27 of MEASUREMENT_STANDARDIZATION_PLAN.md:
+
 - Role-specific simulation contracts declaring explicit physical units;
 - Deterministic timebase and RNG seeding protocols ensuring reproducible simulation;
 - Two-terminal electrical load contract supporting voltage-source and current-source modes,

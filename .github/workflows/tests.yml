@@ -20,8 +20,8 @@ jobs:
 
     strategy:
       matrix:
-        # Test against the minimum supported version and the latest stable release
-        python-version: ["3.9", "3.11"]
+        # Minimum supported version and the version validated during standardization.
+        python-version: ["3.9", "3.13"]
 
     steps:
       # 1. Check out the repository code
@@ -52,4 +52,21 @@ jobs:
       - name: Run tests
         env:
           MPLBACKEND: Agg
-        run: pytest tests/ -v --tb=short
+        run: python -c "import piec.measurement.gui_utils; import matplotlib; matplotlib.use('Agg'); import pytest; raise SystemExit(pytest.main(['tests/', '-q', '-p', 'no:cacheprovider', '--tb=short']))"
+
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -e . -r docs/requirements.txt
+      - name: Execute offline measurement notebooks
+        run: python scripts/check_measurement_notebooks.py
+      - name: Build offline documentation
+        env:
+          PIEC_DOCS_OFFLINE: "1"
+        run: python -m sphinx -W --keep-going -b html docs/source tmp/docs-html

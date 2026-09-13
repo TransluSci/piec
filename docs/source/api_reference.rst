@@ -10,3 +10,4 @@ This section provides detailed documentation for the ``piec`` library's public A
    piec.analysis
    piec.drivers
    piec.measurement
+   piec.simulation

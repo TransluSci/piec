@@ -1,9 +1,15 @@
 # Measurement standardization handoff
 
-Continue on `measuremnt-standarization`. **Checkpoint 29 (VirtualBench) is complete.**
+Continue on `measuremnt-standarization`. **Required offline work through checkpoint 33 is complete.**
 All physical validation records across all families (Checkpoint 17: IV/MOKE, Checkpoint 22: FE, Checkpoint 26: AMR) remain explicitly **PENDING**.
-Next: **Checkpoint 33: final documentation, workflows and release notes.** Checkpoint 32 is optional scientific work and was not requested. User authorized sequential continuation. Physical gates remain PENDING; additional AMR adapters remain separate.
+Next: run the CI compatibility checks and complete the physical validation records on the relevant benches. Checkpoint 32 is optional scientific work and was not requested. Physical gates remain PENDING; additional AMR adapters remain separate.
 Additional electrical adapters remain separate later work; do not bundle them into past checkpoints.
+
+## Checkpoint 33 completed
+
+Updated release notes, simulation API/user documentation and AMR guidance. Removed notebook placeholder paths, active physical discovery and FE legacy column fallbacks. Added `scripts/check_measurement_notebooks.py`, which executes every code cell in the four virtual notebooks in temporary folders. CI now checks Python 3.9/3.13, offline notebooks and a warning-free Sphinx build. Fixed malformed module docstring lists exposed by the strict docs build.
+
+Validation: Python 3.13 full suite **2159 passed, 1 skipped in 63.30s**; **four notebooks / 36 code cells passed**; offline Sphinx with `-W --keep-going -E` passed with zero warnings. The wheel built successfully using isolated build dependencies and contains the example FE parameter JSON. Notebook execution checks functionality, not the scientific validity of illustrative curve fits. Python 3.9 and remote CI have not been run locally. Physical checkpoints 17/22/26 remain **PENDING**. No converter or compatibility shim was introduced.
 
 ## Checkpoint 31 completed
 

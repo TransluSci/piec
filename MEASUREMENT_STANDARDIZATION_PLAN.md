@@ -1015,7 +1015,7 @@ Use `src/piec/measurement/base.py`, `contracts.py`, `runner.py`, `persistence.py
 | 30d | Completed | AMR four-instrument golden/sweep and virtual lifecycle fixtures use owned bench state and explicit field/angle/XY hooks; numerical references preserved. Full suite 2155 passed, 1 skipped. |
 | 31 | Completed | Remaining FE/AMR GUI/notebook and quickstart consumers explicitly wire private plants. External generic-driver fallback retained. Full suite 2159 passed, 1 skipped. |
 | 32 | Optional scientific additions, only if separately requested | One algorithm/reference dataset/unit/tolerance/review per commit; outside this standardization |
-| 33 | Final documentation, workflows and release notes | Offline notebooks, docs build, full tests; list replaced APIs/formats without implementing converters |
+| 33 | Completed | Updated release notes and API/setup docs; all four virtual notebooks (36 code cells) execute offline; strict Sphinx build has zero warnings; full Python 3.13 suite 2159 passed, 1 skipped. Wheel includes FE parameter JSON. CI configured for Python 3.9/3.13, notebooks and docs; Python 3.9 remains unverified locally. Physical 17/22/26 remain PENDING. No converters introduced. |
 
 If a family slice needs more commits, use lettered steps with an explicit file list and gate. Each intermediate commit must leave repository consumers operational: combine producer/consumer changes where necessary. An intermediate analysis commit may use a private, temporary bridge for an unmigrated internal caller; remove it when that caller migrates. Do not create a permanent public old/new compatibility layer. Do not defer essential GUI API/schema fixes to later GUI-hardening checkpoints.
 

@@ -2,6 +2,7 @@
 Standardized IV sweep measurement class.
 
 Fulfills Checkpoint 13 of MEASUREMENT_STANDARDIZATION_PLAN.md:
+
 - Target API and schema: schema 'iv_sweep', version 1;
 - Plain lowercase columns: ['voltage', 'current'] with V/A metadata units;
 - Inherits BaseMeasurement with shared lifecycle, runner, and session support;
