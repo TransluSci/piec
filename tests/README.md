@@ -11,9 +11,9 @@ tests/
   driver/        Instrument category contracts, discovery, and virtual behavior
   measurement/   Measurement contracts, protocols, engine, runner, storage, and GUIs
   analysis/      Numerical analysis and field calibration
+  simulation/    Material models, simulation contracts, and virtual bench integration
   support/       Shared discovery helpers, case registries, and fake transports
   fixtures/      Shared virtual setups and scientific reference data
-  test_simulation.py
   test_examples.py
 ```
 
@@ -39,13 +39,39 @@ The separate measurement and analysis modules test different responsibilities:
   have their own numerical checks alongside it.
 
 GUI and waveform reader tests live with measurements because they exercise
-measurement-facing integration. Simulation and example tests remain at the root
-because they span multiple layers. This organization preserves existing coverage;
+measurement-facing integration. Documentation example tests remain at the root.
+Simulation tests live together under `simulation/`. This organization preserves existing coverage;
 it does not add another copy of the shared contract assertions.
 
 Pytest discovers the subfolders automatically. To run a single layer, replace
 `tests/` in the verification command below with `tests/driver/`,
-`tests/measurement/`, or `tests/analysis/`.
+`tests/measurement/`, `tests/analysis/`, or `tests/simulation/`.
+
+## Simulation and future sample layers
+
+`simulation/test_simulation.py` currently covers physical units and response
+contracts, numerical model behavior, deterministic time and randomness, and
+virtual bench wiring, reset, and isolation. Virtual instruments are dependencies
+of the bench integration tests, which check how models and instruments interact.
+The current model cases are explicit; adding a new material does not yet
+automatically exercise it through a shared discovery-based contract suite.
+
+When the three-level sample API is implemented, split these responsibilities
+inside this folder around the real interfaces:
+
+- Level 1: shared sample input/output, units, lifecycle, reset, and isolation.
+- Level 2: material-family contracts (e.g. FE/FM), required properties and response
+  formats. Use shared assertions with small fixtures for concrete implementations.
+- Level 3: model-specific numerical references, limiting cases, and convergence
+  checks where appropriate. Correct schemas alone do not establish correct physics.
+- Material dictionaries/JSON: required fields, units, invalid values, independent
+  instances, and save/load round trips when serialization exists.
+- Bench integration: instrument-to-sample routing, timing, and end-to-end response.
+
+Add discovery against the actual sample base classes when those interfaces exist;
+do not invent placeholder classes or require every model to obey one model's
+equations. Keep shared material fixtures in one place and reuse family contracts
+across different material parameter sets.
 
 ## Instruments
 
