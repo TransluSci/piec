@@ -9,15 +9,14 @@ and missing registrations; do not solve either by adding a skip.
 ```text
 tests/
   driver/        Instrument category contracts, discovery, and virtual behavior
-  measurement/   Measurement contracts, protocols, engine, runner, storage, and GUIs
-  analysis/      Numerical analysis and field calibration
-  simulation/    Material models, simulation contracts, and virtual bench integration
+  measurement/   Measurement contracts, lifecycle engine, runner, storage, and GUIs
+  simulation/    Material models, simulation contracts, and plant wiring
   support/       Shared discovery helpers, case registries, and fake transports
-  fixtures/      Shared virtual setups and scientific reference data
+  fixtures/      Shared fixtures and materials
   test_examples.py
 ```
 
-The separate measurement and analysis modules test different responsibilities:
+The measurement and simulation modules test distinct responsibilities:
 
 - `measurement/test_measurement.py` checks the common contract across concrete
   measurements: data columns and units, acquisition, cancellation, saving, and
@@ -29,23 +28,17 @@ The separate measurement and analysis modules test different responsibilities:
   These worker behaviors are not exercised by synchronous measurement tests.
 - `measurement/test_persistence.py` checks the shared storage implementation,
   including atomic writes, filename collisions, metadata, and recovery from
-  incomplete bundles. These edge cases belong here once rather than in every
-  measurement's contract cases.
-- `measurement/test_measurement_protocols.py` checks acquisition behavior and
-  scientific compatibility that differ between measurement families.
-- `analysis/test_analysis_hysteresis.py` checks the numerical hysteresis analysis
-  against reference results. Correct output columns alone cannot establish that
-  the calculated polarization is correct. PUND analysis and field calibration
-  have their own numerical checks alongside it.
+  incomplete bundles.
+- `measurement/test_measurement_contracts.py` dynamically inspects discovered
+  concrete measurement classes, constructor signatures, lifecycle hooks, and
+  verifies returned DataFrame formats and PIEC CSV layouts.
 
 GUI and waveform reader tests live with measurements because they exercise
 measurement-facing integration. Documentation example tests remain at the root.
 Simulation tests live together under `simulation/`. This organization preserves existing coverage;
-it does not add another copy of the shared contract assertions.
-
 Pytest discovers the subfolders automatically. To run a single layer, replace
 `tests/` in the verification command below with `tests/driver/`,
-`tests/measurement/`, `tests/analysis/`, or `tests/simulation/`.
+`tests/measurement/`, or `tests/simulation/`.
 
 ## Simulation and future sample layers
 
