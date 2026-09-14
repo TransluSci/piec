@@ -1,9 +1,0 @@
-v_start,v_stop,num_steps,current_compliance,dwell_time,sense_mode,ramp_step,ramp_delay,sourcemeter,timestamp,measurement_schema,measurement_schema_version,run_id,outcome,partial,save_requested,column_units_json
-0.0,1.0,5,0.1,0.0,2W,0.1,0.01,"PIEC,Virtual_Sourcemeter,s/n_virtual,ver1.0",0.0,iv_sweep,1,__NORMALIZED_UUID__,COMPLETED,False,True,"{""current"":""A"",""voltage"":""V""}"
-
-voltage,current
-0.0,0.0
-0.25,0.0025
-0.5,0.005
-0.75,0.0075
-1.0,0.01

@@ -1,9 +1,0 @@
-dmm,calibrator,arduino,lockin,field,angle_step,total_angle,amplitude,frequency,measure_time,sensitivity,save_dir,voltage_callibration,live_plot,plot_config,__class__,mtype,timestamp,processed
-TEST_DMM,TEST_CALIBRATOR,TEST_STEPPER,TEST_LOCKIN,100.0,45.0,180.0,1.0,10,0.01,50uv/pa,__NORMALIZED_PATH__,10000,False,,<class 'piec.measurement.magneto_transport.AMR'>,amr,0.0,False
-
-angle,field,X,Y
-0.0,100.0,0.000102,1.02e-05
-45.0,100.0,0.000101,1.0100000000000002e-05
-90.0,100.0,0.0001,1e-05
-135.0,100.0,0.000101,1.0100000000000002e-05
-180.0,100.0,0.000101,1.0100000000000002e-05

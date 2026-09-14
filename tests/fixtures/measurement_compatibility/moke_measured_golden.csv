@@ -1,9 +1,0 @@
-geometry,sourcemeter,dmm,source_channel,calibration,output_values,output_unit,field_unit,field_basis,plot_field_column,field_reader,field_reader_unit,field_acquisition,compliance,compliance_unit,max_output_step,dwell_time,ramp_delay,n_cycles,completed_cycles,average_cycles,raw_window_points,processed,shutdown_policy,measurement_schema,measurement_schema_version,run_id,outcome,partial,save_requested,column_units_json
-unspecified,"PIEC,Virtual_Sourcemeter,s/n_virtual,ver1.0",Virtual DMM,,"{""points"": [[-5.0, -500.0], [0.0, 0.0], [5.0, 500.0]], ""output_unit"": ""V"", ""field_unit"": ""Oe"", ""name"": ""golden_cal""}","[-5.0, 0.0, 5.0, 0.0, -5.0]",V,Oe,measured field,field_measured,test_gaussmeter,Oe,sequential after detector read,0.01,A,5.0,0.0,0.0,1,1,1,1000,True,"ramp to electrical zero, output off",moke,1,__NORMALIZED_UUID__,COMPLETED,False,True,"{""cycle"":null,""detector_voltage"":""V"",""direction"":null,""field_calibrated"":""Oe"",""field_measured"":""Oe"",""field_time"":""s"",""point"":null,""source_output"":""V"",""time"":""s""}"
-
-time,cycle,point,direction,source_output,field_calibrated,detector_voltage,field_measured,field_time
-0.0,0,0,1.0,-5.0,-500.0,0.3,50.0,0.0
-0.0,0,1,1.0,0.0,0.0,0.5,50.0,0.0
-0.0,0,2,1.0,5.0,500.0,0.7,50.0,0.0
-0.0,0,3,-1.0,0.0,0.0,0.5,50.0,0.0
-0.0,0,4,-1.0,-5.0,-500.0,0.3,50.0,0.0

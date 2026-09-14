@@ -4,11 +4,18 @@ import inspect
 from unittest.mock import Mock
 
 from piec.analysis.field_calibration import FieldCalibration
+from piec.drivers.awg.virtual_awg import VirtualAwg
+from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
+from piec.drivers.dmm.virtual_dmm import VirtualDMM
+from piec.drivers.lockin.virtual_lockin import VirtualLockin
+from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
+from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
 from piec.measurement.discrete_waveform import DiscreteWaveform, HysteresisLoop, ThreePulsePund
 from piec.measurement.iv_sweep import IVSweep
 from piec.measurement.moke import MokeMeasurement
 from piec.measurement.magneto_transport import AMR, MagnetoTransport
-from tests.fixtures.virtual_setups import iv_bench, moke_bench, fe_bench, amr_bench
+from piec.simulation.setups import connect_amr_plant, connect_fe_plant
 
 
 @dataclass(frozen=True)
@@ -34,19 +41,22 @@ class MeasurementCase:
 
     def build(self, monkeypatch, **overrides):
         if self.family == "iv":
-            _, source = iv_bench()
+            source = VirtualSourcemeter()
             instruments = {"source": source}
             options = dict(sourcemeter=source, v_start=0., v_stop=1., num_steps=5,
                            ramp_delay=0., dwell_time=0.)
         elif self.family == "moke":
-            _, source, detector = moke_bench(linear=True)
+            source = VirtualSourcemeter()
+            detector = VirtualDMM()
             instruments = {"source": source, "detector": detector}
             options = dict(sourcemeter=source, dmm=detector,
                            calibration=FieldCalibration([(-5., -500.), (5., 500.)]),
                            output_values=[0., 1., 0.], compliance=.1, max_output_step=.5,
                            dwell_time=0., ramp_delay=0., n_cycles=1)
         elif self.family == "fe":
-            _, awg, osc = fe_bench(points=50)
+            awg = VirtualAwg(simulation_points=50)
+            osc = VirtualScope(simulation_points=50)
+            connect_fe_plant(awg, osc)
             instruments = {"awg": awg, "osc": osc}
             options = dict(awg=awg, osc=osc)
             if self.cls is DiscreteWaveform:
@@ -54,9 +64,14 @@ class MeasurementCase:
             else:
                 options.update(show_plots=False, save_plots=False)
         else:
-            _, instruments = amr_bench()
-            options = dict(calibrator=instruments["calibrator"], dmm=instruments["dmm"],
-                           stepper=instruments["arduino"], lockin=instruments["lockin"],
+            cal = VirtualCalibrator()
+            dmm = VirtualDMM()
+            stepper = VirtualStepper()
+            lockin = VirtualLockin(excitation_current=1e-6)
+            connect_amr_plant(cal, dmm, stepper, lockin)
+            instruments = {"calibrator": cal, "dmm": dmm, "arduino": stepper, "lockin": lockin}
+            options = dict(calibrator=cal, dmm=dmm,
+                           stepper=stepper, lockin=lockin,
                            field=100.)
             if self.cls is AMR:
                 options.update(angle_step=90., total_angle=90., settling_time=0., measure_time=.001)
