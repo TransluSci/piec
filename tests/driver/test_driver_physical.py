@@ -20,9 +20,12 @@ import dis
 import inspect
 from numbers import Real
 from pathlib import Path
+import re
 import textwrap
-from typing import Any, Dict, List, Set, Tuple, Type
+from typing import Any, Dict, List, Set, Tuple, Type, Union
 
+import numpy as np
+import pandas as pd
 import pytest
 
 import piec.drivers as drivers_pkg
@@ -860,4 +863,93 @@ class TestPhysicalDriverRuntimeParameterValidation:
                                 return
                         except Exception:
                             continue
+
+
+# ============================================================================
+# Test Suite: 7. Data Return Format Inspection (pandas.DataFrame)
+# ============================================================================
+
+def function_returns_dataframe(fn: Any) -> bool:
+    """
+    Inspect a function (via type annotations, AST analysis, and docstrings)
+    to determine if its return type is a pandas DataFrame.
+    """
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    # 1. Type annotations inspection
+    try:
+        sig = inspect.signature(fn)
+        ret_ann = sig.return_annotation
+        if ret_ann is not inspect.Signature.empty:
+            if ret_ann is pd.DataFrame or ret_ann == "pd.DataFrame" or ret_ann == "DataFrame":
+                return True
+            if "dataframe" in str(ret_ann).lower():
+                return True
+    except (ValueError, TypeError):
+        pass
+
+    # 2. AST inspection of return statements and DataFrame constructions
+    try:
+        src = textwrap.dedent(inspect.getsource(fn))
+        tree = ast.parse(src)
+
+        df_vars: Set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if isinstance(node.value, ast.Call):
+                    func_name = ast.unparse(node.value.func)
+                    if "DataFrame" in func_name or "dataframe" in func_name.lower():
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                df_vars.add(target.id)
+
+            if isinstance(node, ast.Return) and node.value is not None:
+                if isinstance(node.value, ast.Call):
+                    func_name = ast.unparse(node.value.func)
+                    if "DataFrame" in func_name or "dataframe" in func_name.lower():
+                        return True
+                elif isinstance(node.value, ast.Name) and node.value.id in df_vars:
+                    return True
+                expr_str = ast.unparse(node.value)
+                if "DataFrame" in expr_str:
+                    return True
+    except Exception:
+        pass
+
+    # 3. Docstring inspection fallback
+    doc = inspect.getdoc(fn)
+    if doc and ("dataframe" in doc.lower() or "pandas dataframe" in doc.lower()):
+        return True
+
+    return False
+
+
+def _physical_drivers_defining_get_data() -> List[Any]:
+    cases = []
+    for cat_name, drvs in sorted(discover_physical_driver_classes().items()):
+        for drv_cls in drvs:
+            if "get_data" in drv_cls.__dict__ and not is_blank_stub(drv_cls.get_data):
+                cases.append(pytest.param(drv_cls, id=drv_cls.__name__))
+    return cases
+
+
+class TestPhysicalDriverDataReturnFormats:
+    """
+    Verifies that whenever a physical driver defines get_data(),
+    function inspection confirms it returns a pandas DataFrame.
+    """
+
+    @pytest.mark.parametrize("driver_cls", _physical_drivers_defining_get_data())
+    def test_physical_get_data_returns_pandas_dataframe(self, driver_cls):
+        """
+        Inspect get_data() to verify its return type is a pandas DataFrame
+        via type annotations, AST inspection, or docstring contract.
+        """
+        fn = getattr(driver_cls, "get_data")
+        assert function_returns_dataframe(fn), (
+            f"{driver_cls.__name__}.get_data() does not return a pandas DataFrame"
+        )
+
+
 

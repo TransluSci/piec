@@ -23,6 +23,8 @@ from pathlib import Path
 import textwrap
 from typing import Any, Dict, List, Set, Tuple, Type
 
+import numpy as np
+import pandas as pd
 import pytest
 
 import piec.drivers as drivers_pkg
@@ -30,7 +32,10 @@ from piec.drivers.autodetect import autodetect
 from piec.drivers.instrument import Instrument, get_class_attributes_from_instance, optional
 from piec.drivers.scpi import Scpi
 from piec.drivers.virtual_instrument import VirtualInstrument
-from tests.driver.test_driver_physical import discover_physical_driver_classes
+from tests.driver.test_driver_physical import (
+    discover_physical_driver_classes,
+    function_returns_dataframe,
+)
 from tests.support.discovery import (
     DRIVERS_PATH,
     EXCLUDED_CATEGORY_NAMES,
@@ -506,4 +511,37 @@ class TestVirtualDriverRuntimeParameterValidation:
             )
         except Exception:
             pass
+
+
+# ============================================================================
+# Test Suite: 6. Data Return Format Inspection (pandas.DataFrame)
+# ============================================================================
+
+def _virtual_drivers_defining_get_data() -> List[Any]:
+    cases = []
+    for cat_name, drv_list in sorted(discover_virtual_driver_classes().items()):
+        for drv_cls in drv_list:
+            if "get_data" in drv_cls.__dict__ and not is_blank_stub(drv_cls.get_data):
+                cases.append(pytest.param(drv_cls, id=drv_cls.__name__))
+    return cases
+
+
+class TestVirtualDriverDataReturnFormats:
+    """
+    Verifies that whenever a virtual driver defines get_data(),
+    function inspection confirms it returns a pandas DataFrame.
+    """
+
+    @pytest.mark.parametrize("driver_cls", _virtual_drivers_defining_get_data())
+    def test_virtual_get_data_returns_pandas_dataframe(self, driver_cls):
+        """
+        Inspect get_data() to verify its return type is a pandas DataFrame
+        via type annotations, AST inspection, or docstring contract.
+        """
+        fn = getattr(driver_cls, "get_data")
+        assert function_returns_dataframe(fn), (
+            f"{driver_cls.__name__}.get_data() does not return a pandas DataFrame"
+        )
+
+
 
