@@ -235,6 +235,8 @@ class Instrument(metaclass=AutoCheckMeta):
     and the automatic parameter-checking framework.
     """
 
+    AUTODETECT_ID = ""
+
     def _initialize_state(self):
         """
         Initializes all _current_ attributes to None.

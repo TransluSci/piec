@@ -141,8 +141,9 @@ def _dynamic_driver_scan(verbose=False):
                         
                         if isinstance(idn_ids, (list, tuple)):
                             for i in idn_ids:
-                                found_registry[i] = full_class_path
-                        else:
+                                if i:
+                                    found_registry[i] = full_class_path
+                        elif idn_ids:
                             found_registry[idn_ids] = full_class_path
         except Exception:
             continue
@@ -356,13 +357,13 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
 
         # Registry Lookup
         registry = _load_registry_cache()
-        match = next((v for k, v in registry.items() if k in idn), None)
+        match = next((v for k, v in registry.items() if k and k in idn), None)
         
         if not match:
             new_reg = _dynamic_driver_scan(verbose=verbose)
             registry.update(new_reg)
             _save_registry_cache(registry)
-            match = next((v for k, v in registry.items() if k in idn), None)
+            match = next((v for k, v in registry.items() if k and k in idn), None)
 
         if match:
             cls = _import_class_from_path(match)
