@@ -15,7 +15,6 @@ from unittest.mock import Mock
 import numpy as np
 import pandas as pd
 import pytest
-
 from piec.drivers.oscilloscope.oscilloscope import Oscilloscope
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.drivers.oscilloscope.tektronix_tds2000 import TektronixTDS2000
@@ -26,18 +25,68 @@ from piec.drivers.oscilloscope.lecroy_sda6020 import LeCroySDA6020
 from piec.drivers.oscilloscope.tektronix_tds6604 import TDS6604
 from piec.drivers.emulators.daq_to_oscilloscope import DaqAsOscilloscope
 from piec.drivers.daq.virtual_daq import VirtualDaq
-
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
-from tests.support.scope_cases import SCOPE_CASES
+from dataclasses import dataclass
+import struct
+from tests.support.driver_contracts import case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes
+
+@dataclass(frozen=True)
+class ScopeCase:
+    cls: type
+    responses: dict
+    columns: tuple = ("Time", "Voltage")
+    time: tuple = (-.25, 0., .25)
+    voltage: tuple = (1., 2., 4.)
+
+    def make(self):
+        if self.cls is VirtualScope:
+            return self.cls(waveform_hook=lambda: {"time": self.time, "voltage": self.voltage})
+        if self.cls is DaqAsOscilloscope:
+            daq = VirtualDaq()
+            daq.read_AI_scan = Mock(return_value=list(self.voltage))
+            scope = self.cls(daq)
+            scope.set_acquisition_points(3)
+            scope.set_horizontal_scale(tdiv=.075)
+            return scope
+        return create_test_driver(self.cls, responses=self.responses, strict=True)
 
 
-ALL_SCOPE_DRIVERS = [case.cls for case in SCOPE_CASES]
+# Independent example: ADC [0, 2, 6], gain .5 V/count, origin 1 V;
+# three samples .25 s apart starting at -.25 s. Nonzero origins catch
+# parsers that omit offsets; non-unit gain catches unscaled ADC returns.
+TEK_RESPONSES = {"WFMPRE:YMULT?": .5, "WFMPRE:YOFF?": 0,
+                 "WFMPRE:YZERO?": 1., "WFMPRE:XINCR?": .25,
+                 "WFMPRE:XZERO?": -.25, "CURVe?": [0, 2, 6]}
+PREAMBLE = "0,0,3,1,0.25,-0.25,0,0.5,1,0"
+descriptor = bytearray(346)
+struct.pack_into("<f", descriptor, 156, .5)
+struct.pack_into("<f", descriptor, 160, -1.)
+struct.pack_into("<f", descriptor, 176, .25)
+struct.pack_into("<d", descriptor, 180, -.25)
+
+SCOPE_CASES = [
+    ScopeCase(VirtualScope, {}),
+    ScopeCase(TektronixTDS2000, TEK_RESPONSES),
+    ScopeCase(RigolDS1000Z, {":WAVeform:PREamble?": PREAMBLE, ":WAVeform:DATA?": [0, 2, 6]}),
+    ScopeCase(KeysightDSOX3024a, {":WAVeform:PREamble?": PREAMBLE, "WAVeform:DATA?": [0, 2, 6]}),
+    ScopeCase(AgilentDSOX5000, {":WAVeform:PREamble?": PREAMBLE, "WAVeform:DATA?": [0, 2, 6]}),
+    ScopeCase(LeCroySDA6020, {"C1:WF? DESC": bytes(descriptor), "C1:WF? DAT1": [0, 2, 6]}),
+    ScopeCase(TDS6604, dict(TEK_RESPONSES, **{"HORizontal:RECOrdlength?": 3}), ("Time", "Voltage_CH1")),
+    ScopeCase(DaqAsOscilloscope, {}, ("Time", "Channel 1"), (0., .25, .5)),
+]
 
 
-@pytest.mark.parametrize("case", SCOPE_CASES, ids=lambda case: case.cls.__name__)
-def test_scope_waveform_contract(case):
+
+ALL_SCOPE_DRIVERS = discover_driver_classes()["oscilloscope"]
+
+
+@pytest.mark.parametrize("driver_cls", ALL_SCOPE_DRIVERS, ids=lambda cls: cls.__name__)
+def test_scope_waveform_contract(driver_cls):
+    case = case_for(driver_cls, SCOPE_CASES)
     scope = case.make()
+    assert_driver_contract(scope, Oscilloscope)
     data = scope.get_data()
     assert isinstance(data, pd.DataFrame)
     assert tuple(data.columns) == case.columns
@@ -64,7 +113,7 @@ class TestOscilloscopeDiscovery:
 
     def test_discovery_and_registration(self):
         """All discovered Oscilloscope subclasses must be registered and covered."""
-        assert_all_drivers_registered("oscilloscope", ALL_SCOPE_DRIVERS)
+        assert_all_drivers_registered('oscilloscope', [case.cls for case in SCOPE_CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_SCOPE_DRIVERS)
     def test_inherits_from_oscilloscope(self, driver_cls):
@@ -223,10 +272,20 @@ class TestPhysicalOscilloscopes:
         scope.set_vertical_scale(1, vdiv=0.5)
         assert "CH1:SCAle 0.5" in scope.instrument.writes
 
+        scope.set_vertical_scale(1, y_range=4.0)
+        assert "CH1:SCAle 0.5" in scope.instrument.writes
+
         scope.set_input_coupling(1, "dc")
         assert "CH1:COUPling dc" in scope.instrument.writes
 
+        scope.set_channel_impedance(1, "1M")
+        with pytest.raises(ValueError):
+            scope.set_channel_impedance(1, "50")
+
         scope.set_horizontal_scale(tdiv=1e-3)
+        assert "HORizontal:MAIn:SCAle 0.001" in scope.instrument.writes
+
+        scope.set_horizontal_scale(x_range=0.01)
         assert "HORizontal:MAIn:SCAle 0.001" in scope.instrument.writes
 
         scope.set_trigger_source(1)
@@ -234,6 +293,18 @@ class TestPhysicalOscilloscopes:
 
         scope.set_trigger_level(1.5)
         assert "TRIGger:MAIn:LEVel 1.5" in scope.instrument.writes
+
+        scope.set_trigger_slope("POS")
+        assert "TRIGger:MAIn:EDGE:SLOpe RISE" in scope.instrument.writes
+
+        scope.set_trigger_slope("NEG")
+        assert "TRIGger:MAIn:EDGE:SLOpe FALL" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_trigger_slope("INVALID")
+
+        scope.set_acquisition_mode("NORM")
+        assert "ACQuire:MODe SAMPLE" in scope.instrument.writes
 
         scope.toggle_acquisition(run=True)
         assert "ACQuire:STATE ON" in scope.instrument.writes
@@ -249,11 +320,38 @@ class TestPhysicalOscilloscopes:
         scope.set_vertical_scale(1, vdiv=0.2)
         assert ":CHANnel1:SCALe 0.2" in scope.instrument.writes
 
+        scope.set_vertical_scale(1, y_range=1.6)
+        assert ":CHANnel1:RANGe 1.6" in scope.instrument.writes
+
+        # With 10x probe attenuation, settings up to 800V are valid; check_params must not reject y_range=160
+        checked_scope = create_test_driver(RigolDS1000Z, check_params=True)
+        checked_scope.set_vertical_scale(1, y_range=160)
+        assert ":CHANnel1:RANGe 160" in checked_scope.instrument.writes
+
+        scope.set_channel_impedance(1, "1M")
+        with pytest.raises(ValueError):
+            scope.set_channel_impedance(1, "50")
+
         scope.set_horizontal_scale(tdiv=5e-3)
+        assert ":TIMebase:SCALe 0.005" in scope.instrument.writes
+
+        scope.set_horizontal_scale(x_range=0.06)
         assert ":TIMebase:SCALe 0.005" in scope.instrument.writes
 
         scope.set_trigger_source(1)
         assert ":TRIGger:EDGE:SOURce CHAN1" in scope.instrument.writes
+
+        scope.set_trigger_mode("EDGE")
+        assert ":TRIGger:MODE EDGE" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_trigger_mode("INVALID")
+
+        scope.set_trigger_sweep("AUTO")
+        assert ":TRIGger:SWEep AUTO" in scope.instrument.writes
+
+        scope.set_acquisition_mode("NORM")
+        assert ":ACQuire:TYPE NORM" in scope.instrument.writes
 
         scope.toggle_acquisition(run=True)
         assert ":RUN" in scope.instrument.writes
@@ -291,8 +389,57 @@ class TestPhysicalOscilloscopes:
         scope.set_vertical_scale(1, vdiv=0.5)
         assert "C1:VDIV 0.5" in scope.instrument.writes
 
+        scope.set_input_coupling(1, "DC")
+        assert "C1:COUPLING D50" in scope.instrument.writes
+
+        scope.set_input_coupling(1, "GND")
+        assert "C1:COUPLING GND" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_input_coupling(1, "AC")
+
+        scope.set_channel_impedance(1, "50")
+        assert "C1:COUPLING D50" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_channel_impedance(1, "1M")
+
         scope.set_horizontal_scale(tdiv=1e-3)
         assert "TIME_DIV 0.001" in scope.instrument.writes
+
+        scope.set_trigger_slope("POS")
+        assert "C1:TRIG_SLOPE POS" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_trigger_slope("INVALID")
+
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_tds6604_impedance_requires_adapter_on_target_channel(self, check_params):
+        scope = create_test_driver(TDS6604, check_params=check_params,
+                                   responses={"CH1:PRObe:ID:TYPe?": "NONE",
+                                              "CH2:PRObe:ID:TYPe?": "NONE"}, strict=True)
+        with pytest.raises(ValueError, match="requires an external TCA-1MEG"):
+            scope.set_channel_impedance(1, "1M")
+        assert scope.instrument.writes == []
+
+        scope.attach_adapter(1, "TCA-1MEG")
+        scope.set_channel_impedance(1, "1M")
+        assert scope.instrument.writes == ["CH1:IMPedance ONEMEG"]
+        scope.instrument.writes.clear()
+        with pytest.raises(ValueError, match="requires an external TCA-1MEG"):
+            scope.set_channel_impedance(2, "1M")
+        with pytest.raises(ValueError, match="not supported"):
+            scope.set_channel_impedance(1, "INVALID")
+        scope.detach_adapter(1)
+        with pytest.raises(ValueError, match="requires an external TCA-1MEG"):
+            scope.set_channel_impedance(1, "1M")
+        assert scope.instrument.writes == []
+
+        # Hardware-detected adapters must work without a manual registration too.
+        scope.instrument.responses["CH1:PRObe:ID:TYPe?"] = "TCA-1MEG"
+        scope.set_channel_impedance(1, "ONEMEG")
+        scope.set_channel_impedance(2, "50")
+        assert scope.instrument.writes == ["CH1:IMPedance ONEMEG", "CH2:IMPedance FIFTY"]
 
     def test_tektronix_tds6604_commands(self):
         scope = create_test_driver(TDS6604)
@@ -302,8 +449,38 @@ class TestPhysicalOscilloscopes:
         scope.set_vertical_scale(1, vdiv=0.25)
         assert "CH1:SCAle 0.25" in scope.instrument.writes
 
+        # Native input is 50 Ohm only; 1M without external adapter must raise ValueError
+        scope.set_channel_impedance(1, "50")
+        assert "CH1:IMPedance FIFTY" in scope.instrument.writes
+
+        with pytest.raises(ValueError, match="native 50 Ohm input only.*TCA-1MEG"):
+            scope.set_channel_impedance(1, "1M")
+
+        # When external TCA-1MEG adapter is attached, 1M impedance switching succeeds
+        scope.attach_adapter(1, "TCA-1MEG")
+        scope.set_channel_impedance(1, "1M")
+        assert "CH1:IMPedance ONEMEG" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_channel_impedance(1, "INVALID")
+
         scope.set_horizontal_scale(tdiv=5e-6)
         assert "HORizontal:MAIN:SCAle 5e-06" in scope.instrument.writes
+
+        scope.set_acquisition_mode("NORM")
+        assert "ACQuire:MODe SAMPLE" in scope.instrument.writes
+
+        scope.set_trigger_slope("POS")
+        assert "TRIGger:A:EDGE:SLOpe RISE" in scope.instrument.writes
+
+        with pytest.raises(ValueError):
+            scope.set_trigger_slope("INVALID")
+
+        scope.set_trigger_mode("EDGE")
+        assert "TRIGger:A:TYPe EDGE" in scope.instrument.writes
+
+        scope.set_trigger_sweep("AUTO")
+        assert "TRIGger:A:MODe AUTO" in scope.instrument.writes
 
 
 # ============================================================================
@@ -350,3 +527,8 @@ class TestDaqAsOscilloscopeAdapter:
         assert "Time" in df.columns
         assert "Channel 1" in df.columns
         assert len(df) > 0
+
+
+@pytest.mark.parametrize("driver_cls", ALL_SCOPE_DRIVERS, ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, Oscilloscope)

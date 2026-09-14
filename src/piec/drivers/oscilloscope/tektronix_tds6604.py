@@ -12,28 +12,86 @@ class TDS6604(Scpi, Oscilloscope):
     channel = [1, 2, 3, 4]
     
     vdiv = (0.001, 10.0)
-    y_range = None
-    y_position = None
+    y_range = (0.01, 100.0) # 10 divisions * 1mV to 10V
+    y_position = (-100.0, 100.0)
     
     input_coupling = ["AC", "DC", "GND"]
     probe_attenuation = (1.0, 1000.0)
-    channel_impedance = ["FIFTY", "ONEMEG"]
+    channel_impedance = ["50", "FIFTY"]  # Native 50 Ohm inputs; 1 MOhm requires TCA-1MEG adapter
     
     tdiv = (100e-12, 10.0)
-    x_range = None
-    x_position = None
+    x_range = (1e-9, 100.0) # 10 divisions * 100ps to 10s
+    x_position = (-500.0, 500.0)
     
     trigger_source = [1, 2, 3, 4, "EXT", "LINE"]
-    trigger_level = None
-    trigger_slope = ["RISE", "FALL"]
-    trigger_mode = ["AUTO", "NORMAL"]
-    trigger_sweep = ["AUTO", "NORMAL"]
+    trigger_level = (-10.0, 10.0)
+    trigger_slope = ["POS", "NEG", "RISE", "FALL"]
+    trigger_mode = ["EDGE"]
+    trigger_sweep = ["AUTO", "NORM", "NORMAL"]
     
-    acquisition_mode = ["SAMPLE", "AVERAGE", "PEAKDETECT", "ENVELOPE"]
-    acquisition_points = None
+    acquisition_mode = ["NORM", "NORMAL", "SAMPLE", "AVERAGE", "PEAKDETECT", "ENVELOPE"]
+    acquisition_points = (500, 32000000)
 
     # Child-specific class attributes (auto-optional — not in parent Oscilloscope)
     bandwidth = ["FULL", 20e6, 250e6]  # FULL=6GHz, 20e6=20MHz, 250e6=250MHz
+
+    _channel_adapters = {}
+
+    def _check_params(self, instance_self, locals_dict):
+        """Leave impedance validation to the channel-aware setter.
+
+        The class declaration describes native inputs. A flat enumeration cannot
+        represent an external adapter on just one channel, or probe detection.
+        Keep the ordinary validation for every other argument, including channel.
+        """
+        super()._check_params(instance_self, {
+            name: value for name, value in locals_dict.items()
+            if name != "channel_impedance"
+        })
+
+    def __init__(self, address, *args, adapters=None, **kwargs):
+        """Initializes TDS6604 driver.
+
+        Args:
+            address (str): VISA resource address.
+            adapters (dict, optional): Mapping of channel numbers to attached
+                external adapter types (e.g. {1: 'TCA-1MEG'}).
+        """
+        self._channel_adapters = {ch: str(ad).upper() for ch, ad in adapters.items()} if adapters else {}
+        super().__init__(address, *args, **kwargs)
+
+    @property
+    def adapters(self):
+        if not hasattr(self, "_channel_adapters") or self._channel_adapters is TDS6604._channel_adapters:
+            self._channel_adapters = {}
+        return self._channel_adapters
+
+    def attach_adapter(self, channel, adapter="TCA-1MEG"):
+        """Attach an external adapter (e.g. TCA-1MEG) to the specified channel."""
+        if not hasattr(self, "_channel_adapters") or self._channel_adapters is TDS6604._channel_adapters:
+            self._channel_adapters = {}
+        self._channel_adapters[channel] = str(adapter).upper()
+
+    def detach_adapter(self, channel):
+        """Detach external adapter from the specified channel."""
+        if hasattr(self, "_channel_adapters") and self._channel_adapters is not TDS6604._channel_adapters:
+            self._channel_adapters.pop(channel, None)
+
+    def is_1meg_adapter_attached(self, channel):
+        """Check if a 1 MOhm adapter (such as TCA-1MEG) is attached to the channel."""
+        adapters = getattr(self, "_channel_adapters", {})
+        adapter = adapters.get(channel)
+        if adapter and ("1MEG" in adapter or "1M" in adapter or "TCA-1MEG" in adapter):
+            return True
+        # If connected to live hardware with probe query support:
+        if hasattr(self, "instrument") and hasattr(self.instrument, "query"):
+            try:
+                probe_type = self.instrument.query(f"CH{channel}:PRObe:ID:TYPe?")
+                if probe_type and ("1MEG" in str(probe_type).upper() or "TCA-1MEG" in str(probe_type).upper()):
+                    return True
+            except Exception:
+                pass
+        return False
 
     def autoscale(self):
         """Autoscales the oscilloscope"""
@@ -64,13 +122,25 @@ class TDS6604(Scpi, Oscilloscope):
         self.instrument.write(f"CH{channel}:PRObe {probe_attenuation}")
 
     def set_channel_impedance(self, channel, channel_impedance):
-        """Sets the channel impedance, e.g. 1MOhm, 50Ohm"""
-        if channel_impedance == '50':
+        """Sets the channel impedance, e.g. 50Ohm or 1MOhm.
+
+        Note: TDS6604 inputs are natively 50 Ohm only. 1 MOhm impedance is only
+        supported when an external adapter (such as the Tektronix TCA-1MEG) is attached.
+        """
+        imp = str(channel_impedance).upper().strip().removesuffix("OHM").strip()
+        if imp in ('50', 'FIFTY'):
             self.instrument.write(f"CH{channel}:IMPedance FIFTY")
-        elif channel_impedance == '1M':
+        elif imp in ('1M', '1MEG', 'ONEMEG', '1000000', '1E6'):
+            if not self.is_1meg_adapter_attached(channel):
+                raise ValueError(
+                    f"Channel {channel} on TDS6604 has native 50 Ohm input only; "
+                    "1 MOhm impedance requires an external TCA-1MEG adapter."
+                )
             self.instrument.write(f"CH{channel}:IMPedance ONEMEG")
         else:
-            self.instrument.write(f"CH{channel}:IMPedance {channel_impedance}")
+            raise ValueError(
+                f"channel_impedance {channel_impedance!r} not supported on TDS6604 (native: {self.channel_impedance})"
+            )
 
     def set_channel_bandwidth(self, channel, bandwidth):
         """
@@ -117,29 +187,45 @@ class TDS6604(Scpi, Oscilloscope):
 
     def set_trigger_slope(self, trigger_slope):
         """Changes the trigger from falling, rising etc"""
-        mapping = {'POS': 'RISE', 'NEG': 'FALL', 'RISING': 'RISE', 'FALLING': 'FALL'}
-        slope = mapping.get(trigger_slope.upper(), trigger_slope.upper())
+        mapping = {'POS': 'RISE', 'NEG': 'FALL', 'RISING': 'RISE', 'FALLING': 'FALL', 'RISE': 'RISE', 'FALL': 'FALL'}
+        slope = mapping.get(str(trigger_slope).upper())
+        if slope is None:
+            raise ValueError(
+                f"trigger_slope {trigger_slope!r} not supported on TDS6604 (supported: {self.trigger_slope})"
+            )
         self.instrument.write(f"TRIGger:A:EDGE:SLOpe {slope}")
 
     def set_trigger_mode(self, trigger_mode):
-        """Changes the mode from auto, norm, manual, single, etc"""
-        self.instrument.write(f"TRIGger:A:TYPe {trigger_mode.upper()}")
+        """Changes the trigger mode (type)"""
+        mode = str(trigger_mode).upper()
+        if mode not in self.trigger_mode:
+            raise ValueError(
+                f"trigger_mode {trigger_mode!r} not supported on TDS6604 (supported: {self.trigger_mode})"
+            )
+        self.instrument.write(f"TRIGger:A:TYPe {mode}")
 
     def set_trigger_sweep(self, trigger_sweep):
         """Changes the trigger sweep settings of the oscilloscope"""
-        self.instrument.write(f"TRIGger:A:MODe {trigger_sweep.upper()}")
+        sweep = str(trigger_sweep).upper()
+        mapping = {'AUTO': 'AUTO', 'NORM': 'NORMAL', 'NORMAL': 'NORMAL'}
+        mapped = mapping.get(sweep)
+        if mapped is None:
+            raise ValueError(
+                f"trigger_sweep {trigger_sweep!r} not supported on TDS6604 (supported: {self.trigger_sweep})"
+            )
+        self.instrument.write(f"TRIGger:A:MODe {mapped}")
 
     def configure_trigger(self, trigger_source=None, trigger_level=None, trigger_slope=None, trigger_mode=None, trigger_sweep=None):
         """Combines all the trigger commands into one"""
-        if trigger_source:
+        if trigger_source is not None:
             self.set_trigger_source(trigger_source)
         if trigger_level is not None:
             self.set_trigger_level(trigger_level)
-        if trigger_slope:
+        if trigger_slope is not None:
             self.set_trigger_slope(trigger_slope)
-        if trigger_mode:
+        if trigger_mode is not None:
             self.set_trigger_mode(trigger_mode)
-        if trigger_sweep:
+        if trigger_sweep is not None:
             self.set_trigger_sweep(trigger_sweep)
 
     def manual_trigger(self):
@@ -168,9 +254,13 @@ class TDS6604(Scpi, Oscilloscope):
         self._target_acquire_channel = channel
 
     def set_acquisition_mode(self, acquisition_mode):
-        """Sets the acusition mode on the scope (e.g. normal, average, peak detect etc)"""
-        mapping = {'NORMAL': 'SAMPLE', 'AVERAGE': 'AVERAGE', 'PEAK': 'PEAKDETECT', 'ENVELOPE': 'ENVELOPE'}
-        mode = mapping.get(acquisition_mode.upper(), acquisition_mode.upper())
+        """Sets the acquisition mode on the scope (e.g. normal, average, peak detect etc)"""
+        mapping = {'NORM': 'SAMPLE', 'NORMAL': 'SAMPLE', 'SAMPLE': 'SAMPLE', 'AVERAGE': 'AVERAGE', 'PEAK': 'PEAKDETECT', 'PEAKDETECT': 'PEAKDETECT', 'ENVELOPE': 'ENVELOPE'}
+        mode = mapping.get(str(acquisition_mode).upper())
+        if mode is None:
+            raise ValueError(
+                f"acquisition_mode {acquisition_mode!r} not supported on TDS6604 (supported: {self.acquisition_mode})"
+            )
         self.instrument.write(f"ACQuire:MODe {mode}")
 
     def set_acquisition_points(self, acquisition_points):

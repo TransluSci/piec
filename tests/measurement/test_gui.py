@@ -75,7 +75,7 @@ from tests.fixtures.virtual_setups import (
     moke_bench,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ==============================================================================
@@ -570,7 +570,7 @@ def make_headless_moke_gui(tmp_path=None):
     app.detector_address_entry = Mock(get=Mock(return_value="VIRTUAL"))
     app.field_reader_address_entry = Mock(get=Mock(return_value="NONE"))
     app.geometry_entry = Mock(get=Mock(return_value="in-plane"))
-    cal_path = Path(__file__).resolve().parents[1] / "Measurements" / "MOKE" / "example_calibration.csv"
+    cal_path = Path(__file__).resolve().parents[2] / "Measurements" / "MOKE" / "example_calibration.csv"
     app.calibration_entry = Mock(get=Mock(return_value=str(cal_path)))
     app.source_channel_entry = Mock(get=Mock(return_value=""))
     app.field_per_volt_entry = Mock(get=Mock(return_value="1.0"))

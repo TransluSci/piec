@@ -29,7 +29,7 @@ from tests.fixtures.measurement_compatibility import assert_piec_csv_layout
 
 
 GOLDEN_PATH = (
-    Path(__file__).parent
+    Path(__file__).resolve().parents[1]
     / "fixtures"
     / "measurement_compatibility"
     / "hysteresis_loop_golden.csv"

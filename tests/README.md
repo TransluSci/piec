@@ -4,17 +4,103 @@ Keep shared assertions in the category modules and add small, independent case
 fixtures when introducing an implementation. Discovery fails on import errors
 and missing registrations; do not solve either by adding a skip.
 
+## Layout and responsibilities
+
+```text
+tests/
+  driver/        Instrument category contracts, discovery, and virtual behavior
+  measurement/   Measurement contracts, protocols, engine, runner, storage, and GUIs
+  analysis/      Numerical analysis and field calibration
+  support/       Shared discovery helpers, case registries, and fake transports
+  fixtures/      Shared virtual setups and scientific reference data
+  test_simulation.py
+  test_examples.py
+```
+
+The separate measurement and analysis modules test different responsibilities:
+
+- `measurement/test_measurement.py` checks the common contract across concrete
+  measurements: data columns and units, acquisition, cancellation, saving, and
+  safe shutdown.
+- `measurement/test_measurement_engine.py` checks shared lifecycle and session
+  rules, thread ownership, and failure handling with a small fake measurement.
+- `measurement/test_measurement_runner.py` checks background execution,
+  cancellation, snapshots, and delivery of completion or failure to the caller.
+  These worker behaviors are not exercised by synchronous measurement tests.
+- `measurement/test_persistence.py` checks the shared storage implementation,
+  including atomic writes, filename collisions, metadata, and recovery from
+  incomplete bundles. These edge cases belong here once rather than in every
+  measurement's contract cases.
+- `measurement/test_measurement_protocols.py` checks acquisition behavior and
+  scientific compatibility that differ between measurement families.
+- `analysis/test_analysis_hysteresis.py` checks the numerical hysteresis analysis
+  against reference results. Correct output columns alone cannot establish that
+  the calculated polarization is correct. PUND analysis and field calibration
+  have their own numerical checks alongside it.
+
+GUI and waveform reader tests live with measurements because they exercise
+measurement-facing integration. Simulation and example tests remain at the root
+because they span multiple layers. This organization preserves existing coverage;
+it does not add another copy of the shared contract assertions.
+
+Pytest discovers the subfolders automatically. To run a single layer, replace
+`tests/` in the verification command below with `tests/driver/`,
+`tests/measurement/`, or `tests/analysis/`.
+
 ## Instruments
 
-For scopes, add a `ScopeCase` in `support/scope_cases.py`. Supply a fake transport's
+Each category module discovers its inventory by inheritance from the production
+category base class, including adapters. Adding a driver under its category
+folder automatically adds it to the shared declaration and behavioral tests.
+No central list of concrete driver imports is maintained.
+
+Declaration checks need no per-driver fixture. Every non-`None` public data
+attribute in the category parent is a requirement: the child cannot set it to
+`None`. Parent enumeration entries must remain present; children may add entries.
+Thus `[1, 2, 3, 4, 5, 6]` passes for AWG channels, while `[2, 3, 4, 5]` fails
+because channel `1` is required. Mixed types, duplicates, booleans, and fractional
+channels also fail. DAQ resource lists allow zero and may be empty when their
+parent declaration is empty.
+
+Mappings preserve required keys recursively. Tuples with concrete bounds preserve
+their shape and those bounds must remain specified, though device limits may
+differ. `(None, None)` is an open capability requirement: drivers may supply a
+range, discrete choices, or a dependent mapping, but cannot supply `None`.
+Nested placeholders such as `[(None, None)]` do not require an unbounded physical
+range. A parent attribute
+that is itself `None` imposes no requirement. Inherited declarations count; a
+child need not repeat an unchanged value. Checks run on classes and fixture-created
+instances, so an instance override cannot remove a parent requirement.
+
+Callable checks remain separate and do not prove an inherited method contains an
+implementation. Behavioral cases provide independent checks of actual operations.
+Drivers that narrow parent enumerations or replace required attributes with `None`
+fail this contract. Do not advertise unsupported hardware features just to satisfy
+a test.
+
+For adapter-dependent behavior, exercise both settings of `check_params` and
+verify rejection on channels without the adapter. TDS6604 keeps its native
+impedance declaration and validates adapter-dependent requests in its setter;
+the general parameter checker continues to validate other arguments.
+
+For scopes, add a `ScopeCase` in `driver/test_scope.py`. Supply a fake transport's
 responses, native column names, and independently calculated time/voltage values.
 Every registered scope runs the same waveform assertions through its real
 `get_data()` implementation, including adapters and virtual instruments.
 
-For the other categories, add a `DriverCase` to the corresponding entry in
-`support/driver_cases.py`. Supply a factory, an observable category operation,
-and its independent expected result. The category's registry is derived from
-these executable cases. The factory must return the concrete class being tested;
+For other categories, put a `DriverCase` in `CASES` beside that category's tests
+(for example, `driver/test_awg.py`). Supply a factory, an observable category
+operation, and its independent expected result. Shared helpers live in
+`support/driver_contracts.py` and import no concrete drivers. The common `physical`
+factory attaches a strict fake transport; custom factories handle virtual hooks
+and vendor-specific setup. Physical constructor/hardware initialization is bypassed
+by this helper, so it is not validated by these runtime cases.
+
+Discovery supplies the test parameters even when a case is missing. Declaration
+checks still run, while the behavioral test fails with the driver's name and
+instructions to add its fixture. It is never silently omitted or skipped.
+Expected commands and response scaling must be independent of the driver's code.
+The factory must return the concrete class being tested;
 constructing a physical model with `"VIRTUAL"` does not test its physical driver.
 
 These cases establish a minimum representative behavior per implementation.
@@ -42,7 +128,7 @@ single-shot read failures need not manufacture a partial frame. The fake engine
 suite separately covers lifecycle, session, ownership, and shutdown error paths.
 
 Keep scientific references in `fixtures/measurement_compatibility` and unique
-protocol assertions in `test_measurement_protocols.py`. Instrument shutdown
+protocol assertions in `measurement/test_measurement_protocols.py`. Instrument shutdown
 checks observe state and actions, not only the reported safety enum. Fixtures
 own connections; measurements must not close them.
 

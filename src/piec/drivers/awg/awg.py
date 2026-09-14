@@ -7,7 +7,7 @@ class Awg(Instrument):
     # Class attributes for parameter restrictions
     channel = [1]
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    frequency = {'func': {'SIN': (None, None), 'SQU': (None, None), 'RAMP': (None, None), 'PULS': (None, None), 'NOIS': None, 'DC': None, 'USER': (None, None)}}
+    frequency = {'waveform': {'SIN': (None, None), 'SQU': (None, None), 'RAMP': (None, None), 'PULS': (None, None), 'NOIS': None, 'DC': None, 'USER': (None, None)}}
     amplitude = (None, None)
     offset = amplitude #typically same as amplitude
     load_impedance = None #substandard
@@ -19,8 +19,12 @@ class Awg(Instrument):
     pulse_delay = pulse_width #typically the same
     rise_time = None
     fall_time = rise_time #typically the same
-    trigger_source = ['IMM', "INT", "EXT", "MAN"] #[IMM (immediate), INT2 (internal), EXT (external), MAN (software trigger)]
-    trigger_slope = ['POS', 'NEG', 'EITH'] #[POS (positive), NEG (negative), EITH (either)]
+    # Required sources: internal, external, and manual/software triggering.
+    # Models may additionally expose IMM; it is not a universal source option.
+    trigger_source = ["INT", "EXT", "MAN"]
+    # Required trigger slopes: positive and negative edges.
+    # Models may additionally expose EITH (either edge); it is not a universal option.
+    trigger_slope = ['POS', 'NEG'] #[POS (positive), NEG (negative)]
     trigger_mode = ["EDGE", "LEV"] #[EDGE (edge), LEV (level)]
     slew_rate = None #useful information about the instrument, but need not be implemented
     arb_data_range = (None, None) #range of data points for arbitrary waveform generation

@@ -12,17 +12,23 @@ import math
 from unittest.mock import Mock
 import numpy as np
 import pytest
-
 from piec.drivers.lockin.lockin import Lockin
 from piec.drivers.lockin.srs830 import SRS830
 from piec.drivers.lockin.virtual_lockin import VirtualLockin
-
-from tests.support.driver_cases import DRIVER_CASES
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
 
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(SRS830, physical(SRS830, {'SNAP? 1,2': '1.25,.5'}), lambda inst: tuple(inst.quick_read()), (1.25, .5)),
+        DriverCase(VirtualLockin, virtual(VirtualLockin, xy_reader=lambda: (1.25, .5)), lambda inst: tuple(inst.quick_read()), (1.25, .5)),
+    ]
 
-ALL_LOCKIN_DRIVERS = [case.cls for case in DRIVER_CASES['lockin']]
+
+
+ALL_LOCKIN_DRIVERS = discover_driver_classes()["lockin"]
 
 
 def setup_srs830(responses=None):
@@ -53,7 +59,7 @@ class TestLockinDiscovery:
     """Verify that all advertised and discovered lockin drivers conform to standards."""
 
     def test_discovery_and_registration(self):
-        assert_all_drivers_registered("lockin", ALL_LOCKIN_DRIVERS)
+        assert_all_drivers_registered('lockin', [case.cls for case in CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_LOCKIN_DRIVERS)
     def test_inherits_from_lockin(self, driver_cls):
@@ -207,7 +213,29 @@ class TestSRS830Commands:
         assert srs.get_theta() == pytest.approx(74.9)
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['lockin'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["lockin"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["lockin"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["lockin"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["lockin"])
+
+
+@pytest.mark.parametrize("missing_attr", ["sensitivity", "time_constant", "notch_filter", "filter_slope"])
+def test_child_missing_required_capability_fails_contract(missing_attr):
+    """Concrete lockin drivers must not set required parent capabilities to None."""
+    class IncompleteLockin(Lockin):
+        channel = [1]
+        input_coupling = ["AC", "DC"]
+        frequency = (0.001, 100000.0)
+        phase = (-180.0, 180.0)
+        sensitivity = (1e-9, 1.0)
+        time_constant = [1e-3, 10e-3]
+        notch_filter = ["Out", "Line"]
+        filter_slope = [6, 12, 18, 24]
+
+    setattr(IncompleteLockin, missing_attr, None)
+    with pytest.raises(AssertionError, match=f"IncompleteLockin.{missing_attr} is required by the parent and cannot be None"):
+        assert_driver_contract(IncompleteLockin, Lockin)

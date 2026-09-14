@@ -70,6 +70,90 @@ def test_discovery_reports_import_failure(monkeypatch, module_name):
 # 1. Driver MRO and Inheritance Contract Tests
 # ============================================================================
 
+@pytest.mark.parametrize("category", sorted(discover_instrument_categories()))
+def test_new_driver_discovered_and_checked_without_registration(monkeypatch, category):
+    """A new module gets declaration checks before its behavior fixture exists."""
+    from pathlib import Path
+    from types import ModuleType
+    from tests.support import discovery
+    from tests.support.driver_contracts import assert_driver_contract, case_for
+
+    base = discover_instrument_categories()[category]
+    module_name = f"piec.drivers.{category}.review_new_driver"
+    module = ModuleType(module_name)
+    cls = type("NewDriver", (base,), {
+        "__module__": module_name, "channel": [1, 2, 3, 4, 5, 6],
+    })
+    module.NewDriver = cls
+    original_glob = Path.glob
+    original_import = discovery.importlib.import_module
+
+    def with_new_module(path, pattern, **kwargs):
+        entries = list(original_glob(path, pattern, **kwargs))
+        if path == discovery.DRIVERS_PATH / category and pattern == "*.py":
+            entries.append(path / "review_new_driver.py")
+        return iter(entries)
+
+    def with_new_import(name, *args, **kwargs):
+        return module if name == module_name else original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "glob", with_new_module)
+    monkeypatch.setattr(discovery.importlib, "import_module", with_new_import)
+    assert cls in discover_driver_classes()[category]
+    assert_driver_contract(cls, base)
+    with pytest.raises(AssertionError, match="independent behavioral fixture"):
+        case_for(cls, [])
+    cls.channel = [2, "one"]
+    with pytest.raises(AssertionError, match="integer channel identifiers"):
+        assert_driver_contract(cls, base)
+
+
+@pytest.mark.parametrize("channels", [[], [True], [1.5], [1, 1], [0], [-1], "12", [2, 3, 4, 5], None])
+def test_invalid_channel_declarations(channels):
+    from piec.drivers.awg.awg import Awg
+    from tests.support.driver_contracts import assert_driver_contract
+
+    cls = type("InvalidAwg", (Awg,), {"channel": channels})
+    with pytest.raises(AssertionError, match="channel"):
+        assert_driver_contract(cls, Awg)
+
+
+@pytest.mark.parametrize("required,value", [
+    (["SIN", "SQU"], ["SIN"]),
+    ({"mode": ["SIN"]}, {}),
+    ({"mode": ["SIN"]}, {"mode": None}),
+    ((0, 100), (None, 100)),
+    (False, None),
+])
+def test_non_none_parent_attributes_are_required(required, value):
+    from tests.support.driver_contracts import assert_driver_contract
+
+    parent = type("Parent", (), {"capability": required})
+    child = type("Child", (parent,), {"capability": value})
+    with pytest.raises(AssertionError, match="capability"):
+        assert_driver_contract(child, parent)
+
+
+def test_parent_requirements_allow_extensions_inheritance_and_optional_values():
+    from tests.support.driver_contracts import assert_driver_contract
+
+    parent = type("Parent", (), {"channel": [1], "modes": ["A"], "optional": None})
+    child = type("Child", (parent,), {"channel": [1, 2, 3, 4, 5, 6], "modes": ["A", "B"]})
+    assert_driver_contract(child, parent)
+    assert_driver_contract(type("Inherited", (parent,), {}), parent)
+
+
+def test_instance_channel_override_is_checked():
+    from piec.drivers.awg.awg import Awg
+    from tests.support.driver_contracts import assert_driver_contract
+
+    instrument = VirtualAwg()
+    assert_driver_contract(instrument, Awg)
+    instrument.channel = [2, "one"]
+    with pytest.raises(AssertionError, match="integer channel identifiers"):
+        assert_driver_contract(instrument, Awg)
+
+
 class TestDriverMRO:
     """Verifies that all discovered drivers conform to the driver inheritance hierarchy."""
 

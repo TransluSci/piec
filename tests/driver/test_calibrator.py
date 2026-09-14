@@ -11,17 +11,29 @@ Covers:
 import math
 from unittest.mock import Mock
 import pytest
-
 from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
 from piec.drivers.dc_calibrator.edc522 import EDC522
 from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
-
-from tests.support.driver_cases import DRIVER_CASES
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
 
+def output_off(instrument):
+    instrument.output(False)
+    if isinstance(instrument, VirtualCalibrator):
+        return instrument.state['output_on']
+    return tuple(instrument.instrument.writes)
 
-ALL_CALIBRATOR_DRIVERS = [case.cls for case in DRIVER_CASES['dc_calibrator']]
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(EDC522, physical(EDC522), output_off, ('00000000',)),
+        DriverCase(VirtualCalibrator, virtual(VirtualCalibrator, output_hook=lambda *args: None), output_off, False),
+    ]
+
+
+
+ALL_CALIBRATOR_DRIVERS = discover_driver_classes()["dc_calibrator"]
 
 
 # ============================================================================
@@ -32,7 +44,7 @@ class TestCalibratorDiscovery:
     """Verify that all advertised and discovered calibrator drivers conform to standards."""
 
     def test_discovery_and_registration(self):
-        assert_all_drivers_registered("dc_calibrator", ALL_CALIBRATOR_DRIVERS)
+        assert_all_drivers_registered('dc_calibrator', [case.cls for case in CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_CALIBRATOR_DRIVERS)
     def test_inherits_from_dc_calibrator(self, driver_cls):
@@ -152,7 +164,11 @@ class TestEDC522Protocol:
         assert "?" in edc.instrument.writes
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['dc_calibrator'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["dc_calibrator"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["dc_calibrator"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["dc_calibrator"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["dc_calibrator"])

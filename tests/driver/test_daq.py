@@ -18,20 +18,42 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 import pytest
-
 from piec.drivers.daq.daq import Daq
 from piec.drivers.daq.virtual_daq import VirtualDaq
 from piec.drivers.daq.usb231 import USB231
 from piec.drivers.daq.usb1208hs import USB1208HS
 from piec.drivers.emulators.daq_to_awg import DaqAsAwg
-
-from tests.support.driver_cases import DRIVER_CASES
+import importlib
+from tests.support.transports import create_test_driver
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 
+def analog_input(cls):
+    def make(monkeypatch):
+        if cls is VirtualDaq:
+            instrument = cls()
+            instrument.state['ai_values'][0] = 1.25
+        else:
+            # Replace only the vendor boundary. Channel/range validation and
+            # the concrete driver's read_AI implementation still execute.
+            module = importlib.import_module(cls.__module__)
+            monkeypatch.setattr(module, 'ULRange', SimpleNamespace(BIP10VOLTS=10))
+            instrument = create_test_driver(cls, board_num=7,
+                                            ul=SimpleNamespace(v_in=Mock(return_value=1.25)),
+                                            _ai_mode='se', _ai_ranges={})
+        return instrument
+    return make
 
-ROOT = Path(__file__).resolve().parents[1]
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [DriverCase(cls, analog_input(cls), lambda inst: inst.read_AI(0), 1.25)
+            for cls in (VirtualDaq, USB231, USB1208HS)]
 
-ALL_DAQ_DRIVERS = [case.cls for case in DRIVER_CASES['daq']]
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+ALL_DAQ_DRIVERS = discover_driver_classes()["daq"]
 
 NOTEBOOK_DRIVER_METHODS = [
     "idn",
@@ -97,7 +119,7 @@ class TestDaqDiscovery:
     """Verify that all advertised and discovered DAQ drivers conform to standards."""
 
     def test_discovery_and_registration(self):
-        assert_all_drivers_registered("daq", ALL_DAQ_DRIVERS)
+        assert_all_drivers_registered('daq', [case.cls for case in CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_DAQ_DRIVERS)
     def test_inherits_from_daq(self, driver_cls):
@@ -390,7 +412,11 @@ class TestDaqTriggerPulses:
         timer.ul.pulse_out_start.assert_called_once()
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['daq'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["daq"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["daq"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["daq"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["daq"])

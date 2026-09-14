@@ -12,17 +12,23 @@ Covers:
 import math
 from unittest.mock import Mock, patch
 import pytest
-
 from piec.drivers.stepper_motor.stepper_motor import Stepper
 from piec.drivers.stepper_motor.arduino_stepper import Geos_Stepper
 from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
-
-from tests.support.driver_cases import DRIVER_CASES
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
 
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(Geos_Stepper, physical(Geos_Stepper, {'10,1': '10 Complete'}), lambda inst: inst.step(10, 1), 10),
+        DriverCase(VirtualStepper, virtual(VirtualStepper, angle_hook=lambda angle: None), lambda inst: inst.step(10, 1), 10),
+    ]
 
-ALL_STEPPER_DRIVERS = [case.cls for case in DRIVER_CASES['stepper_motor']]
+
+
+ALL_STEPPER_DRIVERS = discover_driver_classes()["stepper_motor"]
 
 
 # ============================================================================
@@ -33,7 +39,7 @@ class TestStepperDiscovery:
     """Verify that all advertised and discovered stepper drivers conform to standards."""
 
     def test_discovery_and_registration(self):
-        assert_all_drivers_registered("stepper_motor", ALL_STEPPER_DRIVERS)
+        assert_all_drivers_registered('stepper_motor', [case.cls for case in CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_STEPPER_DRIVERS)
     def test_inherits_from_stepper(self, driver_cls):
@@ -183,7 +189,11 @@ class TestGeosStepperProtocol:
         assert "Custom Arduino_Stepper Object" in ident
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['stepper_motor'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["stepper_motor"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["stepper_motor"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["stepper_motor"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["stepper_motor"])

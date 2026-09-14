@@ -7,13 +7,10 @@ triggering, and safing operations.
 """
 
 from __future__ import annotations
-
 import inspect
 from unittest.mock import Mock, patch
-
 import numpy as np
 import pytest
-
 from piec.drivers.awg.agilent_33220a import Agilent33220A
 from piec.drivers.awg.agilent_33500 import Agilent33500
 from piec.drivers.awg.awg import Awg
@@ -23,12 +20,42 @@ from piec.drivers.awg.rigol_dg4000 import RigolDG4000
 from piec.drivers.awg.sdg2000 import SDG2000X
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.emulators.daq_to_awg import DaqAsAwg
-from tests.support.driver_cases import DRIVER_CASES
+from piec.drivers.daq.virtual_daq import VirtualDaq
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
 
+def trigger_commands(instrument):
+    instrument.output_trigger()
+    return tuple(instrument.instrument.writes)
+
+def virtual_awg(monkeypatch):
+    instrument = VirtualAwg(waveform_hook=Mock(), simulation_points=3)
+    return instrument
+
+def virtual_trigger(instrument):
+    instrument.output_trigger()
+    return instrument.waveform_hook.call_count
+
+def daq_awg(monkeypatch):
+    instrument = DaqAsAwg(VirtualDaq())
+    instrument.configure_trigger_output(1, .001)
+    return instrument
+
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(cls, physical(cls, **({'protocol': 'dg1000z'} if cls is RigolDG1000 else {})),
+                   trigger_commands, (command,))
+        for cls, command in [(Agilent33220A, '*TRG'), (Agilent33500, '*TRG'),
+                             (Keysight81150a, ':TRIG'), (RigolDG1000, '*TRG'),
+                             (RigolDG4000, '*TRG'), (SDG2000X, 'C1:BTWV MTRIG')]
+    ] + [DriverCase(VirtualAwg, virtual_awg, virtual_trigger, 1),
+         DriverCase(DaqAsAwg, daq_awg, lambda inst: inst.output_trigger()['timing'], 'simulated')]
+
+
 # All discovered concrete implementations of Awg
-REGISTERED_AWG_CLASSES = [case.cls for case in DRIVER_CASES['awg']]
+ALL_AWG_DRIVERS = discover_driver_classes()["awg"]
 
 PHYSICAL_AWG_CLASSES = [
     Agilent33220A,
@@ -54,7 +81,7 @@ PROFILES = [
 
 def test_awg_driver_discovery_and_registration():
     """Ensure every discovered subclass of Awg is covered by registered cases."""
-    assert_all_drivers_registered("awg", REGISTERED_AWG_CLASSES)
+    assert_all_drivers_registered('awg', [case.cls for case in CASES])
 
 
 # ============================================================================
@@ -64,7 +91,7 @@ def test_awg_driver_discovery_and_registration():
 class TestAwgCommonInterface:
     """Verify common method existence and signature expectations."""
 
-    @pytest.mark.parametrize("cls", list(REGISTERED_AWG_CLASSES))
+    @pytest.mark.parametrize("cls", list(ALL_AWG_DRIVERS))
     def test_all_awg_classes_expose_required_methods(self, cls):
         for method_name in ("output_trigger", "configure_trigger", "output"):
             assert hasattr(cls, method_name), f"{cls.__name__} missing {method_name}"
@@ -263,6 +290,20 @@ class TestAwgPhysicalTriggerCommands:
         awg.set_trigger_mode(1, "EDGE")
         assert awg.instrument.writes[-1] == ":ARM:SENS1 edge"
 
+    @pytest.mark.parametrize("check_params", [False, True])
+    def test_sdg2000x_required_trigger_sources(self, check_params):
+        awg = create_test_driver(SDG2000X, check_params=check_params)
+        assert Awg.trigger_source == ["INT", "EXT", "MAN"]
+        for source in Awg.trigger_source:
+            awg.set_trigger_source(1, source)
+        assert awg.instrument.writes == [
+            "C1:BTWV TRSR,INT", "C1:BTWV TRSR,EXT", "C1:BTWV TRSR,MAN",
+        ]
+        awg.instrument.writes.clear()
+        with pytest.raises(ValueError):
+            awg.set_trigger_source(1, "IMM")
+        assert awg.instrument.writes == []
+
     def test_sdg2000x_detailed_trigger_methods(self):
         awg = create_test_driver(SDG2000X)
         awg.set_trigger_source(1, "MAN")
@@ -325,7 +366,11 @@ class TestVirtualAwgCategory:
         assert "unsupported" in doc.lower()
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['awg'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["awg"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["awg"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["awg"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["awg"])

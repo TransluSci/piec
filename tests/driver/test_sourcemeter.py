@@ -7,19 +7,30 @@ and unconfirmed failure states.
 """
 
 from __future__ import annotations
-
 import inspect
 import pytest
-
 from piec.drivers.sourcemeter.keithley2400 import Keithley2400
 from piec.drivers.sourcemeter.sourcemeter import Sourcemeter
 from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
 from piec.simulation.contracts import CapacitiveLoad, LoadResponse
-from tests.support.driver_cases import DRIVER_CASES
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
 
-REGISTERED_SOURCEMETER_CLASSES = [case.cls for case in DRIVER_CASES['sourcemeter']]
+def virtual_source(monkeypatch):
+    instrument = VirtualSourcemeter(load_hook=lambda **kwargs: (1.25, .01))
+    instrument.output(1, True)
+    return instrument
+
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(Keithley2400, physical(Keithley2400, {':READ?': '1.25,.01,125'}), lambda inst: inst.get_voltage(1), 1.25),
+        DriverCase(VirtualSourcemeter, virtual_source, lambda inst: inst.get_voltage(1), 1.25),
+    ]
+
+
+ALL_SOURCEMETER_DRIVERS = discover_driver_classes()["sourcemeter"]
 
 LEVEL_2_SOURCEMETER_METHODS = [
     "output",
@@ -44,7 +55,7 @@ LEVEL_2_SOURCEMETER_METHODS = [
 # ============================================================================
 
 def test_sourcemeter_driver_discovery():
-    assert_all_drivers_registered("sourcemeter", REGISTERED_SOURCEMETER_CLASSES)
+    assert_all_drivers_registered('sourcemeter', [case.cls for case in CASES])
 
 
 # ============================================================================
@@ -227,7 +238,11 @@ class TestVirtualSourcemeterCategory:
         assert sm.query(":OUTP?") == "0"
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['sourcemeter'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["sourcemeter"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["sourcemeter"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["sourcemeter"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["sourcemeter"])

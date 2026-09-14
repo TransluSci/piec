@@ -30,7 +30,7 @@ class SDG2000X(Scpi, Awg):
 
     # Frequency: Manual refers to the data sheet for valid ranges[cite: 328].
     frequency = {
-        'func': {
+        'waveform': {
             'SIN': (None, None), 
             'SQU': (None, None), 
             'RAMP': (None, None), 

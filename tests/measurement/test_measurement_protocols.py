@@ -76,7 +76,7 @@ from tests.fixtures.virtual_setups import (
     moke_bench,
 )
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "measurement_compatibility"
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "measurement_compatibility"
 IV_GOLDEN_PATH = FIXTURES_DIR / "iv_sweep_golden.csv"
 DISCRETE_WAVEFORM_GOLDEN_PATH = FIXTURES_DIR / "discrete_waveform_golden.csv"
 HYSTERESIS_LOOP_GOLDEN_PATH = FIXTURES_DIR / "hysteresis_loop_golden.csv"
