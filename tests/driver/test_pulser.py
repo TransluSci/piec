@@ -10,17 +10,32 @@ Covers:
 
 from unittest.mock import Mock
 import pytest
-
 from piec.drivers.pulser.pulser import Pulser
 from piec.drivers.pulser.bnc765 import BNC765
 from piec.drivers.pulser.virtual_pulser import VirtualPulser
-
-from tests.support.driver_cases import DRIVER_CASES
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 from tests.support.transports import ScriptedTransport, create_test_driver
 
+def pulser_outputs(instrument):
+    instrument.output(1, True)
+    if isinstance(instrument, VirtualPulser):
+        enabled = instrument.state['output_on'][1]
+        instrument.output(1, False)
+        return enabled, instrument.state['output_on'][1]
+    instrument.output(1, False)
+    return tuple(instrument.instrument.writes)
 
-ALL_PULSER_DRIVERS = [case.cls for case in DRIVER_CASES['pulser']]
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(BNC765, physical(BNC765), pulser_outputs, ('OUTPut1:STATe ON', 'OUTPut1:STATe OFF')),
+        DriverCase(VirtualPulser, virtual(VirtualPulser), pulser_outputs, (True, False)),
+    ]
+
+
+
+ALL_PULSER_DRIVERS = discover_driver_classes()["pulser"]
 
 
 # ============================================================================
@@ -31,7 +46,7 @@ class TestPulserDiscovery:
     """Verify that all advertised and discovered pulser drivers conform to standards."""
 
     def test_discovery_and_registration(self):
-        assert_all_drivers_registered("pulser", ALL_PULSER_DRIVERS)
+        assert_all_drivers_registered('pulser', [case.cls for case in CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_PULSER_DRIVERS)
     def test_inherits_from_pulser(self, driver_cls):
@@ -176,7 +191,11 @@ class TestBNC765Commands:
         assert "SOURce1:INVert ON" in bnc.instrument.writes
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['pulser'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["pulser"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["pulser"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["pulser"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["pulser"])

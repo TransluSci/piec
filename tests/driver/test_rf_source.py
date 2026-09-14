@@ -4,13 +4,22 @@ Tests for RF source instrument category.
 Covers driver discovery/registration, capability declarations,
 and VirtualRFSource operational contracts.
 """
+
 import pytest
 import warnings
-
 from piec.drivers.rf_source.rf_source import RFSource
 from piec.drivers.rf_source.virtual_rf_source import VirtualRFSource
-from tests.support.driver_cases import DRIVER_CASES
-from tests.support.discovery import assert_all_drivers_registered, discover_driver_classes
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
+from tests.support.discovery import assert_all_drivers_registered
+
+def rf_frequency(instrument):
+    instrument.set_frequency(2.4e9)
+    return instrument.state['frequency']
+
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [DriverCase(VirtualRFSource, virtual(VirtualRFSource), rf_frequency, 2.4e9)]
+
 
 
 # ============================================================================
@@ -21,7 +30,7 @@ class TestRFSourceDiscovery:
     """Verify RF source driver discovery, registration, and capabilities."""
 
     def test_discovery_and_registration(self):
-        assert_all_drivers_registered("rf_source", [case.cls for case in DRIVER_CASES["rf_source"]])
+        assert_all_drivers_registered('rf_source', [case.cls for case in CASES])
 
     def test_virtual_rf_source_inheritance(self):
         assert issubclass(VirtualRFSource, RFSource)
@@ -139,7 +148,11 @@ class TestVirtualRFSourceContract:
         assert rf.state["frequency"] == 1e9
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['rf_source'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["rf_source"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["rf_source"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["rf_source"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["rf_source"])

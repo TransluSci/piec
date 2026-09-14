@@ -16,7 +16,6 @@ import math
 from unittest.mock import Mock
 import numpy as np
 import pytest
-
 from piec.drivers.dmm.dmm import DMM
 from piec.drivers.dmm.virtual_dmm import VirtualDMM
 from piec.drivers.dmm.agilent_34410a import Agilent34410A
@@ -25,12 +24,27 @@ from piec.drivers.dmm.keithley193a import Keithley193a
 from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
 from piec.analysis.field_calibration import FieldCalibration
 from piec.measurement.moke import MokeMeasurement
-
-from tests.support.driver_cases import DRIVER_CASES
+from tests.support.transports import create_test_driver
+from tests.support.driver_contracts import DriverCase, physical, virtual, case_for, assert_driver_contract
+from tests.support.discovery import discover_driver_classes, discover_instrument_categories
 from tests.support.discovery import assert_all_drivers_registered
 
+def ddc_meter(monkeypatch):
+    instrument = create_test_driver(Keithley193a, strict=True)
+    instrument.instrument.read = Mock(return_value='NDCV+1.250000E+00')
+    return instrument
 
-ALL_DMM_DRIVERS = [case.cls for case in DRIVER_CASES['dmm']]
+# Independent device responses and expectations; discovery supplies the test inventory.
+CASES = [
+        DriverCase(Agilent34410A, physical(Agilent34410A, {'READ?': '1.25'}), lambda inst: inst.get_voltage(), 1.25),
+        DriverCase(Keithley2000, physical(Keithley2000, {':READ?': '1.25'}), lambda inst: inst.get_voltage(), 1.25),
+        DriverCase(Keithley193a, ddc_meter, lambda inst: inst.get_voltage(), 1.25),
+        DriverCase(VirtualDMM, virtual(VirtualDMM, voltage_reader=lambda: 1.25), lambda inst: inst.get_voltage(), 1.25),
+    ]
+
+
+
+ALL_DMM_DRIVERS = discover_driver_classes()["dmm"]
 
 
 # ============================================================================
@@ -42,7 +56,7 @@ class TestDMMDiscovery:
 
     def test_discovery_and_registration(self):
         """All discovered DMM subclasses must be registered and covered."""
-        assert_all_drivers_registered("dmm", ALL_DMM_DRIVERS)
+        assert_all_drivers_registered('dmm', [case.cls for case in CASES])
 
     @pytest.mark.parametrize("driver_cls", ALL_DMM_DRIVERS)
     def test_inherits_from_dmm(self, driver_cls):
@@ -837,7 +851,11 @@ class TestOptionalCapabilityGating:
             k2000.set_integration_time(10)
 
 
-@pytest.mark.parametrize("case", DRIVER_CASES['dmm'], ids=lambda case: case.cls.__name__)
-def test_registered_driver_behavior(case, monkeypatch):
-    """Every runtime registration executes an observable category operation."""
-    case.check(monkeypatch)
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["dmm"], ids=lambda cls: cls.__name__)
+def test_driver_contract(driver_cls):
+    assert_driver_contract(driver_cls, discover_instrument_categories()["dmm"])
+
+
+@pytest.mark.parametrize("driver_cls", discover_driver_classes()["dmm"], ids=lambda cls: cls.__name__)
+def test_driver_behavior(driver_cls, monkeypatch):
+    case_for(driver_cls, CASES).check(monkeypatch, discover_instrument_categories()["dmm"])

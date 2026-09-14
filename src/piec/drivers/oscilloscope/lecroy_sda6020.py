@@ -82,10 +82,15 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         Sets the input coupling. SDA 6020 is 50 Ohm only: DC or GND.
         """
         if input_coupling is not None:
-            if input_coupling == "DC":
+            coupling = str(input_coupling).upper()
+            if coupling == "DC":
                 self.instrument.write(f"C{channel}:COUPLING D50")
-            elif input_coupling == "GND":
+            elif coupling == "GND":
                 self.instrument.write(f"C{channel}:COUPLING GND")
+            else:
+                raise ValueError(
+                    f"input_coupling {input_coupling!r} not supported on LeCroySDA6020 (supported: {self.input_coupling})"
+                )
 
     def set_probe_attenuation(self, channel, probe_attenuation=None):
         """
@@ -100,8 +105,13 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         compatibility but only accepts '50'.
         """
         if channel_impedance is not None:
-            if channel_impedance == "50":
+            imp = str(channel_impedance).upper().strip().removesuffix("OHM").strip()
+            if imp in ("50", "FIFTY"):
                 self.instrument.write(f"C{channel}:COUPLING D50")
+            else:
+                raise ValueError(
+                    f"channel_impedance {channel_impedance!r} not supported on LeCroySDA6020 (only '50' supported)"
+                )
 
     def set_horizontal_scale(self, tdiv=None, x_range=None):
         """
@@ -191,8 +201,13 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         Valid values: POS, NEG.
         """
         if trigger_slope is not None:
+            slope = str(trigger_slope).upper()
+            if slope not in self.trigger_slope:
+                raise ValueError(
+                    f"trigger_slope {trigger_slope!r} not supported on LeCroySDA6020 (supported: {self.trigger_slope})"
+                )
             src = self._get_lecroy_trigger_source()
-            self.instrument.write(f"{src}:TRIG_SLOPE {trigger_slope}")
+            self.instrument.write(f"{src}:TRIG_SLOPE {slope}")
 
     def set_trigger_mode(self, trigger_mode=None):
         """

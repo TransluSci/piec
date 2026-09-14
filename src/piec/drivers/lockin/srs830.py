@@ -21,12 +21,7 @@ class SRS830(Scpi, Lockin):
     channel = [1]
     input_coupling = ["AC", "DC"]
     reference_source = ["internal", "external"]
-    frequency = {
-        'reference_source': {
-            'internal': (0.001, 102000.0),
-            'external': (0.001, 102000.0)
-        }
-    }
+    frequency = (0.001, 102000.0)
     harmonic = (1, 19999)
     phase = (-360.0, 729.99)
     input_configuration = ["A", "A-B", "I (1M)", "I (100M)"]
@@ -119,7 +114,7 @@ class SRS830(Scpi, Lockin):
         Sets the reference frequency for the lockin.
         SCPI Command: FREQ {f}
         """
-        min_f, max_f = self.frequency['reference_source']['internal']
+        min_f, max_f = self.frequency
         if not (min_f <= frequency <= max_f):
             raise ValueError(f"Frequency {frequency} Hz out of range ({min_f} Hz to {max_f} Hz)")
         self.instrument.write(f"FREQ {frequency}")
