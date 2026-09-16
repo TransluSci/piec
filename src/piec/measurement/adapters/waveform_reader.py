@@ -16,6 +16,8 @@ from typing import Any, Dict, Optional, Set, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from piec.drivers.oscilloscope.oscilloscope import Oscilloscope
+
 # Pattern matching channel-specific column headers:
 # e.g., 'Channel 1', 'Channel_1', 'CH1', 'CH 1', 'Voltage_CH1', 'Voltage (CH1)', 'C1', 'CHAN1', 'Ch. 1'
 _CHANNEL_COLUMN_PATTERN = re.compile(
@@ -69,7 +71,7 @@ class WaveformReader:
 
     def __init__(
         self,
-        oscilloscope: Any,
+        oscilloscope: Oscilloscope,
         default_channel: int = 1,
         time_unit: str = "s",
         voltage_unit: str = "V",

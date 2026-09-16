@@ -318,3 +318,8 @@ class VirtualLockin(VirtualInstrument, Lockin):
         """Return the quadrature (Y) voltage in Volts."""
         _, y = self.quick_read()
         return y
+
+    def set_sensitivity(self, sensitivity: Any) -> None:
+        """Set the sensitivity level for the virtual lock-in."""
+        self.state["sensitivity"] = sensitivity
+

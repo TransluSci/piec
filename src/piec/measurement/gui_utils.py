@@ -137,9 +137,53 @@ class MeasurementApp:
 
 
 
-        # Left Panel (Inputs) - Using SideBar style
-        self.left_panel = ttk.Frame(self.main_frame, style="SideBar.TFrame")
-        self.left_panel.grid(row=0, column=0, sticky="nsew", padx=0, pady=0) # Removing external padding for full sidebar look
+        # Left Panel (Inputs) - Scrollable SideBar
+        self.left_container = ttk.Frame(self.main_frame, style="SideBar.TFrame")
+        self.left_container.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        self.left_container.rowconfigure(0, weight=1)
+        self.left_container.columnconfigure(0, weight=1)
+        self.left_container.columnconfigure(1, weight=0)
+
+        self.left_canvas = tk.Canvas(
+            self.left_container,
+            borderwidth=0,
+            highlightthickness=0,
+            background="#202020",
+        )
+        self.left_scrollbar = ttk.Scrollbar(
+            self.left_container,
+            orient="vertical",
+            command=self.left_canvas.yview,
+        )
+        self.left_canvas.configure(yscrollcommand=self.left_scrollbar.set)
+
+        self.left_canvas.grid(row=0, column=0, sticky="nsew")
+        self.left_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        self.left_panel = ttk.Frame(self.left_canvas, style="SideBar.TFrame")
+        self.left_canvas_window = self.left_canvas.create_window((0, 0), window=self.left_panel, anchor="nw")
+
+        def _on_left_frame_configure(event=None):
+            if hasattr(self.left_canvas, "bbox") and callable(self.left_canvas.bbox):
+                bbox = self.left_canvas.bbox("all")
+                if bbox:
+                    self.left_canvas.configure(scrollregion=bbox)
+            if hasattr(self.left_panel, "winfo_reqwidth") and callable(self.left_panel.winfo_reqwidth):
+                req_w = self.left_panel.winfo_reqwidth()
+                if req_w > 0:
+                    self.left_canvas.configure(width=req_w)
+
+        def _on_left_canvas_configure(event=None):
+            if event is not None and hasattr(self.left_canvas, "itemconfig"):
+                self.left_canvas.itemconfig(self.left_canvas_window, width=event.width)
+
+        self.left_panel.bind("<Configure>", _on_left_frame_configure)
+        self.left_canvas.bind("<Configure>", _on_left_canvas_configure)
+
+        # Mousewheel scrolling over the sidebar
+        self.root.bind_all("<MouseWheel>", self._on_sidebar_mousewheel)
+        self.root.bind_all("<Button-4>", self._on_sidebar_mousewheel)
+        self.root.bind_all("<Button-5>", self._on_sidebar_mousewheel)
         
         # Right Panel (Plot + Run) - Default TFrame (dark background)
         self.right_panel = ttk.Frame(self.main_frame, style="TFrame")
@@ -190,6 +234,31 @@ class MeasurementApp:
         """Binds keys in self.keyboard_shortcuts to the root window"""
         for key, callback in self.keyboard_shortcuts.items():
             self.root.bind(key, callback)
+
+    def _on_sidebar_mousewheel(self, event):
+        """Scrolls the sidebar canvas when mouse is hovering anywhere over sidebar widgets."""
+        try:
+            widget = getattr(event, "widget", None)
+            w = widget
+            target_parents = (
+                getattr(self, "left_container", None),
+                getattr(self, "left_canvas", None),
+                getattr(self, "left_panel", None),
+            )
+            while w is not None:
+                if w in target_parents:
+                    canvas = getattr(self, "left_canvas", None)
+                    if canvas is not None and hasattr(canvas, "yview_scroll"):
+                        if hasattr(event, "num") and event.num == 4:
+                            canvas.yview_scroll(-1, "units")
+                        elif hasattr(event, "num") and event.num == 5:
+                            canvas.yview_scroll(1, "units")
+                        elif getattr(event, "delta", 0):
+                            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                    return
+                w = getattr(w, "master", None)
+        except Exception:
+            pass
 
     def run_measurement(self):
         print("WARNING: run_measurement not implemented in subclass")

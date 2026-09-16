@@ -1,143 +1,141 @@
 # AMR Measurement Documentation
 
-> AMR setup profiles separate field command, optional field readback, transport readout and orientation. The calibrator + DMM + lock-in + stepper profile preserves manually selected lock-in settings by default. Calibration tables or linear maps command the field; an independent reader supplies measured field when configured. Excitation and shutdown policies must be declared explicitly. Additional electrical adapters and manual move-and-confirm positioning remain separate work. See section 9.5 of `MEASUREMENT_STANDARDIZATION_PLAN.md` for the design requirements.
+> AMR setup profiles decouple magnetic field control, sample excitation, and voltage readout. The architecture supports **Lock-in internal AC excitation** or **external DC sourcemeter excitation**, and **Lock-in AC** or **DMM DC voltage readout**. Manually selected front-panel instrument settings are preserved by default.
 
-This document explains the Anisotropic Magnetoresistance (AMR) measurement setup, the software architecture behind it, and how to operate the system using both the Jupyter Notebook and the Graphical User Interface (GUI).
+This document describes the Anisotropic Magnetoresistance (AMR) measurement system, excitation and readout options, software architecture, and operation via Python script/notebook and the Graphical User Interface (GUI).
+
+---
 
 ## Overview
 
-**Anisotropic Magnetoresistance (AMR)** is a property of ferromagnetic materials where the electrical resistance depends on the angle between the current direction and the magnetization direction. The lock-in setup records X/Y voltages while rotating the sample in a magnetic field. Interpreting those voltages as resistance requires a known excitation current and the appropriate circuit conversion.
+**Anisotropic Magnetoresistance (AMR)** is a property of ferromagnetic materials where electrical resistance depends on the angle $\theta$ between the current direction and magnetization:
 
-### Theory (AMR Equation)
+$$R(\theta) = R_{\perp} + (R_{\parallel} - R_{\perp}) \cos^2(\theta) = R_{avg} + \Delta R \cos(2\theta)$$
 
-The resistance $R(\theta)$ of a ferromagnetic material depends on the angle $\theta$ between the current density $J$ and the magnetization $M$ according to the relation:
-
-$$R(\theta) = R_{\perp} + (R_{\parallel} - R_{\perp}) \cos^2(\theta)$$
-
-where:
-*   $R_{\parallel}$ corresponds to the resistance when the magnetization is parallel to the current ($\theta = 0^\circ$).
-*   $R_{\perp}$ corresponds to the resistance when the magnetization is perpendicular to the current ($\theta = 90^\circ$).
-
-Using the trigonometric identity $\cos^2(\theta) = \frac{1 + \cos(2\theta)}{2}$, this can be rewritten as:
-
-$$R(\theta) = R_{avg} + \Delta R \cos(2\theta)$$
-
-where $R_{avg} = \frac{R_{\parallel} + R_{\perp}}{2}$ is the average resistance, and $\Delta R = \frac{R_{\parallel} - R_{\perp}}{2}$ is the amplitude of the AMR effect.
-
-### Data Fitting
-
-To extract the AMR amplitude and other parameters, experimental data (Resistance vs. Angle) is typically fitted to the following function:
+Experimental data is fitted to extract the average resistance $R_{avg}$, AMR amplitude $\Delta R$, and angular offset $\theta_0$:
 
 $$y = A + B \cos(2(\theta - \theta_0))$$
 
-where:
-*   $A$ represents the average resistance ($R_{avg}$).
-*   $B$ represents the AMR amplitude ($\Delta R$).
-*   $\theta$ is the angle of the applied external magnetic field.
-*   $\theta_0$ accounts for any angular misalignment between the sample drive and the magnetic field axis.
+---
 
-In a sufficiently strong magnetic field, the magnetization $M$ aligns with the external field direction, making the measured angle $\theta$ accurately reflect the magnetization angle.
+## Hardware Architecture & Modes
 
-## Hardware Setup & Feedback Loop
+The bench combines magnetic field generation, angular positioning, sample excitation, and voltage readout:
 
-The measurement system relies on a feedback loop to accurately set and verify the magnetic field applied to the sample.
+### 1. Magnetic Field & Orientation
+* **Field Generation (Calibrator)**: DC calibrator (`EDC522` or `VirtualCalibrator`) drives the electromagnet via a linear field calibration factor (default `10000 Oe/V`).
+* **Field Verification (Optional DMM / Hall Sensor)**: Reads the active magnetic field to verify stabilization.
+* **Sample Rotation (Stepper)**: High-resolution stepper motor (`Geos_Stepper` or `VirtualStepper`) rotates the sample relative to the magnetic field.
 
-### The Feedback Loop
-1.  **Field Setting (Source)**: The **DC Calibrator** (`EDC522` or Virtual) is used to drive the **Custom Magnet**. It outputs a specific voltage that corresponds to the desired magnetic field strength (Oersted).
-    *   *Conversion:* The software uses a calibration factor (default `10000 Oe/V`) to convert the desired field into a voltage command for the calibrator. (This is dependant on actual hardware configuration but it is the default)
-2.  **Field Sensing (Readout)**: A **Hall Sensor** measures the actual magnetic field produced by the magnet. This sensor's output is read by the **Digital Multimeter (DMM)** (`Keithley193a` or Virtual).
-3.  **Verification**: After setting the field, the software waits for the magnet to stabilize, reads the voltage from the DMM, converts it back to field units, and verifies it matches the target within a tolerance (default 10%).
+### 2. Sample Excitation Modes
+* **Internal Lock-in (AC)**: The Lock-in amplifier's built-in Sine Out oscillator drives AC current through the sample. Configured by `Amplitude (V)` and `Frequency (Hz)`.
+* **External Sourcemeter (DC)**: A dedicated sourcemeter (`Keithley2400` or `VirtualSourcemeter`) supplies a constant current. Configured by `Current (A)` and `Compliance (V)`.
+* **Automated Safe Shutdown**: External current sources automatically execute `output(on=False)` upon run completion, abort, or error.
 
-### Other Components
-*   **Stepper Motor**: Rotates the sample relative to the magnetic field.
-*   **Lock-in Amplifier**: Measures the small resistance changes (voltage drop) across the sample with high precision, typically using AC excitation to improve signal-to-noise ratio.
+### 3. Voltage Readout Modes
+* **Lock-in Amplifier (AC)**: Measures in-phase ($X$) and quadrature ($Y$) voltages across the sample contacts with high SNR.
+* **Multimeter / DMM (DC)**: Measures DC voltage across the sample contacts ($X = V_{dc}$, $Y = 0.0$), preserving the canonical `("angle", "field", "x", "y")` schema (`amr: 1`).
+
+### 4. Manual Knob Preservation Guarantee
+When `initialize_lockin=False` (default preserve mode), the software **never** sends configuration commands or setting queries to the lock-in amplifier. All physical front-panel knobs and settings (amplitude, frequency, sensitivity, time constant) are preserved untouched, and the driver only issues data readout commands (`quick_read()` / `get_X_Y()`).
+
+---
 
 ## Software Architecture
 
-The codebase is structured around a parent class `MagnetoTransport` and a specific implementation `AMR`.
+* **`MagnetoTransport`** (`src/piec/measurement/magneto_transport.py`):
+  Base class managing instrument coordination, pre-run bench tuning (`test_excitation()`, `auto_gain()`), and standardized `BaseMeasurement` lifecycles.
+* **`AMR`** (`src/piec/measurement/amr.py` or `magneto_transport.py`):
+  Concrete AMR measurement class executing angular sweeps without endpoint overshoot and exporting canonical schema dataframes.
+* **Adapters** (`src/piec/measurement/adapters/amr.py`):
+  * `SampleExcitation`: Encapsulates internal oscillator vs. external sourcemeter with automated safe shutdown.
+  * `TransportReadout`: Encapsulates Lock-in AC vs. DMM DC readout, with strictly readout-only communication when in preserve mode.
 
-### `MagnetoTransport` Class
-*   **Location**: `src/piec/measurement/magneto_transport.py`
-*   **Role**: Base measurement class managing instrument setup roles, field control, lock-in excitation safing, and the shared `BaseMeasurement` lifecycle.
-*   **Key Lifecycle Methods**:
-    *   `run_experiment()`: Executes the standardized full-run sequence (configure -> capture -> safing -> save).
-    *   `session()`: Context manager for piecewise manual hardware control.
-    *   `safe_shutdown()`: Attempt-all safing de-energizing the magnet and invoking excitation shutdown handler.
-    *   `request_stop()`: Cooperatively halts execution and triggers safe shutdown.
-    *   `request_pause()`: Temporarily pauses angular sweep between points.
+---
 
-### `AMR` Class
-*   **Location**: `src/piec/measurement/magneto_transport.py`
-*   **Inherits from**: `MagnetoTransport`
-*   **Role**: Concrete implementation of the AMR angular sweep experiment.
-*   **Key Lifecycle Methods**:
-    *   `run_experiment()`: Sweeps sample angle, measures lock-in X/Y signals, and publishes standardized `amr` schema v1 CSV with units.
-    *   `_capture_data()`: Rotates stepper motor to exact commanded angles without endpoint overshoot (AMR-ANGLE-001 repaired) and captures averaged signals.
+## Python / Notebook Usage
 
-## How to Use the Notebook
+```python
+from piec.measurement.amr import AMR
+from piec.drivers.lockin.srs830 import SRS830
+from piec.drivers.sourcemeter.keithley2400 import Keithley2400
+from piec.drivers.dc_calibrator.edc522 import EDC522
+from piec.drivers.stepper_motor.arduino_stepper import Geos_Stepper
 
-The notebook requires an explicitly defined `excitation_shutdown_handler` that
-performs the bench's shutdown action and raises on failure. Do not substitute a
-no-op for physical hardware. Manual lock-in settings are preserved by default;
-X/Y are measured voltages, not inferred sample resistance.
+# 1. Instantiate instruments
+calibrator = EDC522("GPIB0::06::INSTR")
+stepper = Geos_Stepper("COM3")
+lockin = SRS830("GPIB0::08::INSTR")
 
-AMR uses `output_dir`; plotting is a consumer responsibility. Live `raw_window`
-snapshots are bounded, while terminal `data` contains the complete result.
-The current GUI requires an installed `excitation_shutdown_handler` before Run
-and awaits checkpoint 24c runner/presentation integration and checkpoint 25 audit.
+# Option A: Standard AC AMR (Lock-in internal excitation + Lock-in readout)
+exp = AMR(
+    calibrator=calibrator,
+    stepper=stepper,
+    lockin=lockin,
+    field=100.0,
+    angle_step=5.0,
+    total_angle=360.0,
+)
 
-The Jupyter Notebook (`notebooks/amr.ipynb`) provides a step-by-step interface for running experiments, especially useful for debugging or manual control.
+# Option B: DC Current AMR (External sourcemeter + Lock-in readout)
+# sourcemeter = Keithley2400("GPIB0::24::INSTR")
+# exp = AMR(
+#     calibrator=calibrator,
+#     stepper=stepper,
+#     lockin=lockin,
+#     current_source=sourcemeter,
+#     current=1e-4, compliance=2.0,
+#     field=100.0, angle_step=5.0, total_angle=360.0,
+# )
 
-1.  **Imports**: Load necessary drivers and the `AMR` class.
-    ```python
-    from piec.measurement.magneto_transport import AMR
-    from piec.drivers.dmm.keithley193a import Keithley193a
-    # ... other imports
-    ```
-2.  **Instrument Setup**:
-    *   **Autodetect**: Use `autodetect('dmm')`, etc., to find connected instruments.
-    *   **Manual**: If autodetection fails (common for Arduino/Calibrator), manually instantiate them with their address (e.g., `GPIB0::9::INSTR`).
-    *   **Virtual**: Use `VirtualDMM()`, etc., for testing without hardware.
-3.  **Configuration**: Define experiment parameters.
-    ```python
-    experiment = AMR(dmm=dmm, calibrator=calibrator, ..., field=100, angle_step=5, ...)
-    ```
-4.  **Execution**: Run the measurement loop.
-    ```python
-    experiment.run_experiment()
-    ```
-5.  **Analysis**: The notebook includes cells to load the generated CSV data using `pandas` and plot it with `matplotlib`.
+# 2. Pre-run bench verification (optional)
+status = exp.test_excitation()
+print(f"Preview: V={status.voltage:.3e} V, R={status.resistance}, Overloaded={status.overloaded}")
 
-## How to Use the GUI
+# 3. Run measurement sweep
+df = exp.run_experiment(output_dir="data/AMR")
+```
 
-The GUI (`guis/amr_GUI.py`) offers a user-friendly way to configure and run measurements without writing code.
+---
 
-### 1. Instrument Connection
-*   **Address Selection**: Dropdown menus allow you to select the VISA address for each instrument (DMM, Calibrator, Stepper, Lock-in).
-*   **Virtual Mode**: Select `VIRTUAL` to run a simulation.
-*   **Refresh**: Updates the list of available VISA resources.
-*   **Autodetect**: Attempts to automatically identify connected instruments and select their addresses.
-*   **Test Stepper**: Verifies communication with the Arduino stepper motor.
+## Graphical User Interface (`Measurements/AMR/amr_GUI.py`)
+
+Run the GUI with:
+```bash
+python Measurements/AMR/amr_GUI.py
+```
+
+### 1. Static Inputs & Connections
+* **`Calibrator (Field):`** VISA address for the electromagnet calibrator. Includes **Refresh**, **Autodetect**, and **Test Stepper** buttons.
+* **`Stepper (Angle):`** VISA / COM address for the rotation stepper motor.
+* **`Excitation Source:`** Choose between:
+  * `Lock-in Internal (AC)`: Uses Lock-in Sine Out oscillator. Sourcemeter Address is disabled.
+  * `External Sourcemeter (DC)`: Uses external sourcemeter. Activates **Sourcemeter Address**.
+* **`Sourcemeter Address:`** VISA address of the Keithley 2400 or `VIRTUAL` (active when External Sourcemeter is selected).
+* **`Voltage Readout:`** Choose between:
+  * `Lock-in (AC)`: Measures $X, Y$ via Lock-in amplifier.
+  * `DMM (DC)`: Measures DC voltage via DMM.
+* **`Lock-in Address:`** VISA address of the Lock-in amplifier.
+* **`DMM Address:`** VISA address of the DMM.
 
 ### 2. Measurement Parameters (Dynamic Inputs)
-*   **Magnetic Field (Oe)**: Target field strength.
-*   **Angle Step (deg)**: Increment size for rotation.
-*   **Total Angle (deg)**: Total range of rotation (e.g., 360).
-*   **Lock-in Settings**: Amplitude, Frequency, Sensitivity, and Initialize checkbox.
-*   **Measure Time (s)**: Duration to average data at each angle.
+* **`Magnetic Field (Oe):`** Target field strength.
+* **`Angle Step (deg):`** Increment per rotation step.
+* **`Total Angle (deg):`** Total sweep range (e.g. 360°).
+* **`Measure Time (s):`** Settling / dwell time per angle.
+* **`Ext Current (A)` & `Ext Compliance (V):`** Sourcemeter excitation setpoints (active in External Sourcemeter mode).
+* **`Lock-in Amplitude (V)` & `Lock-in Frequency (Hz):`** Lock-in oscillator excitation (active in Lock-in Internal mode).
+* **`Lock-in Sensitivity:`** Desired sensitivity if auto-configuring; leave as is to preserve manual dials.
+* **`Initialize Lock-in?:`** When **unchecked** (default), preserves your physical front-panel knobs. When **checked**, applies the software amplitude/frequency/sensitivity.
 
-### 3. Running a Measurement
-1.  **Configure**: Set all parameters and select a **Save Directory**.
-2.  **Start**: Click **Run Measurement** (or press `Ctrl+Enter`).
-3.  **Monitor**:
-    *   **Real-time Plot**: The graph updates automatically as new data points are acquired. You can change X/Y axes (e.g., Angle vs X, Field vs Y) on the fly.
-    *   **Console**: Displays status messages ("capturing data at angle...", "Data point saved...").
-4.  **Control**: Use **Pause/Resume** to temporarily halt the experiment or **Stop** to abort it.
+### 3. Bench Setup & Live Tuning
+* **Active Setup Badge:** Displays live summary (e.g. `Setup: Excitation = Lock-in Internal (AC) | Readout = Lock-in (AC)`).
+* **`Test Excitation` Button:** Briefly energizes the source, reads $X, Y$, calculates voltage magnitude $V$ and estimated sample resistance $R = V / I$, checks for overload (green OK vs. red OVERLOAD badge), and safely de-energizes the source.
+* **`Auto-Gain` Button:** Auto-ranges Lock-in sensitivity before starting the run and updates the UI entry.
+* **Scrollable Sidebar:** The left panel includes smooth mousewheel scrolling and a vertical scrollbar, ensuring all controls and diagnostics are accessible on any screen size.
 
-## Features Summary
-
-*   **Autodetection**: Automatically finds supported instruments on the VISA bus.
-*   **Hardware Abstraction**: Seamlessly switch between real hardware and virtual drivers for testing.
-*   **Real-time Visualization**: Watch the hysteresis loop or resistance curve build up in real-time.
-*   **Data Management**: Automatically saves data and metadata to CSV files with timestamps.
-*   **Safety**: Includes `shut_off` procedures to ensure the magnet is powered down after experiments.
+### 4. Running the Sweep
+1. Configure parameters and select a **Save Directory**.
+2. Click **Test Excitation** to verify signal and overload status.
+3. Click **Run Measurement** (or press `Ctrl+Enter`).
+4. Monitor live curve plotting ($X$ vs Angle, $Y$ vs Angle, etc.) and execution logs in real time. Pause/Resume and Stop are supported.

@@ -27,6 +27,9 @@ from piec.analysis.pund import (
 )
 from piec.analysis.utilities import interpolate_sparse_to_dense
 
+from piec.drivers.awg.awg import Awg
+from piec.drivers.oscilloscope.oscilloscope import Oscilloscope
+
 from .adapters import WaveformReader
 from .base import BaseMeasurement
 from .contracts import (
@@ -70,8 +73,8 @@ class DiscreteWaveform(BaseMeasurement):
 
     def __init__(
         self,
-        awg: Any,
-        osc: Any,
+        awg: Awg,
+        osc: Oscilloscope,
         *,
         v_div: float = 0.01,
         voltage_channel: Union[str, int] = "1",
@@ -417,8 +420,8 @@ class HysteresisLoop(DiscreteWaveform):
 
     def __init__(
         self,
-        awg: Any = None,
-        osc: Any = None,
+        awg: Awg,
+        osc: Oscilloscope,
         *,
         v_div: float = 0.1,
         frequency: float = 1000.0,
@@ -654,8 +657,8 @@ class ThreePulsePund(DiscreteWaveform):
 
     def __init__(
         self,
-        awg: Any = None,
-        osc: Any = None,
+        awg: Awg,
+        osc: Oscilloscope,
         *,
         v_div: float = 0.1,
         reset_amp: float = 1.0,

@@ -24,6 +24,8 @@ from typing import Any, Callable, Mapping, Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from piec.drivers.sourcemeter.sourcemeter import Sourcemeter
+
 from .base import BaseMeasurement
 from .contracts import (
     RunRequest,
@@ -50,7 +52,7 @@ class IVSweep(BaseMeasurement):
 
     def __init__(
         self,
-        sourcemeter: Any,
+        sourcemeter: Sourcemeter,
         *,
         v_start: float = 0.0,
         v_stop: float = 1.0,

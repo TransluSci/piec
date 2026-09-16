@@ -2,25 +2,34 @@
 Dynamic measurement contract and interface inspection tests.
 
 Discovers all concrete BaseMeasurement subclasses, inspects their constructor
-signatures to verify instrument dependencies, and ensures standard lifecycle
-hooks and control contracts are implemented without hardcoded setups or options.
+signatures to verify instrument dependencies derived dynamically from the
+drivers category folders, and ensures standard lifecycle hooks and control
+contracts are implemented without hardcoded setups, numbers, or options.
 """
 from __future__ import annotations
 
 import inspect
+import types
+import typing
+from typing import Any, get_args, get_origin
 
 import pytest
 
+from piec.drivers.instrument import Instrument
 from piec.measurement.base import BaseMeasurement
 from tests.support.discovery import discover_measurement_classes
 
 MEASUREMENT_CLASSES = discover_measurement_classes()
 
-KNOWN_INSTRUMENT_PARAM_KEYS = {
-    "sourcemeter", "source", "sm", "meter", "awg", "osc",
-    "oscilloscope", "dmm", "lockin", "stepper", "motor",
-    "arduino", "calibrator", "daq", "pulser", "profile",
-}
+
+def is_instrument_type(annotation: Any) -> bool:
+    """Check if a type annotation represents an Instrument or subclass of Instrument."""
+    if annotation is None or annotation is inspect.Parameter.empty or annotation is Any:
+        return False
+    origin = get_origin(annotation)
+    if origin in (typing.Union, types.UnionType):
+        return any(is_instrument_type(arg) for arg in get_args(annotation))
+    return inspect.isclass(annotation) and issubclass(annotation, Instrument)
 
 
 def test_concrete_measurements_discovered():
@@ -38,19 +47,19 @@ class TestMeasurementDynamicContracts:
         assert not inspect.isabstract(meas_cls), f"{name} must not be an abstract class"
 
     def test_constructor_signature_accepts_instruments(self, name: str, meas_cls: type[BaseMeasurement]):
-        """Verify through inspection that measurement constructor accepts instrument dependencies."""
+        """Verify through type inspection that measurement constructor declares at least one Instrument parameter."""
         sig = inspect.signature(meas_cls.__init__)
         params = list(sig.parameters.values())[1:]  # Skip 'self'
         assert len(params) >= 1, f"{name}.__init__ must take parameters"
 
-        param_names = {p.name.lower() for p in params}
-        has_instrument_param = any(
-            any(inst in p_name for inst in KNOWN_INSTRUMENT_PARAM_KEYS)
-            for p_name in param_names
-        )
-        assert has_instrument_param, (
-            f"{name}.__init__ parameters {sorted(param_names)} must include at least one "
-            f"instrument dependency (e.g., sourcemeter, awg, osc, dmm, lockin, stepper, etc.)"
+        type_hints = typing.get_type_hints(meas_cls.__init__)
+        instrument_params = [
+            p.name for p in params
+            if is_instrument_type(type_hints.get(p.name, p.annotation))
+        ]
+        assert len(instrument_params) >= 1, (
+            f"{name}.__init__ must declare at least one parameter typed as an Instrument subclass "
+            f"(found parameters: {[p.name for p in params]}, annotations: {type_hints})"
         )
 
     def test_implements_required_lifecycle_hooks(self, name: str, meas_cls: type[BaseMeasurement]):

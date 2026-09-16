@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 
 from piec.analysis.field_calibration import FieldCalibration
+from piec.drivers.dmm.dmm import DMM
+from piec.drivers.sourcemeter.sourcemeter import Sourcemeter
 from piec.measurement.base import BaseMeasurement
 from piec.measurement.contracts import (
     ConcurrentRunError,
@@ -103,8 +105,8 @@ class MokeMeasurement(BaseMeasurement):
 
     def __init__(
         self,
-        sourcemeter: Any,
-        dmm: Any,
+        sourcemeter: Sourcemeter,
+        dmm: DMM,
         *,
         calibration: FieldCalibration,
         output_values: Sequence[float],

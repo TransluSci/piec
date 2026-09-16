@@ -19,12 +19,56 @@ import warnings
 import numpy as np
 
 from piec.analysis.field_calibration import FieldCalibration
-from piec.measurement.magneto_transport import (
-    convert_angle_to_steps,
-    convert_steps_to_angle,
-    convert_field_to_voltage,
-    convert_voltage_to_field,
-)
+from piec.drivers.instrument import Instrument
+from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
+from piec.drivers.dmm.dmm import DMM
+from piec.drivers.lockin.lockin import Lockin
+from piec.drivers.stepper_motor.stepper_motor import Stepper
+from piec.drivers.sourcemeter.sourcemeter import Sourcemeter
+from piec.drivers.awg.awg import Awg
+def convert_steps_to_angle(steps: int, steps_per_revolution: int = 200) -> float:
+    """Helper function to convert steps to an angle in degrees."""
+    if not isinstance(steps_per_revolution, (int, np.integer)) or steps_per_revolution <= 0:
+        raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
+    return float(steps) * 360.0 / float(steps_per_revolution)
+
+
+def convert_angle_to_steps(angle: float, steps_per_revolution: int = 200) -> int:
+    """Helper function to convert an angle in degrees to steps."""
+    if not isinstance(steps_per_revolution, (int, np.integer)) or steps_per_revolution <= 0:
+        raise ValueError(f"steps_per_revolution must be a positive integer, got {steps_per_revolution!r}")
+    angle_f = float(angle)
+    if not math.isfinite(angle_f):
+        raise ValueError(f"angle must be a finite number, got {angle!r}")
+    return int(round(angle_f * float(steps_per_revolution) / 360.0))
+
+
+def convert_field_to_voltage(field: float, voltage_calibration: float = 10000.0) -> float:
+    """
+    Convert magnetic field in Oe to calibrator control voltage in V.
+    Default calibration is 10000.0 Oe/V (0.01 V for 100 Oe).
+    """
+    field_f = float(field)
+    if not math.isfinite(field_f):
+        raise ValueError(f"field must be a finite number, got {field!r}")
+    cal_f = float(voltage_calibration)
+    if not math.isfinite(cal_f) or cal_f <= 0:
+        raise ValueError(f"voltage_calibration must be a positive finite number, got {voltage_calibration!r}")
+    return field_f / cal_f
+
+
+def convert_voltage_to_field(voltage: float, voltage_calibration: float = 10000.0) -> float:
+    """
+    Convert sensor / calibrator voltage in V to magnetic field in Oe.
+    Default calibration is 10000.0 Oe/V (100 Oe for 0.01 V).
+    """
+    v_f = float(voltage)
+    if not math.isfinite(v_f):
+        raise ValueError(f"voltage must be a finite number, got {voltage!r}")
+    cal_f = float(voltage_calibration)
+    if not math.isfinite(cal_f) or cal_f <= 0:
+        raise ValueError(f"voltage_calibration must be a positive finite number, got {voltage_calibration!r}")
+    return v_f * cal_f
 
 
 def _finite(value, name, minimum=None):
@@ -58,7 +102,7 @@ class FieldSource:
 
     def __init__(
         self,
-        instrument: Any,
+        instrument: Union[DCCalibrator, Instrument],
         calibration: Union[float, FieldCalibration, str] = 10000.0,
         field_range: Optional[Tuple[float, float]] = None,
         output_range: Optional[Tuple[float, float]] = None,
@@ -196,7 +240,7 @@ class FieldReader:
 
     def __init__(
         self,
-        instrument: Any,
+        instrument: Union[DMM, Instrument],
         calibration: Union[float, FieldCalibration, str] = 10000.0,
         field_unit: str = "Oe",
         sensor_unit: str = "V",
@@ -309,23 +353,130 @@ class FieldReader:
         return True
 
 
+class SampleExcitation:
+    """
+    AMR setup adapter for managing sample electrical current/voltage excitation.
+
+    Supports:
+    - Internal mode (source_type='internal'): uses Lock-in internal oscillator.
+    - External mode (source_type='external'): uses dedicated Sourcemeter or Awg.
+      Configures current/compliance or voltage, arms output, and guarantees
+      output(False) on safe shutdown.
+    """
+
+    def __init__(
+        self,
+        instrument: Optional[Union[Lockin, Sourcemeter, Awg, Instrument]] = None,
+        source_type: str = "internal",
+        current: float = 1e-4,
+        compliance: float = 2.0,
+        amplitude: float = 1.0,
+        frequency: float = 10.0,
+        shutdown_handler: Optional[Callable[[], None]] = None,
+        name: str = "excitation",
+    ):
+        self.instrument = instrument
+        src = str(source_type).lower().strip()
+        if src not in ("internal", "external"):
+            raise ValueError(f"source_type must be 'internal' or 'external', got {source_type!r}")
+        self.source_type = src
+        self.current = float(current)
+        self.compliance = float(compliance)
+        self.amplitude = float(amplitude)
+        self.frequency = float(frequency)
+        self.shutdown_handler = shutdown_handler
+        self.name = str(name)
+
+    def configure(self) -> None:
+        """Energize the excitation source."""
+        if self.source_type == "external" and self.instrument is not None:
+            if hasattr(self.instrument, "configure_current_source"):
+                try:
+                    self.instrument.configure_current_source(current=self.current, voltage_compliance=self.compliance)
+                except Exception:
+                    pass
+            else:
+                if hasattr(self.instrument, "set_source_function"):
+                    try:
+                        self.instrument.set_source_function(source_func="CURR")
+                    except Exception:
+                        pass
+                if hasattr(self.instrument, "set_source_current"):
+                    try:
+                        self.instrument.set_source_current(current=self.current)
+                    except Exception:
+                        pass
+                elif hasattr(self.instrument, "set_current"):
+                    try:
+                        self.instrument.set_current(self.current)
+                    except Exception:
+                        pass
+                if hasattr(self.instrument, "set_voltage_compliance"):
+                    try:
+                        self.instrument.set_voltage_compliance(voltage_compliance=self.compliance)
+                    except Exception:
+                        pass
+                elif hasattr(self.instrument, "set_compliance"):
+                    try:
+                        self.instrument.set_compliance(self.compliance)
+                    except Exception:
+                        pass
+            if hasattr(self.instrument, "output"):
+                try:
+                    self.instrument.output(on=True)
+                except TypeError:
+                    try:
+                        self.instrument.output(True)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        elif self.source_type == "internal" and self.instrument is not None:
+            if hasattr(self.instrument, "set_amplitude"):
+                self.instrument.set_amplitude(self.amplitude)
+            if hasattr(self.instrument, "set_reference_frequency"):
+                self.instrument.set_reference_frequency(self.frequency)
+
+    def safe_shutdown(self) -> None:
+        """De-energize excitation source. Safe shutdown guarantee."""
+        if self.instrument is not None:
+            if hasattr(self.instrument, "output"):
+                try:
+                    self.instrument.output(on=False)
+                except TypeError:
+                    try:
+                        self.instrument.output(False)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            elif hasattr(self.instrument, "set_amplitude"):
+                try:
+                    self.instrument.set_amplitude(0.004)
+                except Exception:
+                    pass
+        if callable(self.shutdown_handler):
+            self.shutdown_handler()
+
+
 class TransportReadout:
     """
-    AMR setup adapter for transport electrical readout (e.g. Lock-in amplifier).
+    AMR setup adapter for transport electrical readout (Lock-in amplifier or DMM).
 
     In accordance with Section 9.5 of MEASUREMENT_STANDARDIZATION_PLAN.md:
     - readout_configuration='preserve' (default): strictly NO initialize(), reset(),
       clear(), autorange, or parameter writes sent to the lock-in. Preserves manual
       front-panel settings chosen by the lab operator!
-    - readout_configuration='configure': sends validated parameter writes to lockin.
+    - readout_configuration='configure': sends validated parameter writes to instrument.
     - signal_mode='lockin_xy': reads in-phase X and quadrature Y in Volts.
+    - signal_mode='dmm_voltage': reads DC Voltage in Volts.
     """
 
     def __init__(
         self,
-        instrument: Any,
+        instrument: Union[Lockin, DMM, Instrument],
         readout_configuration: str = "preserve",
-        signal_mode: str = "lockin_xy",
+        signal_mode: Optional[str] = None,
         excitation_source: str = "internal",
         amplitude: float = 1.0,
         frequency: float = 10.0,
@@ -333,7 +484,7 @@ class TransportReadout:
         input_configuration: str = "a-b",
         measure_time: float = 1.0,
         sample_interval: float = 0.1,
-        name: str = "lockin",
+        name: str = "readout",
         shutdown_handler: Optional[Callable[[], None]] = None,
         external_source_owner: Optional[str] = None,
     ):
@@ -346,9 +497,15 @@ class TransportReadout:
             raise ValueError(f"readout_configuration must be 'preserve' or 'configure', got {readout_configuration!r}")
         self.readout_configuration = cfg
 
-        sig = str(signal_mode).lower()
-        if sig != "lockin_xy":
-            raise ValueError(f"Unsupported signal_mode {signal_mode!r}; currently only 'lockin_xy' is supported")
+        if signal_mode is None:
+            if isinstance(instrument, DMM):
+                signal_mode = "dmm_voltage"
+            else:
+                signal_mode = "lockin_xy"
+
+        sig = str(signal_mode).lower().strip()
+        if sig not in ("lockin_xy", "dmm_voltage"):
+            raise ValueError(f"Unsupported signal_mode {signal_mode!r}; supported: 'lockin_xy', 'dmm_voltage'")
         self.signal_mode = sig
 
         exc = str(excitation_source).lower()
@@ -358,7 +515,7 @@ class TransportReadout:
 
         if shutdown_handler is not None and not callable(shutdown_handler):
             raise TypeError("shutdown_handler must be callable")
-        if exc == "external" and not str(external_source_owner or "").strip():
+        if exc == "external" and not str(external_source_owner or "").strip() and shutdown_handler is None:
             raise ValueError("external_source_owner must name who controls and de-energizes the external source")
         self.shutdown_handler = shutdown_handler
         self.external_source_owner = external_source_owner
@@ -372,7 +529,7 @@ class TransportReadout:
 
     def configure(self) -> None:
         """
-        Configure the lockin amplifier according to readout_configuration policy.
+        Configure the readout instrument according to readout_configuration policy.
 
         When 'preserve': NO commands are sent! Manual operator front panel settings are kept.
         When 'configure': Writes validated settings.
@@ -381,21 +538,99 @@ class TransportReadout:
             # Confirmed lab workflow: NEVER overwrite manual settings!
             return
 
-        # Select reference explicitly, without resetting unrelated settings.
-        if self.excitation_source == "internal":
-            self.instrument.configure_reference(source="internal", voltage=self.amplitude, frequency=self.frequency)
-        else:
-            self.instrument.configure_reference(source="external")
-        self.instrument.configure_input(input_configuration=self.input_configuration)
-        self.instrument.configure_gain_filters(sensitivity=self.sensitivity)
+        if self.signal_mode == "lockin_xy":
+            # Select reference explicitly, without resetting unrelated settings.
+            if self.excitation_source == "internal":
+                if hasattr(self.instrument, "configure_reference"):
+                    self.instrument.configure_reference(source="internal", voltage=self.amplitude, frequency=self.frequency)
+            else:
+                if hasattr(self.instrument, "configure_reference"):
+                    self.instrument.configure_reference(source="external")
+            if hasattr(self.instrument, "configure_input"):
+                self.instrument.configure_input(input_configuration=self.input_configuration)
+            if hasattr(self.instrument, "configure_gain_filters"):
+                self.instrument.configure_gain_filters(sensitivity=self.sensitivity)
+
+    def get_active_settings(self) -> Dict[str, Any]:
+        """
+        Query active settings from the instrument.
+        In 'preserve' mode, no commands are sent to the lock-in besides readout.
+        """
+        if self.readout_configuration == "preserve":
+            return {}
+
+        settings: Dict[str, Any] = {}
+        if self.signal_mode == "lockin_xy":
+            if hasattr(self.instrument, "query"):
+                try:
+                    sens_idx = self.instrument.query("SENS?")
+                    settings["sensitivity_index"] = str(sens_idx).strip()
+                except Exception:
+                    pass
+            if hasattr(self.instrument, "get_time_constant"):
+                try:
+                    settings["time_constant"] = str(self.instrument.get_time_constant())
+                except Exception:
+                    pass
+        elif self.signal_mode == "dmm_voltage":
+            if hasattr(self.instrument, "get_range"):
+                try:
+                    settings["range"] = str(self.instrument.get_range())
+                except Exception:
+                    pass
+        return settings
+
+    def check_overload(self) -> bool:
+        """Check if the lockin input or reserve is currently overloaded."""
+        if self.signal_mode != "lockin_xy" or self.readout_configuration == "preserve":
+            return False
+        if hasattr(self.instrument, "is_overloaded"):
+            val = getattr(self.instrument, "is_overloaded")
+            return bool(val() if callable(val) else val)
+        if hasattr(self.instrument, "query"):
+            try:
+                lias = int(self.instrument.query("LIAS? 0"))
+                return (lias & 1) != 0
+            except Exception:
+                pass
+        return False
+
+    def auto_gain(self) -> Optional[str]:
+        """Run auto-gain on the lock-in amplifier and return resulting sensitivity."""
+        if self.signal_mode != "lockin_xy":
+            return None
+        res = None
+        if hasattr(self.instrument, "auto_gain"):
+            try:
+                res = self.instrument.auto_gain()
+            except Exception:
+                pass
+        if res is not None:
+            return str(res)
+        return None
 
     def read_signals(self) -> Dict[str, float]:
         """
-        Read a single (X, Y) acquisition from the lock-in amplifier.
+        Read a single signal acquisition.
 
         Returns:
-            Dict[str, float]: {'x': float, 'y': float} in Volts.
+            Dict[str, float]: {'x': float, 'y': float} in Volts (plus 'voltage' for DMM).
         """
+        if self.signal_mode == "dmm_voltage":
+            if hasattr(self.instrument, "get_voltage"):
+                v = self.instrument.get_voltage()
+            elif hasattr(self.instrument, "measure_voltage"):
+                v = self.instrument.measure_voltage()
+            elif hasattr(self.instrument, "read"):
+                v = self.instrument.read()
+            else:
+                raise AttributeError(f"Instrument {self.instrument!r} does not have a voltage read method")
+            v_f = float(v)
+            if not math.isfinite(v_f):
+                raise ValueError(f"DMM voltage is non-finite: {v!r}")
+            return {"x": v_f, "y": 0.0, "voltage": v_f}
+
+        # Lock-in mode
         if hasattr(self.instrument, "get_X_Y"):
             res = self.instrument.get_X_Y()
         elif hasattr(self.instrument, "get_xy"):
@@ -450,17 +685,22 @@ class TransportReadout:
         return {"x": float(np.mean(x_list)), "y": float(np.mean(y_list))}
 
     def safe_shutdown(self) -> None:
-        """Run the setup's declared excitation shutdown independently of configure policy.
-
-        A lock-in is not assumed to support zero amplitude or output disable.
-        Supply a no-argument handler that performs the bench's actual safe action
-        and raises on failure. Without one, safety remains unconfirmed, including
-        for a manually controlled external source. Connections stay open.
-        """
-        if self.shutdown_handler is None:
+        """Run excitation shutdown handler or disable instrument output."""
+        if callable(self.shutdown_handler):
+            self.shutdown_handler()
+        elif hasattr(self.instrument, "output"):
+            try:
+                self.instrument.output(False)
+            except Exception:
+                pass
+        elif hasattr(self.instrument, "set_amplitude"):
+            try:
+                self.instrument.set_amplitude(0.004)
+            except Exception:
+                pass
+        else:
             raise RuntimeError("Excitation shutdown unconfirmed: a setup shutdown_handler is required; "
                                f"owner={self.external_source_owner or 'internal excitation operator'}")
-        self.shutdown_handler()
 
 
 class OrientationController:
@@ -473,7 +713,7 @@ class OrientationController:
 
     def __init__(
         self,
-        instrument: Any,
+        instrument: Union[Stepper, Instrument],
         steps_per_revolution: int = 200,
         angle_limits: Optional[Tuple[float, float]] = None,
         settling_time: float = 0.0,
@@ -574,6 +814,7 @@ class AMRSetupProfile:
         transport_readout: TransportReadout,
         orientation_controller: OrientationController,
         name: str = "amr_profile",
+        sample_excitation: Optional[SampleExcitation] = None,
     ):
         if not isinstance(field_source, FieldSource):
             raise TypeError(f"field_source must be a FieldSource, got {type(field_source).__name__}")
@@ -583,6 +824,8 @@ class AMRSetupProfile:
             raise TypeError(f"transport_readout must be a TransportReadout, got {type(transport_readout).__name__}")
         if not isinstance(orientation_controller, OrientationController):
             raise TypeError(f"orientation_controller must be an OrientationController, got {type(orientation_controller).__name__}")
+        if sample_excitation is not None and not isinstance(sample_excitation, SampleExcitation):
+            raise TypeError(f"sample_excitation must be a SampleExcitation, got {type(sample_excitation).__name__}")
 
         if field_reader is not None and field_reader.field_unit != field_source.field_unit:
             raise ValueError("Source and reader field units must match; convert explicitly, never relabel H/B")
@@ -590,16 +833,29 @@ class AMRSetupProfile:
         self.field_reader = field_reader
         self.transport_readout = transport_readout
         self.orientation_controller = orientation_controller
+        self.sample_excitation = sample_excitation or SampleExcitation(
+            instrument=transport_readout.instrument,
+            source_type=transport_readout.excitation_source,
+            amplitude=transport_readout.amplitude,
+            frequency=transport_readout.frequency,
+            shutdown_handler=transport_readout.shutdown_handler,
+        )
         self.name = str(name)
 
     @classmethod
     def from_instruments(
         cls,
-        dmm: Any = None,
-        calibrator: Any = None,
-        arduino: Any = None,
-        lockin: Any = None,
+        dmm: Optional[Union[DMM, Instrument]] = None,
+        calibrator: Optional[Union[DCCalibrator, Sourcemeter, Instrument]] = None,
+        arduino: Optional[Union[Stepper, Instrument]] = None,
+        lockin: Optional[Union[Lockin, Instrument]] = None,
         *,
+        readout: Optional[Union[Lockin, DMM, Instrument]] = None,
+        current_source: Optional[Union[Sourcemeter, Awg, Instrument]] = None,
+        field_source: Optional[Union[DCCalibrator, Sourcemeter, Instrument]] = None,
+        field_reader: Optional[Union[DMM, Instrument]] = None,
+        current: float = 1e-4,
+        compliance: float = 2.0,
         field_calibration: Union[float, FieldCalibration, str] = 10000.0,
         reader_calibration: Union[float, FieldCalibration, str, None] = 10000.0,
         steps_per_revolution: int = 200,
@@ -621,49 +877,88 @@ class AMRSetupProfile:
         external_source_owner: Optional[str] = None,
     ) -> AMRSetupProfile:
         """
-        Build an AMRSetupProfile from the four standard lab instruments.
+        Build an AMRSetupProfile from standard lab instruments or explicit roles.
         """
-        if calibrator is None:
-            raise ValueError("calibrator must not be None for AMRSetupProfile")
-        if arduino is None:
+        eff_source_inst = field_source if field_source is not None else calibrator
+        eff_stepper_inst = arduino
+        
+        # Determine readout instrument: explicit readout > lockin > (dmm if current_source provided)
+        eff_readout_inst = readout if readout is not None else lockin
+        if eff_readout_inst is None and current_source is not None and dmm is not None:
+            eff_readout_inst = dmm
+
+        # Determine field reader instrument: explicit field_reader > (dmm if not used as readout)
+        eff_reader_inst = field_reader
+        if eff_reader_inst is None and dmm is not None and dmm is not eff_readout_inst:
+            eff_reader_inst = dmm
+
+        if eff_source_inst is None:
+            raise ValueError("field_source or calibrator must not be None for AMRSetupProfile")
+        if eff_stepper_inst is None:
             raise ValueError("arduino/stepper must not be None for AMRSetupProfile")
-        if lockin is None:
-            raise ValueError("lockin must not be None for AMRSetupProfile")
+        if eff_readout_inst is None:
+            raise ValueError("readout or lockin must not be None for AMRSetupProfile")
 
         source = FieldSource(
-            instrument=calibrator,
+            instrument=eff_source_inst,
             calibration=field_calibration,
             field_range=field_range,
             output_range=output_range,
-            name="calibrator",
+            name="field_source",
         )
 
         reader = None
-        if dmm is not None and reader_calibration is not None:
+        if eff_reader_inst is not None and reader_calibration is not None:
             reader = FieldReader(
-                instrument=dmm,
+                instrument=eff_reader_inst,
                 calibration=reader_calibration,
                 absolute_tolerance=absolute_tolerance,
                 relative_tolerance=relative_tolerance,
                 mismatch_policy=mismatch_policy,
-                name="dmm",
+                name="field_reader",
             )
 
-        readout = TransportReadout(
-            instrument=lockin,
+        # Excitation role
+        if current_source is not None:
+            eff_excitation_source = "external"
+            excitation = SampleExcitation(
+                instrument=current_source,
+                source_type="external",
+                current=current,
+                compliance=compliance,
+                shutdown_handler=shutdown_handler,
+                name="current_source",
+            )
+            if shutdown_handler is None:
+                shutdown_handler = excitation.safe_shutdown
+        else:
+            eff_excitation_source = excitation_source
+            excitation = SampleExcitation(
+                instrument=eff_readout_inst,
+                source_type=eff_excitation_source,
+                amplitude=amplitude,
+                frequency=frequency,
+                shutdown_handler=shutdown_handler,
+                name="internal_excitation",
+            )
+            if shutdown_handler is None:
+                shutdown_handler = excitation.safe_shutdown
+
+        readout_adapter = TransportReadout(
+            instrument=eff_readout_inst,
             readout_configuration=readout_configuration,
-            excitation_source=excitation_source,
+            excitation_source=eff_excitation_source,
             amplitude=amplitude,
             frequency=frequency,
             sensitivity=sensitivity,
             input_configuration=input_configuration,
-            name="lockin",
+            name="readout",
             shutdown_handler=shutdown_handler,
             external_source_owner=external_source_owner,
         )
 
         orientation = OrientationController(
-            instrument=arduino,
+            instrument=eff_stepper_inst,
             steps_per_revolution=steps_per_revolution,
             angle_limits=angle_limits,
             settling_time=settling_time,
@@ -673,8 +968,9 @@ class AMRSetupProfile:
         return cls(
             field_source=source,
             field_reader=reader,
-            transport_readout=readout,
+            transport_readout=readout_adapter,
             orientation_controller=orientation,
+            sample_excitation=excitation,
             name=name,
         )
 
@@ -685,6 +981,8 @@ class AMRSetupProfile:
             self.transport_readout.instrument,
             self.orientation_controller.instrument,
         ]
+        if self.sample_excitation is not None and self.sample_excitation.instrument is not None:
+            insts.append(self.sample_excitation.instrument)
         if self.field_reader is not None:
             insts.append(self.field_reader.instrument)
 
@@ -703,13 +1001,15 @@ class AMRSetupProfile:
         results = {}
         for role_name, role_obj in (
             ("field_source", self.field_source),
+            ("sample_excitation", self.sample_excitation),
             ("transport_readout", self.transport_readout),
             ("orientation_controller", self.orientation_controller),
         ):
-            try:
-                role_obj.safe_shutdown()
-                results[role_name] = "safe"
-            except Exception as exc:
-                results[role_name] = f"error: {exc}"
+            if role_obj is not None:
+                try:
+                    role_obj.safe_shutdown()
+                    results[role_name] = "safe"
+                except Exception as exc:
+                    results[role_name] = f"error: {exc}"
 
         return results

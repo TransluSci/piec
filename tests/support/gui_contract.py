@@ -76,8 +76,17 @@ def gui(request, monkeypatch):
     expected = pd.DataFrame({'sample': [0., 1.], 'response': [2., 3.]})
 
     class ContractMeasurement(BaseMeasurement):
+        measurement_schema = 'contract_test'
+        measurement_schema_version = 1
+        column_units = {'sample': 'V', 'response': 'V'}
+        raw_column_units = {'sample': 'V', 'response': 'V'}
+
         def __init__(self, *args, **kwargs):
-            super().__init__()
+            super().__init__(
+                column_units=self.column_units,
+                raw_column_units=self.raw_column_units,
+                measurement_schema=self.measurement_schema,
+            )
 
         def _capture_data(self, request, on_update):
             self.publish_snapshot({'raw': expected, 'raw_window': expected, 'data': expected})
@@ -96,9 +105,10 @@ def gui(request, monkeypatch):
     for name, value in list(vars(module).items()):
         if inspect.isclass(value) and issubclass(value, BaseMeasurement) and value is not BaseMeasurement:
             monkeypatch.setattr(module, name, ContractMeasurement)
+    orig_widget_classes = (tk.Widget, tk.Variable)
     for namespace in (tk, ttk):
         for name, value in list(vars(namespace).items()):
-            if inspect.isclass(value) and issubclass(value, (tk.Widget, tk.Variable)):
+            if inspect.isclass(value) and issubclass(value, orig_widget_classes):
                 monkeypatch.setattr(namespace, name, Widget)
     monkeypatch.setattr(MeasurementApp, 'setup_styles', lambda self: None)
     monkeypatch.setattr(MeasurementApp, 'setup_log_console', lambda self, parent: setattr(self, 'log_text', Widget()))
@@ -111,6 +121,12 @@ def gui(request, monkeypatch):
     errors = Mock()
     monkeypatch.setattr(messagebox, 'showerror', errors)
     monkeypatch.setattr(messagebox, 'showwarning', Mock())
+    monkeypatch.setattr(messagebox, 'askyesno', Mock(return_value=False))
+    monkeypatch.setattr(sys, 'exit', lambda *args: None)
+    if hasattr(tk, 'messagebox'):
+        monkeypatch.setattr(tk.messagebox, 'showerror', errors)
+        monkeypatch.setattr(tk.messagebox, 'showwarning', Mock())
+        monkeypatch.setattr(tk.messagebox, 'askyesno', Mock(return_value=False))
     root = Widget()
     root.winfo_exists.return_value = True
     stdout, stderr = sys.stdout, sys.stderr
@@ -122,11 +138,14 @@ def gui(request, monkeypatch):
         if name.endswith('address_entry'):
             widget.set('VIRTUAL')
     app.save_dir_entry.delete(0, 'end')
+    if hasattr(app, 'save_data'):
+        app.save_data.set(False)
     # GUIs with an explicit experiment factory need no measurement settings.
     if hasattr(app, '_create_experiment'):
         def create():
             app.experiment = ContractMeasurement()
             app._save_this_run = False
+            return app.experiment
         monkeypatch.setattr(app, '_create_experiment', create)
     selector = getattr(app, 'measurement_type', None)
     if selector is not None and not selector.get():
