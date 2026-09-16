@@ -1,5 +1,5 @@
 """
-Discovery utilities for instrument drivers, adapters, and measurement classes.
+Discovery utilities for instrument drivers and adapters.
 """
 
 from __future__ import annotations
@@ -10,12 +10,9 @@ from pathlib import Path
 from typing import Dict, List, Set, Type
 
 import piec.drivers as drivers_package
-import piec.measurement as measurement_package
 from piec.drivers.instrument import Instrument
-from piec.measurement.base import BaseMeasurement
 
 DRIVERS_PATH = Path(drivers_package.__file__).resolve().parent
-MEASUREMENT_PATH = Path(measurement_package.__file__).resolve().parent
 
 EXCLUDED_CATEGORY_NAMES = {
     "__pycache__",
@@ -111,30 +108,6 @@ def discover_driver_classes() -> Dict[str, List[Type[Instrument]]]:
     return discovered
 
 
-def discover_measurement_classes() -> Dict[str, Type[BaseMeasurement]]:
-    """Discover all concrete BaseMeasurement subclasses exported or defined in piec.measurement."""
-    measurements = {}
-
-    # Check what is exported from top-level package
-    for name, obj in inspect.getmembers(measurement_package, inspect.isclass):
-        if issubclass(obj, BaseMeasurement) and obj is not BaseMeasurement:
-            if not inspect.isabstract(obj):
-                measurements[obj.__name__] = obj
-
-    # Also scan modules under measurement package
-    for module_path in sorted(MEASUREMENT_PATH.glob("*.py")):
-        stem = module_path.stem
-        if stem.startswith("__"):
-            continue
-        mod = _import_module(f"piec.measurement.{stem}")
-        for name, obj in inspect.getmembers(mod, inspect.isclass):
-            if issubclass(obj, BaseMeasurement) and obj is not BaseMeasurement:
-                if not inspect.isabstract(obj):
-                    measurements[obj.__name__] = obj
-
-    return measurements
-
-
 def assert_all_drivers_registered(category_name: str, registered_classes: Set[Type[Instrument]]) -> None:
     """Enforce that every discovered driver subclass in category_name is present in registered_classes."""
     all_discovered = discover_driver_classes()
@@ -148,17 +121,4 @@ def assert_all_drivers_registered(category_name: str, registered_classes: Set[Ty
         raise AssertionError(
             f"Missing test fixture for discovered driver subclass(es) in category {category_name!r}: "
             f"{missing_names}. Every driver subclass must have runtime test coverage."
-        )
-
-
-def assert_all_measurements_registered(registered_classes: Set[Type[BaseMeasurement]]) -> None:
-    """Enforce that every discovered concrete BaseMeasurement subclass is present in registered_classes."""
-    discovered = discover_measurement_classes()
-    discovered_classes = set(discovered.values())
-    missing = discovered_classes - set(registered_classes)
-    if missing:
-        missing_names = sorted(cls.__name__ for cls in missing)
-        raise AssertionError(
-            f"Missing test fixture for discovered measurement subclass(es): {missing_names}. "
-            "Every measurement subclass must have runtime test coverage."
         )

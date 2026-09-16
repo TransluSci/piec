@@ -950,6 +950,3 @@ class TestPhysicalDriverDataReturnFormats:
         assert function_returns_dataframe(fn), (
             f"{driver_cls.__name__}.get_data() does not return a pandas DataFrame"
         )
-
-
-

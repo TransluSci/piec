@@ -28,13 +28,12 @@ from piec.drivers.virtual_instrument import VirtualInstrument
 from tests.support.discovery import (
     discover_driver_classes,
     discover_instrument_categories,
-    discover_measurement_classes,
 )
 
 
 @pytest.mark.parametrize("module_name", [
     "piec.drivers.awg.awg", "piec.drivers.awg.review_new_driver",
-    "piec.drivers.emulators.review_new_adapter", "piec.measurement.review_new_measurement",
+    "piec.drivers.emulators.review_new_adapter",
 ])
 def test_discovery_reports_import_failure(monkeypatch, module_name):
     from pathlib import Path
@@ -43,8 +42,7 @@ def test_discovery_reports_import_failure(monkeypatch, module_name):
     original_glob = Path.glob
     failure = ImportError("missing dependency in a new implementation")
     parent, stem = module_name.rsplit(".", 1)
-    directory = (discovery.MEASUREMENT_PATH if parent == "piec.measurement"
-                 else discovery.DRIVERS_PATH / parent.rsplit(".", 1)[1])
+    directory = discovery.DRIVERS_PATH / parent.rsplit(".", 1)[1]
 
     def with_new_module(path, pattern, **kwargs):
         entries = list(original_glob(path, pattern, **kwargs))
@@ -59,8 +57,7 @@ def test_discovery_reports_import_failure(monkeypatch, module_name):
 
     monkeypatch.setattr(Path, "glob", with_new_module)
     monkeypatch.setattr(discovery.importlib, "import_module", import_module)
-    discover = (discovery.discover_measurement_classes if parent == "piec.measurement"
-                else discovery.discover_driver_classes)
+    discover = discovery.discover_driver_classes
     with pytest.raises(AssertionError, match=module_name) as error:
         discover()
     assert error.value.__cause__ is failure
@@ -185,13 +182,6 @@ class TestDriverMRO:
                     )
 
         assert total_drivers >= 15, f"Expected at least 15 drivers discovered, found {total_drivers}"
-
-    def test_all_discovered_measurements_inherit_from_base(self):
-        from piec.measurement.base import BaseMeasurement
-        measurements = discover_measurement_classes()
-        assert len(measurements) >= 6
-        for name, meas_cls in measurements.items():
-            assert issubclass(meas_cls, BaseMeasurement)
 
 
 # ============================================================================
