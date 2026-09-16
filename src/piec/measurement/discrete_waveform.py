@@ -61,7 +61,7 @@ class DiscreteWaveform:
                 not callable(value) and
                 key not in ['awg', 'osc', 'data', 'metadata', 'history']}
         
-        self.metadata = pd.DataFrame(params, index=[0])
+        self.metadata = pd.DataFrame([params])
 
         # Other info
         self.metadata['mtype'] = self.mtype
@@ -408,3 +408,188 @@ class ThreePulsePund(DiscreteWaveform):
         self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(amplitude))
         self.awg.set_frequency(channel=int(self.voltage_channel), frequency=1/self.length)
         print("AWG configured for a PUND pulse.")
+
+
+class ArbWaveform(DiscreteWaveform):
+    """
+    Arbitrary waveform measurement.
+
+    Applies a user-supplied 1D voltage trace to the sample. The supplied
+    voltage array represents one complete cycle of the waveform, which is
+    repeated by the AWG at the specified frequency.
+
+    The voltage array is specified directly in volts. Internally, it is
+    normalized to the range [-1, 1] required by the AWG, while the AWG
+    amplitude and offset are set so that the requested voltage waveform
+    is reproduced.
+
+    Attributes:
+        :mtype (str): Measurement type identifier ('arb_waveform')
+        :voltage_array (np.ndarray): One cycle of the applied waveform in volts
+        :frequency (float): Repetition frequency of the waveform in Hz
+        :length (float): Duration of one waveform cycle in seconds
+    """
+
+    mtype = "arb_waveform"
+
+    def __init__(
+        self,
+        voltage_array,
+        frequency,
+        awg=None,
+        osc=None,
+        v_div=0.1,
+        voltage_channel='1',
+        save_dir=r'\\scratch'
+    ):
+        """
+        Initialize an arbitrary waveform measurement.
+
+        Args:
+            :voltage_array: 1D array-like object containing the desired
+                applied voltage waveform in volts. The array defines one
+                complete cycle.
+            :frequency: Repetition frequency of the waveform in Hz.
+            :awg: Initialized AWG object.
+            :osc: Initialized oscilloscope object.
+            :v_div: Oscilloscope vertical sensitivity in volts/division.
+            :voltage_channel: AWG output channel.
+            :save_dir: Directory in which captured waveform data is saved.
+        """
+
+        voltage_array = np.asarray(voltage_array, dtype=float)
+
+        if voltage_array.ndim != 1:
+            raise ValueError("voltage_array must be a 1D array.")
+
+        if len(voltage_array) < 2:
+            raise ValueError("voltage_array must contain at least two points.")
+
+        if not np.all(np.isfinite(voltage_array)):
+            raise ValueError("voltage_array must contain only finite values.")
+
+        if frequency <= 0:
+            raise ValueError("frequency must be greater than zero.")
+
+        self.voltage_array = voltage_array
+        self.frequency = float(frequency)
+
+        # One supplied voltage array corresponds to one complete cycle.
+        self.length = 1.0 / self.frequency
+
+        super().__init__(
+            awg=awg,
+            osc=osc,
+            v_div=v_div,
+            voltage_channel=voltage_channel,
+            save_dir=save_dir
+        )
+
+    def _update_notes(self):
+        """
+        Generate a filename note describing the waveform.
+        """
+        self.notes = (
+            f"{len(self.voltage_array)}pts_"
+            f"{self.frequency:g}Hz"
+        )
+
+    def configure_awg(self):
+        """
+        Configure the AWG to output the user-defined voltage waveform.
+
+        The requested waveform is supplied in physical volts. It is converted
+        into a normalized waveform for the AWG using
+
+            normalized = (voltage - offset) / (Vpp / 2)
+
+        where
+
+            offset = (Vmax + Vmin) / 2
+            Vpp    = Vmax - Vmin
+
+        This allows arbitrary asymmetric and DC-offset voltage traces to be
+        reproduced without requiring the user to manually normalize the data.
+        """
+
+        voltage = self.voltage_array
+
+        v_min = np.min(voltage)
+        v_max = np.max(voltage)
+
+        v_pp = v_max - v_min
+        offset = (v_max + v_min) / 2.0
+
+        if v_pp == 0:
+            raise ValueError(
+                "voltage_array is constant. An arbitrary waveform must "
+                "contain at least two different voltage values."
+            )
+
+        # Convert requested voltages into the AWG's normalized [-1, 1] range.
+        normalized_waveform = (
+            (voltage - offset) / (v_pp / 2.0)
+        )
+
+        # Check the waveform length against the AWG's supported arbitrary
+        # waveform data range. If necessary, interpolate to an allowed size.
+        min_points = self.awg.arb_data_range[0]
+        max_points = self.awg.arb_data_range[1]
+
+        n_points = len(normalized_waveform)
+
+        if n_points < min_points:
+            old_x = np.linspace(0, 1, n_points)
+            new_x = np.linspace(0, 1, min_points)
+
+            normalized_waveform = np.interp(
+                new_x,
+                old_x,
+                normalized_waveform
+            )
+
+        elif n_points > max_points:
+            old_x = np.linspace(0, 1, n_points)
+            new_x = np.linspace(0, 1, max_points)
+
+            normalized_waveform = np.interp(
+                new_x,
+                old_x,
+                normalized_waveform
+            )
+
+        # Upload waveform to volatile AWG memory.
+        self.awg.create_arb_waveform(
+            channel=int(self.voltage_channel),
+            name="VOLATILE",
+            data=normalized_waveform
+        )
+
+        # Select arbitrary waveform.
+        self.awg.set_arb_waveform(
+            channel=int(self.voltage_channel),
+            name="VOLATILE"
+        )
+
+        # Because normalized_waveform spans -1 to +1, its physical amplitude
+        # is set by Vpp and its DC level by offset.
+        self.awg.set_amplitude(
+            channel=int(self.voltage_channel),
+            amplitude=v_pp
+        )
+
+        self.awg.set_offset(
+            channel=int(self.voltage_channel),
+            offset=offset
+        )
+
+        # The supplied voltage array represents one complete cycle.
+        self.awg.set_frequency(
+            channel=int(self.voltage_channel),
+            frequency=self.frequency
+        )
+
+        self.awg.set_polarity(
+            channel=int(self.voltage_channel),
+            polarity="NORM"
+        )
