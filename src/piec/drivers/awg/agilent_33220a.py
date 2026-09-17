@@ -65,9 +65,6 @@ class Agilent33220A(Scpi, Awg):
     # Pulse Period: 200 ns to 2000 s (Manual p. 70, 192)
     pulse_period = (200e-9, 2000.0)
 
-    # Pulse Delay: Not supported in 33220A hardware
-    pulse_delay = (None, None)
-
     # Edge Time (Rise / Fall): 5 ns to 100 ns (Manual p. 73, 196, 346)
     edge_time = (5e-9, 100e-9)
     rise_time = (5e-9, 100e-9)
@@ -245,18 +242,10 @@ class Agilent33220A(Scpi, Awg):
             raise ValueError("duty_cycle must be provided")
         self.instrument.write(f"FUNC:PULS:DCYC {duty_cycle}")
 
-    def set_pulse_delay(self, channel=1, pulse_delay=None):
-        """
-        Set the pulse delay. The Agilent 33220A hardware does not support pulse delay.
-        """
-        raise NotImplementedError("The Agilent 33220A does not support pulse delay.")
-
-    def configure_pulse(self, channel=1, pulse_width=None, pulse_delay=None,
+    def configure_pulse(self, channel=1, pulse_width=None,
                         rise_time=None, fall_time=None, duty_cycle=None):
         """Configures the pulse waveform on the selected channel."""
         self.set_waveform(channel, "PULS")
-        if pulse_delay is not None:
-            self.set_pulse_delay(channel, pulse_delay)
         if pulse_width is not None:
             self.set_pulse_width(channel, pulse_width)
         if rise_time is not None:
