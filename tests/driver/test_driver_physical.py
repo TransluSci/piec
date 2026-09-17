@@ -41,7 +41,6 @@ from tests.support.discovery import (
     discover_instrument_categories,
     local_subclasses_in_module,
 )
-from tests.support.driver_contracts import assert_capability
 from tests.support.transports import ScriptedTransport, create_test_driver
 
 
@@ -184,23 +183,17 @@ def assert_class_attributes_conformance(child_cls: Type[Instrument], parent_cls:
             f"and cannot be missing or None in {child_cls.__name__}"
         )
 
-        # Open capability schema (None, None)
-        if parent_val == (None, None):
-            assert_capability(child_val, label)
-            continue
+        # Simple type check: child class attribute must be the exact same type as the parent
+        assert type(child_val) is type(parent_val), (
+            f"{label} must be a {type(parent_val).__name__} matching parent {parent_cls.__name__} type"
+        )
 
-        # Type checks and value supersets
+        # Value supersets and structure checks
         if isinstance(parent_val, tuple):
-            assert isinstance(child_val, tuple), (
-                f"{label} must be a tuple matching parent {parent_cls.__name__} type {type(parent_val).__name__}"
-            )
             assert len(child_val) == len(parent_val), (
                 f"{label} tuple length ({len(child_val)}) must match parent length ({len(parent_val)})"
             )
         elif isinstance(parent_val, list):
-            assert isinstance(child_val, (list, tuple)), (
-                f"{label} must be a list or tuple matching parent {parent_cls.__name__}"
-            )
             missing = []
             for item in parent_val:
                 if isinstance(item, tuple) and item == (None, None):
@@ -212,20 +205,9 @@ def assert_class_attributes_conformance(child_cls: Type[Instrument], parent_cls:
                 f"Child has: {child_val!r}"
             )
         elif isinstance(parent_val, dict):
-            assert isinstance(child_val, dict), (
-                f"{label} must be a dict matching parent {parent_cls.__name__}"
-            )
             missing_keys = [k for k in parent_val if k not in child_val]
             assert not missing_keys, (
                 f"{label} is missing parent-required keys {missing_keys!r} from {parent_cls.__name__}"
-            )
-        elif isinstance(parent_val, Real) and not isinstance(parent_val, bool):
-            assert isinstance(child_val, Real) and not isinstance(child_val, bool), (
-                f"{label} must be numeric matching parent {parent_cls.__name__}"
-            )
-        else:
-            assert isinstance(child_val, type(parent_val)), (
-                f"{label} type ({type(child_val).__name__}) must match parent type ({type(parent_val).__name__})"
             )
 
 
@@ -373,6 +355,16 @@ class TestPhysicalDriverClassAttributes:
 
         with pytest.raises(AssertionError, match="must be a tuple"):
             assert_class_attributes_conformance(WrongTypeAwg, Awg)
+
+    def test_attribute_conformance_negative_list_type_mismatch(self):
+        """Child having tuple instead of list for discrete channel attribute must fail."""
+        from piec.drivers.awg.awg import Awg
+
+        class TupleChannelAwg(Awg):
+            channel = (1, 2)  # Parent defines list [1]
+
+        with pytest.raises(AssertionError, match="must be a list"):
+            assert_class_attributes_conformance(TupleChannelAwg, Awg)
 
     def test_attribute_conformance_negative_none_override(self):
         """Child overriding a non-None parent attribute with None must fail."""

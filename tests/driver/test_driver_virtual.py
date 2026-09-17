@@ -149,18 +149,17 @@ def assert_class_attributes_conformance(child_cls: Type[Instrument], parent_cls:
             assert_capability(child_val, label)
             continue
 
-        # Type checks and value supersets
+        # Simple type check: child class attribute must be the exact same type as the parent (with the exception of None)
+        assert type(child_val) is type(parent_val), (
+            f"{label} must be a {type(parent_val).__name__} matching parent {parent_cls.__name__} type"
+        )
+
+        # Value supersets and structure checks
         if isinstance(parent_val, tuple):
-            assert isinstance(child_val, tuple), (
-                f"{label} must be a tuple matching parent {parent_cls.__name__} type {type(parent_val).__name__}"
-            )
             assert len(child_val) == len(parent_val), (
                 f"{label} tuple length ({len(child_val)}) must match parent length ({len(parent_val)})"
             )
         elif isinstance(parent_val, list):
-            assert isinstance(child_val, (list, tuple)), (
-                f"{label} must be a list or tuple matching parent {parent_cls.__name__}"
-            )
             missing = []
             for item in parent_val:
                 if isinstance(item, tuple) and item == (None, None):
@@ -172,20 +171,9 @@ def assert_class_attributes_conformance(child_cls: Type[Instrument], parent_cls:
                 f"Child has: {child_val!r}"
             )
         elif isinstance(parent_val, dict):
-            assert isinstance(child_val, dict), (
-                f"{label} must be a dict matching parent {parent_cls.__name__}"
-            )
             missing_keys = [k for k in parent_val if k not in child_val]
             assert not missing_keys, (
                 f"{label} is missing parent-required keys {missing_keys!r} from {parent_cls.__name__}"
-            )
-        elif isinstance(parent_val, Real) and not isinstance(parent_val, bool):
-            assert isinstance(child_val, Real) and not isinstance(child_val, bool), (
-                f"{label} must be numeric matching parent {parent_cls.__name__}"
-            )
-        else:
-            assert isinstance(child_val, type(parent_val)), (
-                f"{label} type ({type(child_val).__name__}) must match parent type ({type(parent_val).__name__})"
             )
 
 

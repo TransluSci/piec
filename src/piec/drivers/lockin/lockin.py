@@ -13,7 +13,7 @@ class Lockin(Instrument):
     phase = (None, None) 
     input_configuration = None
     input_coupling = ["AC", "DC"]
-    sensitivity = (None, None) 
+    sensitivity = None
     notch_filter = (None, None)
     time_constant = (None, None)
     filter_slope = (None, None)
