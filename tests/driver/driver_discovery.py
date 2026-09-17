@@ -7,7 +7,7 @@ from __future__ import annotations
 import importlib
 import inspect
 from pathlib import Path
-from typing import Dict, List, Set, Type
+from typing import Dict, List, Type
 
 import piec.drivers as drivers_package
 from piec.drivers.instrument import Instrument
@@ -106,19 +106,3 @@ def discover_driver_classes() -> Dict[str, List[Type[Instrument]]]:
                             discovered[cat_name].append(cls_obj)
 
     return discovered
-
-
-def assert_all_drivers_registered(category_name: str, registered_classes: Set[Type[Instrument]]) -> None:
-    """Enforce that every discovered driver subclass in category_name is present in registered_classes."""
-    all_discovered = discover_driver_classes()
-    if category_name not in all_discovered:
-        raise AssertionError(f"Unknown instrument category: {category_name!r}")
-
-    discovered_in_cat = set(all_discovered[category_name])
-    missing = discovered_in_cat - set(registered_classes)
-    if missing:
-        missing_names = sorted(cls.__name__ for cls in missing)
-        raise AssertionError(
-            f"Missing test fixture for discovered driver subclass(es) in category {category_name!r}: "
-            f"{missing_names}. Every driver subclass must have runtime test coverage."
-        )

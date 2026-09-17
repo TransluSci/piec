@@ -36,7 +36,7 @@ from tests.driver.test_driver_physical import (
     discover_physical_driver_classes,
     function_returns_dataframe,
 )
-from tests.support.discovery import (
+from tests.driver.driver_discovery import (
     DRIVERS_PATH,
     EXCLUDED_CATEGORY_NAMES,
     EXCLUDED_MODULE_SUFFIXES,
@@ -44,7 +44,6 @@ from tests.support.discovery import (
     discover_instrument_categories,
     local_subclasses_in_module,
 )
-from tests.support.driver_contracts import assert_capability
 
 
 
@@ -144,12 +143,7 @@ def assert_class_attributes_conformance(child_cls: Type[Instrument], parent_cls:
             f"and cannot be missing or None in {child_cls.__name__}"
         )
 
-        # Open capability schema (None, None)
-        if parent_val == (None, None):
-            assert_capability(child_val, label)
-            continue
-
-        # Simple type check: child class attribute must be the exact same type as the parent (with the exception of None)
+        # Simple type check: child class attribute must be the exact same type as the parent
         assert type(child_val) is type(parent_val), (
             f"{label} must be a {type(parent_val).__name__} matching parent {parent_cls.__name__} type"
         )

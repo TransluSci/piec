@@ -33,7 +33,7 @@ from piec.drivers.digilent import Digilent
 from piec.drivers.instrument import Instrument, get_class_attributes_from_instance, optional
 from piec.drivers.scpi import Scpi
 from piec.drivers.virtual_instrument import VirtualInstrument
-from tests.support.discovery import (
+from tests.driver.driver_discovery import (
     DRIVERS_PATH,
     EXCLUDED_CATEGORY_NAMES,
     EXCLUDED_MODULE_SUFFIXES,
