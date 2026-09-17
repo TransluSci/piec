@@ -1,0 +1,21 @@
+{
+    "static": {
+        "Save Directory": "C:/Users/rohan/Dropbox/Documents/ETH Zurich TIQI/EPC Automation/Testing Data/EPC1_2/BodePlot",
+        "AWG": "RigolDG812 (Rigol Technologies,DG812,DG8A221200712,00.02.04.00.00)",
+        "Oscilloscope": "TektronixTBS1154 (TEKTRONIX,TBS 1154,C010298,CF:91.1CT FV:v26.05)"
+    },
+    "plot": {},
+    "dynamic": {
+        "BODE SWEEP INPUTS": {
+            "AWG Channel": "1",
+            "Input Scope Channel": "1",
+            "Output Scope Channel": "2",
+            "Start Frequency (Hz)": "1",
+            "Stop Frequency (Hz)": "25000000.0",
+            "Points per Decade": "50",
+            "Drive Amplitude (Vpp)": "10",
+            "Input Ch Start Range (V)": "12",
+            "Output Ch Start Range (V)": "6"
+        }
+    }
+}

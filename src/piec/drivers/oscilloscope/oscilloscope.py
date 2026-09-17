@@ -26,6 +26,12 @@ class Oscilloscope(Instrument):
     trigger_sweep = ["AUTO", "NORM"]
     acquisition_mode = ["NORM"]
     acquisition_points = (None, None)
+    # Maximum sample rate the hardware can digitize at, in samples/second.
+    # None means "not declared by this driver" -- measurement code that
+    # needs to reason about sample rate (e.g. sizing a capture window
+    # without aliasing) should treat that as "unknown" and fall back to a
+    # conservative default rather than assuming any particular value.
+    max_sample_rate = None
 
     # --- Default SCPI Command Skeletons ---
     # These provide the standard IEEE 488.2 / SCPI-99 command interface.

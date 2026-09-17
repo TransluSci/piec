@@ -45,11 +45,16 @@ def extract_metadata_from_ast(file_path, valid_bases):
     
     # 1. Detect if this file imports Digilent/mcculw (Heuristic for protocol)
     imports_digilent = False
+    imports_waveforms = False
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [alias.name for alias in node.names]
-            if any('digilent' in name.lower() or 'mcculw' in name.lower() for name in names):
+            module_name = getattr(node, 'module', None) or ""
+            search_terms = names + [module_name]
+            if any('digilent' in name.lower() or 'mcculw' in name.lower() for name in search_terms):
                 imports_digilent = True
+            if any('analogdiscovery' in name.lower().replace('_', '') for name in search_terms):
+                imports_waveforms = True
 
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
@@ -92,6 +97,9 @@ def extract_metadata_from_ast(file_path, valid_bases):
                 if 'digilent' in bases_text or imports_digilent:
                     protocol = "Digilent VBS"
                     binary_req = "Requires mcculw"
+                elif 'analogdiscovery' in bases_text.replace('_', '') or imports_waveforms:
+                    protocol = "WaveForms SDK"
+                    binary_req = "Requires WaveForms Runtime (dwf)"
                 elif 'scpi' in bases_text:
                     protocol = "SCPI"
                 elif 'instrument' not in bases_text:
@@ -109,6 +117,9 @@ def extract_metadata_from_ast(file_path, valid_bases):
                 if 'digilent' in bases_text or imports_digilent:
                     protocol = "Digilent VBS"
                     binary_req = "Requires mcculw"
+                elif 'analogdiscovery' in bases_text.replace('_', '') or imports_waveforms:
+                    protocol = "WaveForms SDK"
+                    binary_req = "Requires WaveForms Runtime (dwf)"
                 elif 'scpi' in bases_text:
                     protocol = "SCPI"
                 elif 'instrument' not in bases_text:

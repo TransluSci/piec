@@ -167,7 +167,16 @@ class AutoCheckMeta(type):
     def __new__(metacls, name, bases, class_dict):
         new_class_dict = {}
         for attr_name, attr_value in class_dict.items():
-            if callable(attr_value) and not attr_name.startswith("_") and attr_name != '__init__':
+            # staticmethod/classmethod descriptors are skipped: auto_check_params
+            # expects a plain instance method (its wrapper signature starts with
+            # `self`, and it inspects/updates instance state), which doesn't apply
+            # to them. On Python 3.10+, staticmethod objects are directly callable,
+            # so without this guard they'd match the `callable(...)` check below and
+            # get silently rewrapped into a plain function, losing their static
+            # nature (calling them via the class would then wrongly demand a
+            # leading `self` argument).
+            if (callable(attr_value) and not attr_name.startswith("_") and attr_name != '__init__'
+                    and not isinstance(attr_value, (staticmethod, classmethod))):
                 # Don't wrap @optional stubs with auto_check_params
                 if not getattr(attr_value, '_is_optional', False):
                     attr_value = auto_check_params(attr_value)

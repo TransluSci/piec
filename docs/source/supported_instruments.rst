@@ -10,7 +10,7 @@ Universal Requirements
 Verified Versions
 -----------------
 
-* **Python**: 3.9+
+* **Python**: 3.8+
 * **NI-VISA**: 2024+
 * **OS**: Windows (Primary support)
 
@@ -24,17 +24,17 @@ Category Overview
    * - Category
      - Description
    * - :ref:`Awg <awg>`
-     - 6 supported models
+     - 8 supported models
    * - :ref:`Daq <daq>`
      - 1 supported model
-   * - :ref:`Dc Callibrator <dc-callibrator>`
+   * - :ref:`Dc Calibrator <dc-calibrator>`
      - 1 supported model
    * - :ref:`Dmm <dmm>`
      - 3 supported models
    * - :ref:`Lockin <lockin>`
      - 2 supported models
    * - :ref:`Oscilloscope <oscilloscope>`
-     - 6 supported models
+     - 7 supported models
    * - :ref:`Pulser <pulser>`
      - 1 supported model
    * - :ref:`Sourcemeter <sourcemeter>`
@@ -67,6 +67,10 @@ Awg
         - :py:class:`~piec.drivers.awg.agilent_33500.Agilent33500`
         - SCPI
         - NI-VISA
+      * - Digilent Analog Discovery 2 AnalogOut (AWG) instrument
+        - :py:class:`~piec.drivers.awg.analog_discovery_2.AnalogDiscovery2Awg`
+        - WaveForms SDK
+        - Requires WaveForms Runtime (dwf)
       * - Keysight 81150A Arbitrary Waveform Generator
         - :py:class:`~piec.drivers.awg.k_81150a.Keysight81150a`
         - SCPI
@@ -77,6 +81,10 @@ Awg
         - NI-VISA
       * - Rigol DG4000 Series Arbitrary Waveform Generators
         - :py:class:`~piec.drivers.awg.rigol_dg4000.RigolDG4000`
+        - SCPI
+        - NI-VISA
+      * - Rigol DG812 Arbitrary Waveform Generator (DG800 Series)
+        - :py:class:`~piec.drivers.awg.rigol_dg812.RigolDG812`
         - SCPI
         - NI-VISA
       * - Siglent SDG2000X Series Arbitrary Waveform Generator
@@ -106,12 +114,12 @@ Daq
         - Digilent VBS
         - Requires mcculw
 
-.. _dc-callibrator:
+.. _dc-calibrator:
 
-Dc Callibrator
---------------
+Dc Calibrator
+-------------
 
-.. dropdown:: Click to view supported Dc Callibrator models
+.. dropdown:: Click to view supported Dc Calibrator models
    :color: primary
    :icon: device-desktop
 
@@ -124,7 +132,7 @@ Dc Callibrator
         - Protocol
         - Requirements
       * - EDC Model 522 DC Calibrator. Supporting voltage and current sourcing
-        - :py:class:`~piec.drivers.dc_callibrator.edc522.EDC522`
+        - :py:class:`~piec.drivers.dc_calibrator.edc522.EDC522`
         - Custom Serial/Vendor
         - NI-VISA
 
@@ -205,6 +213,10 @@ Oscilloscope
         - :py:class:`~piec.drivers.oscilloscope.agilent_dsox5000.AgilentDSOX5000`
         - SCPI
         - NI-VISA
+      * - Digilent Analog Discovery 2 AnalogIn (oscilloscope)
+        - :py:class:`~piec.drivers.oscilloscope.analog_discovery_2.AnalogDiscovery2Oscilloscope`
+        - WaveForms SDK
+        - Requires WaveForms Runtime (dwf)
       * - Keysight DSOX3024A Oscilloscope
         - :py:class:`~piec.drivers.oscilloscope.k_dsox3024a.KeysightDSOX3024a`
         - SCPI
