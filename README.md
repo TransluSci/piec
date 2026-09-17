@@ -33,6 +33,7 @@ After this, decide whether you would like to run a specific measurment with a GU
 | **NI-488.2** | GPIB instruments | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
 | **NI-VISA** | USB-TMC / Ethernet / GPIB via NI-VISA | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
 | **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards | [mccdaq.com](http://www.mccdaq.com/swdownload) |
+| **Digilent WaveForms** | Analog Discovery 2 (and other WaveForms-SDK devices) | [digilent.com](https://digilent.com/shop/software/digilent-waveforms/) |
 
 ---
 

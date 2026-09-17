@@ -51,3 +51,11 @@ def test_import_analysis_utilities():
 
 def test_import_simulation_classes():
     from piec.simulation.fe_material import Ferroelectric, Resistor, Dielectric
+
+
+def test_import_frequency_response_measurement():
+    from piec.measurement.frequency_response import FrequencyResponse
+
+
+def test_import_frequency_response_analysis():
+    from piec.analysis.frequency_response import plot_bode
