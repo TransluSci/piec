@@ -11,15 +11,6 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
     Measurements are produced by the shared external virtual sample.
     """
 
-    channel = [1]
-    source_func = ['VOLT', 'CURR']
-    sense_func = ['VOLT', 'CURR', 'RES']
-    sense_mode = ['2W', '4W']
-    voltage = (-210, 210)
-    current = (-1.05, 1.05)
-    voltage_compliance = (-210, 210)
-    current_compliance = (-1.05, 1.05)
-
     def __init__(self, address='VIRTUAL', **kwargs):
         super().__init__(address=address, **kwargs)
         self.state = {
@@ -113,7 +104,11 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
 
     @staticmethod
     def _clamp(value, lo, hi):
-        return max(lo, min(hi, value))
+        if lo is not None:
+            value = max(lo, value)
+        if hi is not None:
+            value = min(hi, value)
+        return value
 
     # Core Instrument State Control
 
@@ -267,9 +262,6 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
 
     def reset(self):
         self.__init__(address='VIRTUAL')
-
-    def clear(self):
-        pass
 
     def get_state(self):
         return self.state.copy()

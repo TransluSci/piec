@@ -23,17 +23,6 @@ class VirtualDaq(VirtualInstrument, Daq):
     - 8 Digital I/O (bit-configurable)
     """
 
-    # --- Class Attributes ---
-    ai_channel = [0, 1, 2, 3, 4, 5, 6, 7]
-    ao_channel = [0, 1]
-    dio_channel = [0, 1, 2, 3, 4, 5, 6, 7]
-    ai_range = [(-10.0, 10.0)]
-    ao_range = [(-10.0, 10.0)]
-    ai_mode = ['SE', 'DIFF']
-    ai_sample_rate = (1.0, 100000.0)
-    ao_sample_rate = (1.0, 100000.0)
-    dio_direction = ['I', 'O']
-
     def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize virtual DAQ with default settings.
@@ -50,6 +39,16 @@ class VirtualDaq(VirtualInstrument, Daq):
             'ao_values': {ch: 0.0 for ch in self.ao_channel},
             'dio_direction': {ch: 'I' for ch in self.dio_channel},
             'dio_values': {ch: 0 for ch in self.dio_channel},
+            'ai_channel': 0,
+            'ai_range': {ch: (-10.0, 10.0) for ch in self.ai_channel},
+            'ai_sample_rate': {ch: 1000.0 for ch in self.ai_channel},
+            'ao_channel': 0,
+            'ao_range': {ch: (-10.0, 10.0) for ch in self.ao_channel},
+            'ao_sample_rate': {ch: 1000.0 for ch in self.ao_channel},
+            'di_channel': 0,
+            'do_channel': 0,
+            'dio_channel': 0,
+            'closed': False,
         }
 
     # --- SCPI-Equivalent Commands ---
@@ -81,12 +80,6 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         self.__init__()
 
-    def clear(self):
-        """
-        Clears status (no-op in virtual mode).
-        """
-        return None
-
     def error(self):
         """
         Returns the error status (always clean in virtual mode).
@@ -95,12 +88,6 @@ class VirtualDaq(VirtualInstrument, Daq):
             str: Error message.
         """
         return "No errors."
-
-    def wait(self):
-        """
-        Waits for pending operations (instant in virtual mode).
-        """
-        return None
 
     def self_test(self):
         """
@@ -122,9 +109,9 @@ class VirtualDaq(VirtualInstrument, Daq):
 
     def close(self):
         """
-        Releases virtual DAQ resources (no-op).
+        Releases virtual DAQ resources.
         """
-        pass
+        self.state['closed'] = True
 
     def initialize(self):
         """
@@ -138,19 +125,19 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         Sets the Analog Input channel for data acquisition.
         """
-        pass  # State tracked by auto_check_params
+        self.state['ai_channel'] = channel
 
     def set_AI_range(self, channel, range):
         """
         Sets the range for the Analog Input channel.
         """
-        pass  # Virtual DAQ has fixed +/- 10V range
+        self.state['ai_range'][channel] = range
 
     def set_AI_sample_rate(self, channel, sample_rate):
         """
         Sets the sample rate for the Analog Input channel.
         """
-        pass  # Accepted but no hardware to configure
+        self.state['ai_sample_rate'][channel] = sample_rate
 
     def configure_AI_channel(self, channel, range=None, sample_rate=None):
         """
@@ -183,19 +170,19 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         Sets the Analog Output channel.
         """
-        pass
+        self.state['ao_channel'] = channel
 
     def set_AO_range(self, channel, range):
         """
         Sets the range for the Analog Output channel.
         """
-        pass  # Fixed +/- 10V
+        self.state['ao_range'][channel] = range
 
     def set_AO_sample_rate(self, channel, sample_rate):
         """
         Sets the sample rate for the Analog Output channel.
         """
-        pass
+        self.state['ao_sample_rate'][channel] = sample_rate
 
     def configure_AO_channel(self, channel, range=None, sample_rate=None):
         """
@@ -225,7 +212,7 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         Sets the Digital Input channel.
         """
-        pass
+        self.state['di_channel'] = channel
 
     def set_DI_sample_rate(self, channel, sample_rate):
         """
@@ -244,7 +231,7 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         Sets the Digital Output channel.
         """
-        pass
+        self.state['do_channel'] = channel
 
     def set_DO_sample_rate(self, channel, sample_rate):
         """
@@ -276,7 +263,7 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         Sets the Digital I/O channel.
         """
-        pass
+        self.state['dio_channel'] = channel
 
     def set_DIO_mode(self, channel, mode):
         """

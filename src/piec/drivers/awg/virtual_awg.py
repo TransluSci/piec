@@ -37,22 +37,6 @@ class VirtualAwg(VirtualInstrument, Awg):
         arb_data_length (tuple): Number of points range for arbitrary waveforms (min, max)
     """
 
-    channel = [1, 2]
-    waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    amplitude = (0, 50)
-    offset = (-50, 50)
-    polarity = ['NORM', 'INV']
-    duty_cycle = (0.0, 100.0)
-    symmetry = (0.0, 100.0)
-    pulse_width = (4.1e-9, 950000)
-    pulse_delay = pulse_width
-    trigger_source = ['IMM', 'INT', 'EXT', 'MAN']
-    trigger_slope = ['POS', 'NEG', 'EITH']
-    trigger_mode = ['EDGE', 'LEV']
-
-    arb_dac_value = (0, 16383) # Range for individual DAC points in arb_data_range data list
-    arb_data_range = (2, 4000)  # Points, for arbitrary waveform data len
-
     def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize the virtual AWG with default settings.
@@ -79,6 +63,8 @@ class VirtualAwg(VirtualInstrument, Awg):
             'symmetry': {ch: 50.0 for ch in self.channel},
             'pulse_width': {ch: 1e-6 for ch in self.channel},
             'pulse_delay': {ch: 0.0 for ch in self.channel},
+            'rise_time': {ch: 8.4e-9 for ch in self.channel},
+            'fall_time': {ch: 8.4e-9 for ch in self.channel},
             'trigger_source': {ch: 'IMM' for ch in self.channel},
             'trigger_level': {ch: 0.0 for ch in self.channel},
             'trigger_slope': {ch: 'POS' for ch in self.channel},
@@ -278,12 +264,12 @@ class VirtualAwg(VirtualInstrument, Awg):
         self.state['pulse_width'][channel] = pulse_width
 
     def set_pulse_rise_time(self, channel, rise_time):
-        # Not simulated
-        pass
+        """Set the rise time for pulse waveform."""
+        self.state['rise_time'][channel] = rise_time
 
     def set_pulse_fall_time(self, channel, fall_time):
-        # Not simulated
-        pass
+        """Set the fall time for pulse waveform."""
+        self.state['fall_time'][channel] = fall_time
 
     def set_pulse_duty_cycle(self, channel, duty_cycle):
         """

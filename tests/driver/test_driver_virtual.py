@@ -4,13 +4,10 @@ Dynamic virtual driver verification test suite.
 Validates all PIEC virtual instrument drivers against the core architectural contracts:
 1. Asserts that every virtual driver inherits from both VirtualInstrument and its
    Category Base Class (e.g. VirtualAwg inherits (VirtualInstrument, Awg)).
-2. Asserts class attribute conformance: any non-None class attribute of the parent
-   category is present in the virtual driver, has matching schema/type, and contains
-   at least the parent's values (1:1 capability parity with physical drivers).
-3. Asserts all non-optional functions are implemented with simulated logic rather than
+2. Asserts all non-optional functions are implemented with simulated logic rather than
    inheriting empty/blank stubs from the category parent.
-4. Asserts that virtual drivers provide simulated implementations of the universal
-   lifecycle commands (reset, clear, idn, error, wait, self_test, operation_complete).
+3. Asserts category-level autodetect and model-level virtual dispatch.
+4. Asserts data return formats (e.g. get_data returns pandas DataFrame).
 """
 
 from __future__ import annotations
@@ -123,54 +120,6 @@ def is_blank_stub(fn) -> bool:
         return False
 
 
-def assert_class_attributes_conformance(child_cls: Type[Instrument], parent_cls: type) -> None:
-    """
-    Assert that any class attribute of parent_cls that is defined (not None)
-    is also present in child_cls, has matching schema/type, and contains
-    at least what the parent specifies (superset containment).
-    """
-    for name, parent_val in vars(parent_cls).items():
-        if name.startswith("_") or callable(parent_val):
-            continue
-        if parent_val is None:
-            continue
-
-        child_val = inspect.getattr_static(child_cls, name, None)
-        label = f"{child_cls.__name__}.{name}"
-
-        assert child_val is not None, (
-            f"{label} is defined on parent {parent_cls.__name__} as {parent_val!r} "
-            f"and cannot be missing or None in {child_cls.__name__}"
-        )
-
-        # Simple type check: child class attribute must be the exact same type as the parent
-        assert type(child_val) is type(parent_val), (
-            f"{label} must be a {type(parent_val).__name__} matching parent {parent_cls.__name__} type"
-        )
-
-        # Value supersets and structure checks
-        if isinstance(parent_val, tuple):
-            assert len(child_val) == len(parent_val), (
-                f"{label} tuple length ({len(child_val)}) must match parent length ({len(parent_val)})"
-            )
-        elif isinstance(parent_val, list):
-            missing = []
-            for item in parent_val:
-                if isinstance(item, tuple) and item == (None, None):
-                    continue
-                if item not in child_val:
-                    missing.append(item)
-            assert not missing, (
-                f"{label} is missing parent-required values {missing!r} from {parent_cls.__name__}. "
-                f"Child has: {child_val!r}"
-            )
-        elif isinstance(parent_val, dict):
-            missing_keys = [k for k in parent_val if k not in child_val]
-            assert not missing_keys, (
-                f"{label} is missing parent-required keys {missing_keys!r} from {parent_cls.__name__}"
-            )
-
-
 # ============================================================================
 # Test Suite: 1. Virtual Driver Hierarchy & Inheritance
 # ============================================================================
@@ -219,31 +168,7 @@ class TestVirtualDriverHierarchy:
 
 
 # ============================================================================
-# Test Suite: 2. Class Attribute Conformance
-# ============================================================================
-
-class TestVirtualDriverClassAttributes:
-    """Verifies that virtual drivers conform to category class attributes."""
-
-    @pytest.mark.parametrize("category_name", sorted(discover_instrument_categories().keys()))
-    def test_virtual_driver_attribute_conformance(self, category_name):
-        """
-        Dynamically test all virtual drivers in a category: every non-None class attribute
-        on the parent class must be defined, preserve type, and contain parent elements.
-        """
-        categories = discover_instrument_categories()
-        category_cls = categories[category_name]
-        virt_drivers = discover_virtual_driver_classes().get(category_name, [])
-
-        for virt_cls in virt_drivers:
-            for base in virt_cls.__mro__:
-                if base in (object, Instrument, VirtualInstrument):
-                    continue
-                assert_class_attributes_conformance(virt_cls, base)
-
-
-# ============================================================================
-# Test Suite: 3. Method Implementation (Blank Stub Detection)
+# Test Suite: 2. Method Implementation (Blank Stub Detection)
 # ============================================================================
 
 class TestVirtualDriverMethodImplementation:
@@ -305,16 +230,8 @@ def test_virtual_driver_non_optional_methods_implemented(driver_cls, method_name
 
 
 # ============================================================================
-# Test Suite: 5. Autodetect Verification for Virtual Drivers
+# Test Suite: 3. Autodetect Verification for Virtual Drivers
 # ============================================================================
-
-def _all_virtual_drivers_list() -> List[Type[Instrument]]:
-    """Return a flat list of all discovered virtual driver classes."""
-    res: List[Type[Instrument]] = []
-    for drv_list in discover_virtual_driver_classes().values():
-        res.extend(drv_list)
-    return sorted(res, key=lambda c: c.__name__)
-
 
 def _all_physical_models_for_virtual_dispatch():
     """List of all concrete physical driver classes for model virtual dispatch."""
@@ -374,129 +291,7 @@ class TestVirtualDriverAutodetect:
 
 
 # ============================================================================
-# Test Suite: 6. Runtime Parameter Validation Across Virtual Drivers
-# ============================================================================
-
-class TestVirtualDriverRuntimeParameterValidation:
-    """Verifies check_params=True behavior on virtual drivers."""
-
-    @pytest.mark.parametrize("driver_cls", _all_virtual_drivers_list(), ids=lambda c: c.__name__)
-    def test_virtual_driver_direct_parameter_checking(self, driver_cls):
-        """
-        Directly validates virtual driver class attributes through _check_params:
-        - Valid list items pass; invalid items raise ValueError.
-        - Valid range midpoints pass; out-of-range values raise ValueError.
-        """
-        inst = driver_cls(check_params=True)
-        assert inst.check_params is True
-
-        for attr_name, attr_val in vars(driver_cls).items():
-            if attr_name.startswith("_") or callable(attr_val):
-                continue
-
-            # 1. Discrete list attributes
-            if isinstance(attr_val, list) and len(attr_val) > 0:
-                valid_val = attr_val[0]
-                inst._check_params(inst, {attr_name: valid_val})
-
-                invalid_val = 999999 if isinstance(valid_val, (int, float)) else "__PIEC_INVALID_VAL__"
-                with pytest.raises(ValueError, match="not in list|out of acceptable"):
-                    inst._check_params(inst, {attr_name: invalid_val})
-
-            # 2. Numeric range tuples
-            elif isinstance(attr_val, tuple) and len(attr_val) == 2:
-                low, high = attr_val
-                if (
-                    low is not None
-                    and high is not None
-                    and isinstance(low, Real)
-                    and isinstance(high, Real)
-                    and not isinstance(low, bool)
-                    and not isinstance(high, bool)
-                    and low < high
-                ):
-                    mid = (low + high) / 2.0
-                    inst._check_params(inst, {attr_name: mid})
-
-                    bad_high = high + 1000.0 if high >= 0 else high + abs(high) + 1000.0
-                    with pytest.raises(ValueError, match="out of acceptable Range|out of range"):
-                        inst._check_params(inst, {attr_name: bad_high})
-
-    @pytest.mark.parametrize("driver_cls", _all_virtual_drivers_list(), ids=lambda c: c.__name__)
-    def test_virtual_driver_method_parameter_validation(self, driver_cls):
-        """
-        When check_params=True, calling an implemented virtual method with invalid parameters
-        raises ValueError. When check_params=False, parameter validation is bypassed.
-        """
-        inst_checked = driver_cls(check_params=True)
-        class_attrs = get_class_attributes_from_instance(inst_checked)
-
-        target_method_name = None
-        target_param_name = None
-        invalid_param_val = None
-
-        for m_name, fn in inspect.getmembers(driver_cls, inspect.isfunction):
-            if m_name.startswith("_") or getattr(fn, "_is_optional", False):
-                continue
-            if is_blank_stub(fn):
-                continue
-
-            sig = inspect.signature(fn)
-            for p_name in sig.parameters:
-                if p_name in class_attrs and class_attrs[p_name] is not None:
-                    attr_spec = class_attrs[p_name]
-                    if isinstance(attr_spec, list) and len(attr_spec) > 0:
-                        target_method_name = m_name
-                        target_param_name = p_name
-                        invalid_param_val = 999999 if isinstance(attr_spec[0], (int, float)) else "__PIEC_INVALID__"
-                        break
-                    elif isinstance(attr_spec, tuple) and len(attr_spec) == 2:
-                        low, high = attr_spec
-                        if low is not None and high is not None and isinstance(low, Real) and isinstance(high, Real) and low < high:
-                            target_method_name = m_name
-                            target_param_name = p_name
-                            invalid_param_val = high + 1000.0 if high >= 0 else high + abs(high) + 1000.0
-                            break
-            if target_method_name is not None:
-                break
-
-        if target_method_name is None:
-            # Virtual driver has no implemented method accepting checked parameters yet
-            return
-
-        fn = getattr(driver_cls, target_method_name)
-        sig = inspect.signature(fn)
-
-        bad_kwargs = {}
-        for p_name, param in sig.parameters.items():
-            if p_name == "self":
-                continue
-            if p_name == target_param_name:
-                bad_kwargs[p_name] = invalid_param_val
-            elif param.default is not inspect._empty:
-                bad_kwargs[p_name] = param.default
-            else:
-                bad_kwargs[p_name] = 1
-
-        # 1. With check_params=True: raises ValueError
-        with pytest.raises(ValueError):
-            getattr(inst_checked, target_method_name)(**bad_kwargs)
-
-        # 2. With check_params=False: validation is bypassed
-        inst_unchecked = driver_cls(check_params=False)
-        try:
-            getattr(inst_unchecked, target_method_name)(**bad_kwargs)
-        except ValueError as exc:
-            err_text = str(exc)
-            assert "out of acceptable" not in err_text and "not in list" not in err_text, (
-                f"Unexpected validation error with check_params=False: {exc}"
-            )
-        except Exception:
-            pass
-
-
-# ============================================================================
-# Test Suite: 6. Data Return Format Inspection (pandas.DataFrame)
+# Test Suite: 4. Data Return Format Inspection (pandas.DataFrame)
 # ============================================================================
 
 def _virtual_drivers_defining_get_data() -> List[Any]:

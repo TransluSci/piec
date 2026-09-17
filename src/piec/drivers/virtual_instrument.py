@@ -221,3 +221,31 @@ class VirtualInstrument(Instrument):
             sample (Ferroelectric): New ferroelectric sample instance to share
         """
         VirtualInstrument._shared_fe_sample = sample
+
+    # ------------------------------------------------------------------------
+    # Simulated Lifecycle & Synchronization Methods
+    # ------------------------------------------------------------------------
+    def reset(self):
+        """Reset simulated instrument state and clear internal buffers."""
+        self._initialize_state()
+
+    def clear(self):
+        """Clear simulated instrument errors and communication status."""
+        self._last_error = "0"
+
+    def wait(self):
+        """Simulated synchronization: returns immediately."""
+        return None
+
+    def error(self):
+        """Return simulated error code (default '0' for no error)."""
+        return getattr(self, "_last_error", "0")
+
+    def self_test(self):
+        """Simulated self-test routine (default '0' for pass)."""
+        return "0"
+
+    def operation_complete(self):
+        """Queries whether the last commanded operation finished (default '1' for complete)."""
+        return "1"
+

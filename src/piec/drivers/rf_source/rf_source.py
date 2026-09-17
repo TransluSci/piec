@@ -7,9 +7,14 @@ import warnings
 
 from ..instrument import Instrument
 
-
+#note still a WIP
 class RFSource(Instrument):
-    # Initializer / Instance attributes
+    # Class attributes for parameter restrictions
+    channel = [1]
+    frequency = (None, None)
+    power = (None, None)
+    modulation = ['AM', 'FM', 'PM', 'PULSE']
+
     """
     All rf sources must be able to generate an RF signal
     """
