@@ -16,7 +16,6 @@ class Awg(Instrument):
     duty_cycle = (0.0, 100.0)
     symmetry = (0.0, 100.0)
     pulse_width = (None, None)
-    pulse_delay = pulse_width #typically the same
     rise_time = None
     fall_time = rise_time #typically the same
     # Required sources: internal, external, and manual/software triggering.
@@ -30,6 +29,7 @@ class Awg(Instrument):
     arb_data_range = (None, None) #range of data points for arbitrary waveform generation
 
     # --- Optional feature class attributes ---
+    pulse_delay = pulse_width #typically the same
     burst_mode = ['TRIG', 'GAT', 'INF']
     burst_count = (None, None)
     phase = (0, 360)
@@ -40,11 +40,6 @@ class Awg(Instrument):
     """
     All awgs must be able to generate an arbitrary waveform and output it to the selected channel
     """
-
-    # --- Default SCPI Command Skeletons ---
-    # These provide the standard IEEE 488.2 / SCPI-99 command interface.
-    # SCPI-compliant instruments will inherit real implementations from Scpi.
-    # Non-SCPI instruments should override these with their own protocol.
 
     def idn(self):
         """
@@ -276,29 +271,17 @@ class Awg(Instrument):
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
         """
 
-    def set_pulse_delay(self, channel, pulse_delay):
-        """
-        Set the pulse delay on the configured channel in units of seconds. Delay is the time between the start of the 
-        pulse period and the start of the leading edge of the pulse.
-        args:
-            channel (int): The channel to set the delay on
-            pulse_delay (float): The delay of the waveform in seconds
-        """
-
-    def configure_pulse(self, channel, pulse_width=None, pulse_delay=None, rise_time=None, fall_time=None, duty_cycle=None):
+    def configure_pulse(self, channel, pulse_width=None, rise_time=None, fall_time=None, duty_cycle=None):
         """
         Configures the pulse waveform on the selected channel. Calls the set_pulse_width, set_pulse_delay, set_pulse_rise_time, set_pulse_duty_cycle and set_pulse_fall_time functions to configure the pulse waveform
         args:
             channel (int): The channel to configure the pulse waveform on
             pulse_width (float): The pulse width of the waveform in seconds
-            pulse_delay (float): The delay of the pulse waveform in seconds
             rise_time (float): The rise time of the waveform in seconds
             fall_time (float): The fall time of the waveform in seconds
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
         """
         self.set_waveform(channel, "PULS") # Ensure waveform is pulse
-        if pulse_delay is not None:
-            self.set_pulse_delay(channel, pulse_delay)
         if pulse_width is not None:
             self.set_pulse_width(channel, pulse_width)
         if rise_time is not None:
@@ -389,6 +372,16 @@ class Awg(Instrument):
     # --- Optional Features ---
     # These are features that not all AWGs support.
     # If a driver does not override these, they will gracefully skip.
+
+    @optional
+    def set_pulse_delay(self, channel, pulse_delay):
+        """
+        Set the pulse delay on the configured channel in units of seconds. Delay is the time between the start of the 
+        pulse period and the start of the leading edge of the pulse.
+        args:
+            channel (int): The channel to set the delay on
+            pulse_delay (float): The delay of the waveform in seconds
+        """
 
     @optional
     def set_burst_mode(self, channel, burst_mode):
