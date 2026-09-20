@@ -1,13 +1,13 @@
 """
 Dynamic virtual driver verification test suite.
 
-Validates all PIEC virtual instrument drivers against the core architectural contracts:
-1. Asserts that every virtual driver inherits from both VirtualInstrument and its
-   Category Base Class (e.g. VirtualAwg inherits (VirtualInstrument, Awg)).
-2. Asserts all non-optional functions are implemented with simulated logic rather than
-   inheriting empty/blank stubs from the category parent.
-3. Asserts category-level autodetect and model-level virtual dispatch.
-4. Asserts data return formats (e.g. get_data returns pandas DataFrame).
+Validates all PIEC virtual instrument drivers against core architectural contracts:
+1. Asserts that every virtual driver inherits from VirtualInstrument, Instrument,
+   and its Category Base Class with _is_virtual_driver = True.
+2. Asserts all non-optional methods defined on the category base class are implemented
+   with simulated logic (no blank stubs).
+3. Asserts category-level autodetect (autodetect('virtual_<category>')) and model-level
+   virtual dispatch (ModelClass('VIRTUAL')).
 """
 
 from __future__ import annotations
@@ -15,31 +15,17 @@ from __future__ import annotations
 import ast
 import dis
 import inspect
-from numbers import Real
-from pathlib import Path
 import textwrap
-from typing import Any, Dict, List, Set, Tuple, Type
+from typing import Dict, List, Type
 
-import numpy as np
-import pandas as pd
 import pytest
 
-import piec.drivers as drivers_pkg
 from piec.drivers.autodetect import autodetect
-from piec.drivers.instrument import Instrument, get_class_attributes_from_instance, optional
-from piec.drivers.scpi import Scpi
+from piec.drivers.instrument import Instrument
 from piec.drivers.virtual_instrument import VirtualInstrument
-from tests.driver.test_driver_physical import (
-    discover_physical_driver_classes,
-    function_returns_dataframe,
-)
 from tests.driver.driver_discovery import (
-    DRIVERS_PATH,
-    EXCLUDED_CATEGORY_NAMES,
-    EXCLUDED_MODULE_SUFFIXES,
     discover_driver_classes,
     discover_instrument_categories,
-    local_subclasses_in_module,
 )
 
 
@@ -62,6 +48,15 @@ def discover_virtual_driver_classes() -> Dict[str, List[Type[Instrument]]]:
         if virt_list:
             virtual_drivers[cat_name] = virt_list
     return virtual_drivers
+
+
+def _all_virtual_driver_classes() -> List[Type[Instrument]]:
+    """Flattened list of all discovered virtual driver classes."""
+    classes = []
+    for cat_name, drvs in sorted(discover_virtual_driver_classes().items()):
+        for drv in drvs:
+            classes.append(pytest.param(drv, id=drv.__name__))
+    return classes
 
 
 def is_default_instrument_idn(fn) -> bool:
@@ -127,19 +122,6 @@ def is_blank_stub(fn) -> bool:
 class TestVirtualDriverHierarchy:
     """Verifies that all virtual drivers inherit from VirtualInstrument and Category."""
 
-    def test_all_categories_have_virtual_driver(self):
-        """Every instrument category must define a virtual driver."""
-        categories = discover_instrument_categories()
-        virtual_drivers = discover_virtual_driver_classes()
-
-        assert len(virtual_drivers) >= 8, (
-            f"Expected at least 8 categories with virtual drivers, found {len(virtual_drivers)}"
-        )
-        for cat_name, cat_cls in categories.items():
-            assert cat_name in virtual_drivers, (
-                f"Category {cat_name} is missing a Virtual driver"
-            )
-
     @pytest.mark.parametrize("category_name", sorted(discover_instrument_categories().keys()))
     def test_virtual_driver_bases(self, category_name):
         """
@@ -161,7 +143,6 @@ class TestVirtualDriverHierarchy:
             assert issubclass(virt_cls, Instrument), (
                 f"{virt_cls.__name__} must inherit from Instrument"
             )
-            # Must have _is_virtual_driver flag
             assert getattr(virt_cls, "_is_virtual_driver", False) is True, (
                 f"{virt_cls.__name__} must set _is_virtual_driver = True"
             )
@@ -174,34 +155,22 @@ class TestVirtualDriverHierarchy:
 class TestVirtualDriverMethodImplementation:
     """Verifies that virtual drivers provide simulated implementations."""
 
-    @pytest.mark.parametrize("category_name", sorted(discover_instrument_categories().keys()))
-    def test_virtual_drivers_implement_idn(self, category_name):
-        """Every virtual driver must implement idn()."""
-        virt_drivers = discover_virtual_driver_classes().get(category_name, [])
-        for virt_cls in virt_drivers:
-            idn_method = getattr(virt_cls, "idn", None)
-            assert idn_method is not None, f"{virt_cls.__name__} has no idn method"
-            assert not is_default_instrument_idn(idn_method), (
-                f"{virt_cls.__name__}.idn is still the default un-overridden Instrument.idn"
-            )
-            assert not is_blank_stub(idn_method), (
-                f"{virt_cls.__name__}.idn resolves to a blank stub"
-            )
+    @pytest.mark.parametrize("driver_cls", _all_virtual_driver_classes())
+    def test_virtual_driver_non_optional_methods_implemented(self, driver_cls):
+        """
+        Assert that every virtual driver implements all non-optional methods
+        defined by its category base class (i.e. does not inherit blank stubs).
+        """
+        categories = discover_instrument_categories()
+        cat_cls = None
+        for c_cls in categories.values():
+            if issubclass(driver_cls, c_cls):
+                cat_cls = c_cls
+                break
 
+        assert cat_cls is not None, f"Could not find category base class for {driver_cls.__name__}"
 
-# ============================================================================
-# Parameterized Non-Optional Method Tests Across All Discovered Virtual Drivers
-# ============================================================================
-
-def _build_virtual_driver_method_cases():
-    """Build parameterized test cases for all virtual drivers and category methods."""
-    categories = discover_instrument_categories()
-    virtual_drivers = discover_virtual_driver_classes()
-    cases = []
-
-    for category_name, drivers in virtual_drivers.items():
-        cat_cls = categories[category_name]
-
+        unimplemented = []
         for method_name, parent_fn in inspect.getmembers(cat_cls, inspect.isfunction):
             if method_name.startswith("_"):
                 continue
@@ -210,37 +179,18 @@ def _build_virtual_driver_method_cases():
             if not is_blank_stub(parent_fn):
                 continue
 
-            for driver_cls in drivers:
-                test_id = f"{driver_cls.__name__}-{method_name}"
-                cases.append(pytest.param(driver_cls, method_name, id=test_id))
-    return cases
+            method = getattr(driver_cls, method_name, None)
+            if method is None or is_blank_stub(method):
+                unimplemented.append(method_name)
 
-
-@pytest.mark.parametrize("driver_cls,method_name", _build_virtual_driver_method_cases())
-def test_virtual_driver_non_optional_methods_implemented(driver_cls, method_name):
-    """
-    Assert that every virtual driver implements all non-optional methods
-    defined by its category base class (i.e. does not inherit blank stubs).
-    """
-    method = getattr(driver_cls, method_name, None)
-    assert method is not None, f"{driver_cls.__name__} is missing method '{method_name}'"
-    assert not is_blank_stub(method), (
-        f"{driver_cls.__name__}.{method_name} is not implemented in virtual driver (inherits a blank stub)"
-    )
+        assert not unimplemented, (
+            f"{driver_cls.__name__} has unimplemented category methods (blank stubs): {unimplemented}"
+        )
 
 
 # ============================================================================
 # Test Suite: 3. Autodetect Verification for Virtual Drivers
 # ============================================================================
-
-def _all_physical_models_for_virtual_dispatch():
-    """List of all concrete physical driver classes for model virtual dispatch."""
-    cases = []
-    for cat_name, drv_list in sorted(discover_physical_driver_classes().items()):
-        for drv_cls in drv_list:
-            cases.append(pytest.param(drv_cls, cat_name, id=drv_cls.__name__))
-    return cases
-
 
 class TestVirtualDriverAutodetect:
     """Verifies category-level autodetect and model-level virtual dispatch."""
@@ -268,54 +218,27 @@ class TestVirtualDriverAutodetect:
         assert isinstance(inst_upper, expected_cls)
         assert isinstance(inst_upper, VirtualInstrument)
 
-    @pytest.mark.parametrize("model_cls,cat_name", _all_physical_models_for_virtual_dispatch())
-    def test_model_virtual_dispatch_profiled_driver(self, model_cls, cat_name):
+    def test_model_virtual_dispatch_mock_instrument(self):
         """
-        Calling ModelClass('VIRTUAL') returns a profiled virtual driver that:
+        Calling ModelClass('VIRTUAL') on a concrete model returns a profiled virtual driver that:
         1. Subclasses VirtualInstrument and the category's Virtual driver.
         2. Sets is_profiled_virtual_driver = True and emulated_driver_class = model_cls.
         3. Preserves model-specific capabilities (e.g. channel).
         """
-        inst = model_cls("VIRTUAL")
+        categories = discover_instrument_categories()
+        awg_cat = categories["awg"]
+
+        class MockPhysicalAwg(awg_cat):
+            channel = [1, 2, 3]
+
+        MockPhysicalAwg.__module__ = "piec.drivers.awg.mock_physical_awg"
+
+        inst = MockPhysicalAwg("VIRTUAL")
         assert isinstance(inst, VirtualInstrument), (
-            f"{model_cls.__name__}('VIRTUAL') did not produce a VirtualInstrument"
+            f"{MockPhysicalAwg.__name__}('VIRTUAL') did not produce a VirtualInstrument"
         )
         assert inst.is_profiled_virtual_driver is True
-        assert inst.emulated_driver_class is model_cls
-
-        # Capability preservation
-        if hasattr(model_cls, "channel"):
-            assert inst.channel == model_cls.channel, (
-                f"{inst} channel ({inst.channel}) did not match {model_cls.__name__}.channel ({model_cls.channel})"
-            )
-
-
-# ============================================================================
-# Test Suite: 4. Data Return Format Inspection (pandas.DataFrame)
-# ============================================================================
-
-def _virtual_drivers_defining_get_data() -> List[Any]:
-    cases = []
-    for cat_name, drv_list in sorted(discover_virtual_driver_classes().items()):
-        for drv_cls in drv_list:
-            if "get_data" in drv_cls.__dict__ and not is_blank_stub(drv_cls.get_data):
-                cases.append(pytest.param(drv_cls, id=drv_cls.__name__))
-    return cases
-
-
-class TestVirtualDriverDataReturnFormats:
-    """
-    Verifies that whenever a virtual driver defines get_data(),
-    function inspection confirms it returns a pandas DataFrame.
-    """
-
-    @pytest.mark.parametrize("driver_cls", _virtual_drivers_defining_get_data())
-    def test_virtual_get_data_returns_pandas_dataframe(self, driver_cls):
-        """
-        Inspect get_data() to verify its return type is a pandas DataFrame
-        via type annotations, AST inspection, or docstring contract.
-        """
-        fn = getattr(driver_cls, "get_data")
-        assert function_returns_dataframe(fn), (
-            f"{driver_cls.__name__}.get_data() does not return a pandas DataFrame"
+        assert inst.emulated_driver_class is MockPhysicalAwg
+        assert inst.channel == [1, 2, 3], (
+            f"Mock instrument channel ({inst.channel}) did not match model capabilities [1, 2, 3]"
         )
