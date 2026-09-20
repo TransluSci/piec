@@ -348,13 +348,6 @@ class Agilent33220A(Scpi, Awg):
             raise ValueError(f"Invalid trigger_source '{trigger_source}'. Must be 'INT', 'EXT', or 'MAN'")
         self.instrument.write(f"TRIG:SOUR {cmd}")
 
-    def set_trigger_level(self, channel=1, trigger_level=None):
-        """
-        Set trigger level. The Agilent 33220A has a fixed TTL-compatible trigger input
-        and does not support an adjustable trigger level.
-        """
-        raise NotImplementedError("The Agilent 33220A does not support adjustable trigger level (fixed TTL).")
-
     def set_trigger_slope(self, channel=1, trigger_slope=None):
         """
         Sets the trigger slope for the external trigger input (Trig In).

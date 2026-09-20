@@ -320,9 +320,11 @@ class Awg(Instrument):
             trigger_source (str): The trigger source, e.g., 'internal', 'external', 'manual'
         """
 
+    @optional
     def set_trigger_level(self, channel, trigger_level):
         """
-        Sets the trigger level for the selected channel
+        Sets the trigger level for the selected channel when adjustable.
+        Drivers with a fixed trigger level inherit the optional skip behavior.
         args:
             channel (int): The channel to set the trigger level on
             trigger_level (float): The trigger level in volts
