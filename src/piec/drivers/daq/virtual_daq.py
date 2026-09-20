@@ -17,10 +17,10 @@ class VirtualDaq(VirtualInstrument, Daq):
     Virtual version of a DAQ device for simulation/testing.
     Stores state internally and generates synthetic data.
 
-    Mimics a device with:
-    - 8 Single-Ended / 4 Differential Analog Inputs (+/- 10V, 16-bit)
-    - 2 Analog Outputs (+/- 10V)
-    - 8 Digital I/O (bit-configurable)
+    Generic instances inherit the Daq category capabilities, which advertise
+    no analog or digital channels. Model-profiled instances use the physical
+    model's capability attributes. Digital trigger pulses are simulated only
+    when digital channels are advertised; hardware timing is not provided.
     """
 
     def __init__(self, address='VIRTUAL', **kwargs):
@@ -56,7 +56,8 @@ class VirtualDaq(VirtualInstrument, Daq):
     def get_trigger_pulse_capabilities(self):
         """Expose digital pulses as simulation, never hardware timing."""
         capabilities = super().get_trigger_pulse_capabilities()
-        capabilities['digital']['timing'] = 'simulated'
+        if 'digital' in capabilities:
+            capabilities['digital']['timing'] = 'simulated'
         return capabilities
 
     def send_trigger_pulse(self, *args, **kwargs):

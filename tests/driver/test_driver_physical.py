@@ -11,6 +11,8 @@ Validates all PIEC physical instrument drivers against the core architectural co
    inheriting empty/blank stubs from the category parent (via AST and bytecode inspection).
 4. Verifies hierarchical traversal to the top of the MRO (IEEE 488.2 / SCPI commands from
    Scpi mixin, and concrete identification from Instrument).
+5. Checks public method signatures against the category interface, including
+   implemented optional and compound methods.
 """
 
 from __future__ import annotations
@@ -383,6 +385,57 @@ class TestPhysicalDriverClassAttributes:
 
 class TestPhysicalDriverMethodImplementation:
     """Verifies that non-optional methods are implemented with real code."""
+
+    def test_physical_driver_method_signatures_match_parent(self):
+        """Preserve parent arguments, ordering, kinds, and established defaults.
+
+        Required parent arguments may gain defaults. Model-specific extensions
+        must be optional keyword-only arguments so standard calls stay compatible.
+        Inspect signatures through decorators without constructing hardware drivers.
+        """
+        categories = discover_instrument_categories()
+        mismatches = []
+        for category_name, drivers in discover_physical_driver_classes().items():
+            category_cls = categories[category_name]
+            for method_name, parent_method in inspect.getmembers(category_cls, inspect.isfunction):
+                if method_name.startswith("_"):
+                    continue
+                parent_signature = inspect.signature(parent_method)
+                parent_params = [
+                    parameter for name, parameter in parent_signature.parameters.items()
+                    if name != "self"
+                ]
+                for driver_cls in drivers:
+                    child_method = getattr(driver_cls, method_name, None)
+                    label = f"{driver_cls.__name__}.{method_name}"
+                    if not callable(child_method):
+                        mismatches.append(f"{label}: missing callable")
+                        continue
+                    child_signature = inspect.signature(child_method)
+                    child_params = [
+                        parameter for name, parameter in child_signature.parameters.items()
+                        if name != "self"
+                    ]
+                    reasons = []
+                    parent_shape = [(p.name, p.kind) for p in parent_params]
+                    child_shape = [(p.name, p.kind) for p in child_params[:len(parent_params)]]
+                    if child_shape != parent_shape:
+                        reasons.append("parent argument names, order, or kinds differ")
+                    for parent_param, child_param in zip(parent_params, child_params):
+                        if (parent_param.name == child_param.name
+                                and parent_param.default is not inspect.Parameter.empty
+                                and child_param.default != parent_param.default):
+                            reasons.append(f"default for {parent_param.name} differs")
+                    for extra in child_params[len(parent_params):]:
+                        if (extra.kind is not inspect.Parameter.KEYWORD_ONLY
+                                or extra.default is inspect.Parameter.empty):
+                            reasons.append(f"extra argument {extra.name} must be optional and keyword-only")
+                    if reasons:
+                        mismatches.append(
+                            f"{label}{child_signature}; expected {category_cls.__name__}."
+                            f"{method_name}{parent_signature}: {'; '.join(reasons)}"
+                        )
+        assert not mismatches, "Physical driver signature mismatches:\n" + "\n".join(mismatches)
 
     def test_blank_stub_detector_behavior(self):
         """Confirm is_blank_stub accurately identifies blank code vs real logic."""

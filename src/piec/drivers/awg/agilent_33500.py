@@ -97,16 +97,38 @@ class Agilent33500(Scpi, Awg):
     # -------------------------------------------------------------------------
 
     def output(self, channel=1, on=True):
-        """Enable or disable output on the selected channel (OUTPut[1|2] {OFF|ON})."""
+        """
+        All awgs must be able to output something, so therefore we need a method to turn the output on for the selected channel.
+
+        Args:
+            channel (int): The channel to output on
+            on (bool): Whether to turn the output on or off
+
+        Notes:
+            Writes OUTP<channel> ON or OFF. This switches the output without
+            configuring the waveform.
+            The channel defaults to 1; use a channel available on the connected model.
+        """
         state = "ON" if on else "OFF"
         self.instrument.write(f"OUTP{channel} {state}")
 
-    def set_load_impedance(self, channel=1, load_impedance=None, ohms=None):
+    def set_load_impedance(self, channel=1, load_impedance=None):
         """
-        Set the expected output load impedance (OUTPut[1|2]:LOAD {<ohms>|INFinity}).
+        Sets the load impedance of the waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the load impedance on
+            load_impedance (float): The load impedance of the waveform in ohms
+
+        Notes:
+            Writes OUTP<channel>:LOAD. With automatic parameter checking disabled,
+            float("inf"), "INF", and "INFINITY" select INF. With checking enabled,
+            the declared numeric load_impedance limits apply.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If load_impedance is None.
         """
-        if load_impedance is None and ohms is not None:
-            load_impedance = ohms
         if load_impedance is None:
             raise ValueError("load_impedance must be provided")
 
@@ -117,7 +139,19 @@ class Agilent33500(Scpi, Awg):
 
     def set_polarity(self, channel=1, polarity=None):
         """
-        Set output waveform polarity (OUTPut[1|2]:POLarity {NORMal|INVerted}).
+        Sets the polarity of the waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the polarity on
+            polarity (str): The polarity of the waveform
+
+        Notes:
+            Writes OUTP<channel>:POL NORM for "NORM"/"NORMAL" and INV otherwise. Use
+            the advertised NORM/INV values.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If polarity is None.
         """
         if polarity is None:
             raise ValueError("polarity must be provided")
@@ -130,7 +164,19 @@ class Agilent33500(Scpi, Awg):
 
     def set_waveform(self, channel=1, waveform=None):
         """
-        Select the waveform shape on the selected channel (SOURce[1|2]:FUNCtion <shape>).
+        Sets the built_in waveform to be generated on the selected channel.
+
+        Args:
+            channel (int): The channel to set the waveform on
+            waveform (str): The waveform to be generated
+
+        Notes:
+            Maps the common USER waveform to the instrument ARB token and writes
+            SOUR<channel>:FUNC. Other waveform names are uppercased.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If waveform is None.
         """
         if waveform is None:
             raise ValueError("waveform must be provided")
@@ -138,37 +184,119 @@ class Agilent33500(Scpi, Awg):
         self.instrument.write(f"SOUR{channel}:FUNC {token}")
 
     def set_frequency(self, channel=1, frequency=None):
-        """Set waveform frequency in Hz (SOURce[1|2]:FREQuency <freq>)."""
+        """
+        Sets the frequency of the waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the frequency on
+            frequency (float): The frequency of the waveform in Hz
+
+        Notes:
+            Writes SOUR<channel>:FREQ. Advertised frequency limits depend on the
+            selected waveform.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If frequency is None.
+        """
         if frequency is None:
             raise ValueError("frequency must be provided")
         self.instrument.write(f"SOUR{channel}:FREQ {frequency}")
 
     def set_amplitude(self, channel=1, amplitude=None):
-        """Set peak-to-peak amplitude in Volts (SOURce[1|2]:VOLTage <ampl>)."""
+        """
+        Sets the amplitude of the waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the amplitude on
+            amplitude (float): The amplitude of the waveform in volts (usually Vpp but use instrument default)
+
+        Notes:
+            Writes SOUR<channel>:VOLT without changing the voltage-unit setting. Use
+            the instrument's active amplitude units; the declared limits assume Vpp
+            into 50 ohms.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If amplitude is None.
+        """
         if amplitude is None:
             raise ValueError("amplitude must be provided")
         self.instrument.write(f"SOUR{channel}:VOLT {amplitude}")
 
     def set_offset(self, channel=1, offset=None):
-        """Set DC offset voltage in Volts (SOURce[1|2]:VOLTage:OFFSet <offset>)."""
+        """
+        Sets the offset of the waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the offset on
+            offset (float): The offset of the waveform in volts
+
+        Notes:
+            Writes SOUR<channel>:VOLT:OFFS.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If offset is None.
+        """
         if offset is None:
             raise ValueError("offset must be provided")
         self.instrument.write(f"SOUR{channel}:VOLT:OFFS {offset}")
 
     def set_phase(self, channel=1, phase=None):
-        """Set waveform phase offset in degrees (SOURce[1|2]:PHASe <phase>)."""
+        """
+        Sets the phase offset of the waveform on the selected channel.
+
+        Args:
+            channel (int): The channel
+            phase (float): Phase offset in degrees (-360 to +360)
+
+        Notes:
+            Writes SOUR<channel>:PHAS. This driver advertises -360 to +360 degrees.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If phase is None.
+        """
         if phase is None:
             raise ValueError("phase must be provided")
         self.instrument.write(f"SOUR{channel}:PHAS {phase}")
 
     def set_square_duty_cycle(self, channel=1, duty_cycle=None):
-        """Set square wave duty cycle in percent (SOURce[1|2]:FUNCtion:SQUare:DCYCle <percent>)."""
+        """
+        Sets the duty cycle of the square wave to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the duty cycle on
+            duty_cycle (float): The duty cycle of the waveform as a percentage (0-100)
+
+        Notes:
+            Writes SOUR<channel>:FUNC:SQU:DCYC. This driver advertises 0.01 to 99.99
+            percent.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If duty_cycle is None.
+        """
         if duty_cycle is None:
             raise ValueError("duty_cycle must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:SQU:DCYC {duty_cycle}")
 
     def set_ramp_symmetry(self, channel=1, symmetry=None):
-        """Set ramp wave symmetry in percent (SOURce[1|2]:FUNCtion:RAMP:SYMMetry <percent>)."""
+        """
+        Sets the symmetry of the ramp waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the symmetry on
+            symmetry (float): The symmetry of the waveform as a percentage (0-100)
+
+        Notes:
+            Writes SOUR<channel>:FUNC:RAMP:SYMM.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If symmetry is None.
+        """
         if symmetry is None:
             raise ValueError("symmetry must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:RAMP:SYMM {symmetry}")
@@ -177,49 +305,147 @@ class Agilent33500(Scpi, Awg):
     # Pulse Waveform Functions
     # -------------------------------------------------------------------------
 
-    def set_pulse_period(self, channel=1, pulse_period=None, period=None):
-        """Set pulse period in seconds (SOURce[1|2]:FUNCtion:PULSe:PERiod <seconds>)."""
-        if pulse_period is None and period is not None:
-            pulse_period = period
+    def set_pulse_period(self, channel=1, pulse_period=None):
+        """
+        Sets the pulse period on the selected channel.
+
+        Args:
+            channel (int): The channel to set the pulse period on. Defaults to 1.
+            pulse_period (float): The pulse period in seconds; must be provided.
+
+        Notes:
+            Writes SOUR<channel>:FUNC:PULS:PER. This driver advertises
+            33.3 ns to 1,000,000 s.
+
+        Raises:
+            ValueError: If pulse_period is None.
+        """
         if pulse_period is None:
             raise ValueError("pulse_period must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:PER {pulse_period}")
 
-    def set_pulse_width(self, channel=1, pulse_width=None, width=None):
-        """Set pulse width in seconds (SOURce[1|2]:FUNCtion:PULSe:WIDTh <seconds>)."""
-        if pulse_width is None and width is not None:
-            pulse_width = width
+    def set_pulse_width(self, channel=1, pulse_width=None):
+        """
+        Sets the pulse width of the waveform to be generated on the selected channel
+        Useful for pulses
+
+        Args:
+            channel (int): The channel to set the pulse width on
+            pulse_width (float): The pulse width of the waveform in seconds
+
+        Notes:
+            Writes SOUR<channel>:FUNC:PULS:WIDT. This driver advertises 16 ns to
+            1,000,000 s; hardware may impose additional constraints based on period
+            and edge times.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If pulse_width is None.
+        """
         if pulse_width is None:
             raise ValueError("pulse_width must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:WIDT {pulse_width}")
 
     def set_pulse_duty_cycle(self, channel=1, duty_cycle=None):
-        """Set pulse duty cycle in percent (SOURce[1|2]:FUNCtion:PULSe:DCYCle <percent>)."""
+        """
+        Sets the duty cycle of the pulse to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the duty cycle on
+            duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
+
+        Notes:
+            Writes SOUR<channel>:FUNC:PULS:DCYC.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If duty_cycle is None.
+        """
         if duty_cycle is None:
             raise ValueError("duty_cycle must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:DCYC {duty_cycle}")
 
     def set_pulse_edge_time(self, channel=1, edge_time=None):
-        """Set both leading and trailing edge times in seconds (SOURce[1|2]:FUNCtion:PULSe:TRANsition <seconds>)."""
+        """
+        Sets the pulse transition time on the selected channel.
+
+        Args:
+            channel (int): The channel to set the transition time on. Defaults to 1.
+            edge_time (float): The transition time in seconds; must be provided.
+
+        Notes:
+            Writes the unsuffixed SOUR<channel>:FUNC:PULS:TRAN command.
+            Use set_pulse_rise_time and set_pulse_fall_time to address the
+            leading and trailing transitions explicitly. This driver advertises
+            8.4 ns to 1 microsecond.
+
+        Raises:
+            ValueError: If edge_time is None.
+        """
         if edge_time is None:
             raise ValueError("edge_time must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:TRAN {edge_time}")
 
     def set_pulse_rise_time(self, channel=1, rise_time=None):
-        """Set pulse leading edge time in seconds (SOURce[1|2]:FUNCtion:PULSe:TRANsition:LEADing <seconds>)."""
+        """
+        Sets the rise time of the waveform to be generated on the selected channel
+        Useful for pulses
+
+        Args:
+            channel (int): The channel to set the rise time on
+            rise_time (float): The rise time of the waveform in seconds
+
+        Notes:
+            Writes SOUR<channel>:FUNC:PULS:TRAN:LEAD. This driver advertises 8.4 ns
+            to 1 microsecond.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If rise_time is None.
+        """
         if rise_time is None:
             raise ValueError("rise_time must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:TRAN:LEAD {rise_time}")
 
     def set_pulse_fall_time(self, channel=1, fall_time=None):
-        """Set pulse trailing edge time in seconds (SOURce[1|2]:FUNCtion:PULSe:TRANsition:TRAiling <seconds>)."""
+        """
+        Sets the fall time of the waveform to be generated on the selected channel
+        Useful for pulses
+
+        Args:
+            channel (int): The channel to set the fall time on
+            fall_time (float): The fall time of the waveform in seconds
+
+        Notes:
+            Writes SOUR<channel>:FUNC:PULS:TRAN:TRA. This driver advertises 8.4 ns
+            to 1 microsecond.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If fall_time is None.
+        """
         if fall_time is None:
             raise ValueError("fall_time must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:TRAN:TRA {fall_time}")
 
     def configure_pulse(self, channel=1, pulse_width=None,
                         rise_time=None, fall_time=None, duty_cycle=None):
-        """Configures the pulse waveform on the selected channel."""
+        """
+        Configures the pulse waveform on the selected channel. Calls the set_pulse_width, set_pulse_rise_time, set_pulse_duty_cycle and set_pulse_fall_time functions to configure the pulse waveform
+
+        Args:
+            channel (int): The channel to configure the pulse waveform on
+            pulse_width (float): The pulse width of the waveform in seconds
+            rise_time (float): The rise time of the waveform in seconds
+            fall_time (float): The fall time of the waveform in seconds
+            duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
+
+        Notes:
+            Selects PULS first, then applies non-None width, rise time, fall time,
+            and duty cycle in that order. None leaves the corresponding setting
+            unchanged.
+            The channel defaults to 1; use a channel available on the connected model.
+        """
         self.set_waveform(channel, "PULS")
         if pulse_width is not None:
             self.set_pulse_width(channel, pulse_width)
@@ -234,18 +460,28 @@ class Agilent33500(Scpi, Awg):
     # Arbitrary Waveform Functions
     # -------------------------------------------------------------------------
 
-    def create_arb_waveform(self, name, data, channel=1, sample_rate=None):
+    def create_arb_waveform(self, channel, name, data):
         """
-        Download arbitrary waveform data points to instrument memory.
-
-        Data points must be floating-point numbers between -1.0 and +1.0,
-        with length between 8 and 1,000,000 points (Manual p. 224-225, 240, 268).
+        Creates an arbitrary waveform on the selected channel and downloads it to instrument memory.
 
         Args:
-            name (str): Identifier name for the arbitrary waveform.
-            data (iterable): Sequence of normalized float data points (-1.0 to 1.0).
-            channel (int): Target output channel (default 1).
-            sample_rate (float, optional): Sample rate in Sa/s.
+            channel (int): The channel to create the arbitrary waveform on
+            name (str): The name of the arbitrary waveform
+            data (list or ndarray): The data points of the arbitrary waveform
+
+        Notes:
+            Requires an explicit, nonempty name containing only alphanumeric
+            characters and underscores. No default name is generated and no
+            overwrite confirmation is requested. The method converts data to
+            floating point, checks 8 to 1,000,000 points and values between -1.0 and
+            +1.0, then sends SOURce<channel>:DATA:ARBitrary with comma-separated
+            values formatted to six decimal places. Uploading does not select the
+            waveform or enable output; call set_arb_waveform separately. String
+            arguments, including name, are lowercased by the driver framework.
+
+        Raises:
+            ValueError: If the name is invalid, the point count is out of range,
+                or data contains values outside [-1.0, 1.0].
         """
         if not name or not isinstance(name, str):
             raise ValueError("Arbitrary waveform name must be a non-empty string")
@@ -264,13 +500,21 @@ class Agilent33500(Scpi, Awg):
         csv_data = ",".join(f"{v:.6f}" for v in data_array)
         self.instrument.write(f"SOURce{channel}:DATA:ARBitrary {name},{csv_data}")
 
-        if sample_rate is not None:
-            self.instrument.write(f"SOURce{channel}:FUNCtion:ARB:SRATe {sample_rate}")
-
-    def set_arb_waveform(self, name, channel=1):
+    def set_arb_waveform(self, channel, name):
         """
-        Select an arbitrary waveform previously downloaded or built-in
-        (SOURce[1|2]:FUNCtion:ARBitrary <name>).
+        Sets the arbitrary waveform to be generated on the selected channel
+
+        Args:
+            channel (int): The channel to set the arbitrary waveform on
+            name (str): The name of the arbitrary waveform to be set
+
+        Notes:
+            Requires a nonempty name. Writes SOURce<channel>:FUNCtion:ARBitrary
+            <name>, then SOURce<channel>:FUNCtion ARB. Does not enable channel
+            output. Names are lowercased by the driver framework.
+
+        Raises:
+            ValueError: If name is not a nonempty string.
         """
         if not name or not isinstance(name, str):
             raise ValueError("Arbitrary waveform name must be a non-empty string")
@@ -283,7 +527,20 @@ class Agilent33500(Scpi, Awg):
 
     def set_trigger_source(self, channel=1, trigger_source=None):
         """
-        Set trigger source (TRIGger[1|2]:SOURce {IMMediate|EXTernal|TIMer|BUS}).
+        Sets the trigger source for the selected channel
+
+        Args:
+            channel (int): The channel to set the trigger source on
+            trigger_source (str): The trigger source, e.g., 'internal', 'external', 'manual'
+
+        Notes:
+            Writes TRIG<channel>:SOUR. INT/IMM map to IMM, EXT to EXT, MAN/BUS to
+            BUS, and TIM to TIM. With automatic checking disabled, long-form aliases
+            are also mapped and unknown values are passed through uppercased.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If trigger_source is None.
         """
         if trigger_source is None:
             raise ValueError("trigger_source must be provided")
@@ -298,7 +555,20 @@ class Agilent33500(Scpi, Awg):
 
     def set_trigger_slope(self, channel=1, trigger_slope=None):
         """
-        Set external trigger slope (TRIGger[1|2]:SLOPe {POSitive|NEGative}).
+        Sets the trigger slope for the selected channel
+
+        Args:
+            channel (int): The channel to set the trigger slope on
+            trigger_slope (str): The trigger slope, 'POS' (rising) or 'NEG' (falling)
+
+        Notes:
+            Writes TRIG<channel>:SLOP. Use POS or NEG. With automatic checking
+            disabled, strings starting with "pos" select POS and all other supplied
+            values select NEG.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If trigger_slope is None.
         """
         if trigger_slope is None:
             raise ValueError("trigger_slope must be provided")
@@ -307,8 +577,20 @@ class Agilent33500(Scpi, Awg):
 
     def set_trigger_mode(self, channel=1, trigger_mode=None):
         """
-        Set burst trigger mode (SOURce[1|2]:BURSt:MODE {TRIGgered|GATed}).
-        Maps 'EDGE' -> 'TRIG' and 'LEV' -> 'GAT'.
+        Sets the trigger mode for the selected channel (aka trigger type)
+
+        Args:
+            channel (int): The channel to set the trigger mode on
+            trigger_mode (str): The trigger mode, e.g., 'EDGE'
+
+        Notes:
+            Writes SOUR<channel>:BURS:MODE. EDGE maps to TRIG and LEV to GAT. With
+            automatic checking disabled, "trig"/"triggered" also select TRIG; other
+            supplied values select GAT. This setter does not enable burst mode.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If trigger_mode is None.
         """
         if trigger_mode is None:
             raise ValueError("trigger_mode must be provided")
@@ -317,7 +599,19 @@ class Agilent33500(Scpi, Awg):
 
     def set_trigger_level(self, channel=1, trigger_level=None):
         """
-        Set the trigger level / input threshold in Volts (TRIGger[1|2]:LEVel <volts>).
+        Sets the trigger level for the selected channel
+
+        Args:
+            channel (int): The channel to set the trigger level on
+            trigger_level (float): The trigger level in volts
+
+        Notes:
+            Writes TRIG<channel>:LEV with the supplied voltage. This implementation
+            does not explicitly check finiteness or impose trigger-level bounds.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If trigger_level is None.
         """
         if trigger_level is None:
             raise ValueError("trigger_level must be provided")
@@ -325,14 +619,32 @@ class Agilent33500(Scpi, Awg):
 
     def output_trigger(self):
         """
-        Issue a manual/software bus trigger to all armed channels (*TRG).
+        Outputs the trigger signal for the awg. This is typically used to synchronize the output of the awg with other instruments or systems. Typically the same as manually triggering the awg from the front panel.
+
+        Notes:
+            Writes one device-wide *TRG command for channels already armed for bus
+            triggering. It does not configure or enable output and does not
+            independently select a channel.
         """
         self.instrument.write("*TRG")
 
     def configure_trigger(self, channel=1, trigger_source=None, trigger_level=None,
                           trigger_slope=None, trigger_mode=None):
         """
-        Convenience method to configure trigger parameters on the selected channel.
+        Configures the trigger for the selected channel. Calls the set_trigger_source, set_trigger_level, set_trigger_slope, and set_trigger_mode functions to configure the trigger
+
+        Args:
+            channel (int): The channel to configure the trigger on
+            trigger_source (str): The trigger source
+            trigger_level (float): The trigger level in volts
+            trigger_slope (str): The trigger slope
+            trigger_mode (str): The trigger mode
+
+        Notes:
+            Applies non-None source, level, slope, and mode in that order. None
+            leaves a setting unchanged. The method does not enable burst or channel
+            output. Earlier writes are not rolled back if a later setter fails.
+            The channel defaults to 1; use a channel available on the connected model.
         """
         if trigger_source is not None:
             self.set_trigger_source(channel, trigger_source)
@@ -348,7 +660,22 @@ class Agilent33500(Scpi, Awg):
     # -------------------------------------------------------------------------
 
     def set_burst_mode(self, channel=1, burst_mode=None):
-        """Set burst mode: 'TRIG' (triggered), 'GAT' (gated), or 'INF' (infinite)."""
+        """
+        Sets the burst mode type.
+
+        Args:
+            channel (int): The channel
+            burst_mode (str): 'TRIG' (N-cycle on trigger), 'GAT' (gated), 'INF' (infinite)
+
+        Notes:
+            Writes SOUR<channel>:BURS:MODE. INF selects TRIG and also writes
+            SOUR<channel>:BURS:NCYC INF. This setter does not enable burst state;
+            configure_burst does.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If burst_mode is None.
+        """
         if burst_mode is None:
             raise ValueError("burst_mode must be provided")
         token = burst_mode.upper()
@@ -363,22 +690,46 @@ class Agilent33500(Scpi, Awg):
             self.instrument.write(f"SOUR{channel}:BURS:MODE {token}")
 
     def set_burst_count(self, channel=1, burst_count=None):
-        """Set number of cycles per burst (SOURce[1|2]:BURSt:NCYCles {<count>|INFinity})."""
+        """
+        Sets the number of waveform cycles per burst trigger.
+
+        Args:
+            channel (int): The channel
+            burst_count (int): Number of cycles per burst
+
+        Notes:
+            Writes SOUR<channel>:BURS:NCYC. With automatic checking disabled,
+            float("inf"), "INF", and "INFINITY" map to INF. With checking enabled,
+            the declared numeric burst_count limits apply.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If burst_count is None.
+        """
         if burst_count is None:
             raise ValueError("burst_count must be provided")
         val = "INF" if (burst_count == float("inf") or str(burst_count).upper() in ("INF", "INFINITY")) else burst_count
         self.instrument.write(f"SOUR{channel}:BURS:NCYC {val}")
 
-    def configure_burst(self, channel=1, burst_mode=None, burst_count=None, phase=None, period=None):
-        """Configure burst mode and parameters, enabling burst state."""
+    def configure_burst(self, channel=1, burst_mode=None, burst_count=None):
+        """
+        Configures burst mode. Calls set_burst_mode and set_burst_count.
+
+        Args:
+            channel (int): The channel
+            burst_mode (str): 'TRIG', 'GAT', or 'INF'
+            burst_count (int): Number of cycles per burst
+
+        Notes:
+            Applies each non-None setting, then writes SOUR<channel>:BURS:STAT ON
+            even when neither setting is supplied. It does not enable channel
+            output.
+            The channel defaults to 1; use a channel available on the connected model.
+        """
         if burst_mode is not None:
             self.set_burst_mode(channel, burst_mode)
         if burst_count is not None:
             self.set_burst_count(channel, burst_count)
-        if phase is not None:
-            self.instrument.write(f"SOUR{channel}:BURS:PHAS {phase}")
-        if period is not None:
-            self.instrument.write(f"SOUR{channel}:BURS:INT:PER {period}")
         self.instrument.write(f"SOUR{channel}:BURS:STAT ON")
 
     # -------------------------------------------------------------------------
@@ -386,40 +737,110 @@ class Agilent33500(Scpi, Awg):
     # -------------------------------------------------------------------------
 
     def set_sweep_mode(self, channel=1, sweep_mode=None):
-        """Set sweep mode (SOURce[1|2]:SWEep:SPACing {LINear|LOGarithmic})."""
+        """
+        Sets the sweep type (linear or logarithmic).
+
+        Args:
+            channel (int): The channel
+            sweep_mode (str): 'LIN' or 'LOG'
+
+        Notes:
+            Writes SOUR<channel>:SWE:SPAC. Use LIN or LOG. With automatic checking
+            disabled, values starting with "LOG" select LOG and other supplied
+            values select LIN.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If sweep_mode is None.
+        """
         if sweep_mode is None:
             raise ValueError("sweep_mode must be provided")
         token = "LOG" if sweep_mode.upper().startswith("LOG") else "LIN"
         self.instrument.write(f"SOUR{channel}:SWE:SPAC {token}")
 
     def set_sweep_start_freq(self, channel=1, start_freq=None):
-        """Set sweep start frequency in Hz (SOURce[1|2]:FREQuency:STARt <freq>)."""
+        """
+        Sets the sweep start frequency.
+
+        Args:
+            channel (int): The channel
+            start_freq (float): Start frequency in Hz
+
+        Notes:
+            Writes SOUR<channel>:FREQ:STAR.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If start_freq is None.
+        """
         if start_freq is None:
             raise ValueError("start_freq must be provided")
         self.instrument.write(f"SOUR{channel}:FREQ:STAR {start_freq}")
 
     def set_sweep_stop_freq(self, channel=1, stop_freq=None):
-        """Set sweep stop frequency in Hz (SOURce[1|2]:FREQuency:STOP <freq>)."""
+        """
+        Sets the sweep stop frequency.
+
+        Args:
+            channel (int): The channel
+            stop_freq (float): Stop frequency in Hz
+
+        Notes:
+            Writes SOUR<channel>:FREQ:STOP.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If stop_freq is None.
+        """
         if stop_freq is None:
             raise ValueError("stop_freq must be provided")
         self.instrument.write(f"SOUR{channel}:FREQ:STOP {stop_freq}")
 
     def set_sweep_time(self, channel=1, sweep_time=None):
-        """Set sweep time in seconds (SOURce[1|2]:SWEep:TIME <seconds>)."""
+        """
+        Sets the sweep duration.
+
+        Args:
+            channel (int): The channel
+            sweep_time (float): Sweep time in seconds
+
+        Notes:
+            Writes SOUR<channel>:SWE:TIME.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If sweep_time is None.
+        """
         if sweep_time is None:
             raise ValueError("sweep_time must be provided")
         self.instrument.write(f"SOUR{channel}:SWE:TIME {sweep_time}")
 
-    def configure_sweep(self, channel=1, start_freq=None, stop_freq=None, sweep_time=None, mode=None):
-        """Configure sweep parameters and enable sweep state."""
+    def configure_sweep(self, channel=1, sweep_mode=None, start_freq=None, stop_freq=None, sweep_time=None):
+        """
+        Configures frequency sweep. Calls individual set_ methods.
+
+        Args:
+            channel (int): The channel
+            sweep_mode (str): 'LIN' or 'LOG'
+            start_freq (float): Start frequency in Hz
+            stop_freq (float): Stop frequency in Hz
+            sweep_time (float): Sweep time in seconds
+
+        Notes:
+            Applies non-None start frequency, stop frequency, sweep time, and sweep
+            mode in that order, then writes SOUR<channel>:SWE:STAT ON. None leaves
+            the corresponding setting unchanged. Channel output is not enabled by
+            this method.
+            The channel defaults to 1; use a channel available on the connected model.
+        """
         if start_freq is not None:
             self.set_sweep_start_freq(channel, start_freq)
         if stop_freq is not None:
             self.set_sweep_stop_freq(channel, stop_freq)
         if sweep_time is not None:
             self.set_sweep_time(channel, sweep_time)
-        if mode is not None:
-            self.set_sweep_mode(channel, mode)
+        if sweep_mode is not None:
+            self.set_sweep_mode(channel, sweep_mode)
         self.instrument.write(f"SOUR{channel}:SWE:STAT ON")
 
     # -------------------------------------------------------------------------
@@ -427,7 +848,22 @@ class Agilent33500(Scpi, Awg):
     # -------------------------------------------------------------------------
 
     def set_modulation_type(self, channel=1, mod_type=None):
-        """Set modulation type: 'AM', 'FM', 'PM', 'FSK', 'PWM'."""
+        """
+        Sets the modulation type.
+
+        Args:
+            channel (int): The channel
+            mod_type (str): 'AM', 'FM', 'PM', 'FSK', 'PWM'
+
+        Notes:
+            Enables the selected AM/FM/PM/FSK/PWM mode and disables the others using
+            SOUR<channel>:<type>:STAT. FSK uses the FSKey command token. The other
+            modulation setters in this implementation configure AM parameters only.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If mod_type is None.
+        """
         if mod_type is None:
             raise ValueError("mod_type must be provided")
         token = mod_type.upper()
@@ -440,26 +876,85 @@ class Agilent33500(Scpi, Awg):
                 self.instrument.write(f"SOUR{channel}:{cmd_name}:STAT OFF")
 
     def set_modulation_depth(self, channel=1, depth=None):
-        """Set AM modulation depth in percent (SOURce[1|2]:AM:DEPTh <percent>)."""
+        """
+        Sets the AM modulation depth.
+
+        Args:
+            channel (int): The channel
+            depth (float): AM modulation depth as a percentage
+
+        Notes:
+            Writes SOUR<channel>:AM:DEPT. This implementation sets AM depth only; it
+            does not configure FM deviation or other modulation types.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If depth is None.
+        """
         if depth is None:
             raise ValueError("depth must be provided")
         self.instrument.write(f"SOUR{channel}:AM:DEPT {depth}")
 
     def set_modulation_frequency(self, channel=1, frequency=None):
-        """Set internal modulating frequency in Hz."""
+        """
+        Sets the modulating signal frequency.
+
+        Args:
+            channel (int): The channel
+            frequency (float): Internal modulation frequency in Hz
+
+        Notes:
+            Writes SOUR<channel>:AM:INT:FREQ. This implementation configures the
+            internal AM modulation frequency only.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If frequency is None.
+        """
         if frequency is None:
             raise ValueError("frequency must be provided")
         self.instrument.write(f"SOUR{channel}:AM:INT:FREQ {frequency}")
 
     def set_modulation_source(self, channel=1, source=None):
-        """Set modulation source: 'INT' or 'EXT'."""
+        """
+        Sets the modulation source.
+
+        Args:
+            channel (int): The channel
+            source (str): 'INT' or 'EXT'
+
+        Notes:
+            Writes SOUR<channel>:AM:SOUR. Use INT or EXT. Strings starting with
+            "ext" select EXT; other supplied values select INT. This implementation
+            configures AM only.
+            The channel defaults to 1; use a channel available on the connected model.
+
+        Raises:
+            ValueError: If source is None.
+        """
         if source is None:
             raise ValueError("source must be provided")
         token = "EXT" if source.lower().startswith("ext") else "INT"
         self.instrument.write(f"SOUR{channel}:AM:SOUR {token}")
 
     def configure_modulation(self, channel=1, mod_type=None, depth=None, frequency=None, source=None):
-        """Configure modulation type, depth, frequency, and source."""
+        """
+        Configures modulation. Calls individual set_ methods.
+
+        Args:
+            channel (int): The channel
+            mod_type (str): 'AM', 'FM', 'PM', 'FSK', 'PWM'
+            depth (float): AM modulation depth as a percentage
+            frequency (float): Modulation frequency in Hz
+            source (str): 'INT' or 'EXT'
+
+        Notes:
+            Applies non-None type, depth, frequency, and source in that order.
+            Selecting a type enables that modulation and disables the others. Depth,
+            frequency, and source setters configure AM even if another mod_type is
+            selected. None leaves the corresponding setting unchanged.
+            The channel defaults to 1; use a channel available on the connected model.
+        """
         if mod_type is not None:
             self.set_modulation_type(channel, mod_type)
         if depth is not None:
