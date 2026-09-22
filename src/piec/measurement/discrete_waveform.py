@@ -131,6 +131,101 @@ class DiscreteWaveform:
         """
         raise AttributeError("configure_awg() must be defined in the child class specific to a waveform")
 
+    def measure_time_offset(self, channel=1, amplitude=0.1):
+        """Measure and store the hardware trigger-to-response delay in seconds.
+
+        Short the measurement probes before calling. A 0-to-amplitude pulse
+        (default 100 mV, 200 ns wide) is emitted 200 ns after the AWG trigger.
+        Capture a 2 us window centered on the trigger, independent of the current
+        measurement frequency and offset. Subtract the programmed pulse delay
+        from the interpolated 50% leading-edge time, preserving negative delays.
+
+        Requires trigger-relative scope timestamps with spacing no greater than
+        2 ns. Invalid or ambiguous responses raise ValueError without replacing
+        the previous offset. AWG output is disabled even if acquisition fails.
+        Instrument settings are left configured for calibration; run_experiment
+        configures them again. Existing measurement data and length are preserved.
+        """
+        if not np.isfinite(amplitude) or amplitude <= 0:
+            raise ValueError("Calibration amplitude must be finite and positive.")
+        awg_channel = int(self.voltage_channel)
+        pulse_delay = 200e-9
+        pulse_width = 200e-9
+        try:
+            self.initialize_awg()
+            self.awg.output(channel=awg_channel, on=False)
+            self.awg.set_waveform(channel=awg_channel, waveform='PULS')
+            self.awg.set_frequency(channel=awg_channel, frequency=1e6)
+            self.awg.configure_pulse(channel=awg_channel, pulse_width=pulse_width,
+                                     pulse_delay=pulse_delay)
+            self.awg.configure_burst(channel=awg_channel, burst_mode='TRIG', burst_count=1)
+            self.awg.set_amplitude(channel=awg_channel, amplitude=amplitude)
+            self.awg.set_offset(channel=awg_channel, offset=amplitude / 2)
+            self.awg.set_polarity(channel=awg_channel, polarity='NORM')
+
+            self.osc.initialize()
+            self.osc.configure_horizontal(tdiv=200e-9)
+            # Set zero explicitly: some configure_horizontal implementations skip it.
+            self.osc.set_horizontal_position(x_position=0.0)
+            self.osc.set_vertical_scale(channel=channel, vdiv=amplitude / 2)
+            self.osc.set_input_coupling(channel=channel, input_coupling='DC')
+            self.osc.set_channel_impedance(channel, channel_impedance='50')
+            self.osc.set_trigger_source(trigger_source='EXT')
+            self.osc.set_trigger_level(trigger_level=0.95)
+            self.osc.set_trigger_slope(trigger_slope='POS')
+            self.osc.set_trigger_sweep(trigger_sweep='NORM')
+            self.osc.set_acquisition_channel(channel=channel)
+            self.osc.set_acquisition_mode(acquisition_mode='NORM')
+            self.osc.set_acquisition_points(acquisition_points=4000)
+            self.awg.output(channel=awg_channel, on=True)
+            self.osc.arm()
+            time.sleep(0.05)  # Allow arming and pre-trigger acquisition to settle.
+            self.awg.output_trigger()
+            time.sleep(0.05)
+            self.osc.operation_complete()
+            capture = self.osc.get_data()
+        finally:
+            self.awg.output(channel=awg_channel, on=False)
+
+        times = capture['Time'].to_numpy(dtype=float)
+        voltage = capture['Voltage'].to_numpy(dtype=float)
+        if (len(times) < 20 or not np.all(np.isfinite(times))
+                or not np.all(np.isfinite(voltage)) or np.any(np.diff(times) <= 0)):
+            raise ValueError("Calibration requires finite, increasing scope timestamps.")
+        if np.max(np.diff(times)) > 2.01e-9:
+            raise ValueError("Scope sampling is too coarse; calibration requires 2 ns or finer samples.")
+        if times[0] > -500e-9 or times[-1] < 800e-9:
+            raise ValueError("Calibration capture must include padding before and after the trigger.")
+
+        baseline = voltage[times < -500e-9]
+        if len(baseline) < 20:
+            raise ValueError("Calibration needs more pre-trigger baseline samples.")
+        zero = np.median(baseline)
+        noise = 1.4826 * np.median(np.abs(baseline - zero))
+        response = voltage - zero
+        # Use the pulse plateau, not a single peak that may be noise or overshoot.
+        plateau = response[np.abs(response) >= np.percentile(np.abs(response), 95)]
+        height = np.median(plateau)
+        if abs(height) < max(amplitude * 0.2, 10 * noise):
+            raise ValueError("No clear calibration pulse found; check the shorted probes and trigger connection.")
+        response *= np.sign(height)
+        threshold = abs(height) / 2
+        above = response >= threshold
+        transitions = np.diff(np.r_[False, above, False].astype(int))
+        starts = np.flatnonzero(transitions == 1)
+        ends = np.flatnonzero(transitions == -1)
+        pulses = [(start, end) for start, end in zip(starts, ends)
+                  if start > 0 and end < len(times)
+                  and 0.5 * pulse_width <= times[end] - times[start] <= 1.5 * pulse_width]
+        if len(pulses) != 1:
+            raise ValueError("Expected one complete calibration pulse; check signal quality and scope range.")
+        start, _ = pulses[0]
+        fraction = (threshold - response[start - 1]) / (response[start] - response[start - 1])
+        edge_time = times[start - 1] + fraction * (times[start] - times[start - 1])
+        self.time_offset = float(edge_time - pulse_delay)
+        self._update_metadata()
+        return self.time_offset
+
     def apply_and_capture_waveform(self):
         """
         Execute waveform generation and data acquisition sequence.

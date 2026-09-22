@@ -1,9 +1,9 @@
 import os
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import numpy as np
 import pandas as pd
-from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
+from piec.measurement.discrete_waveform import DiscreteWaveform, HysteresisLoop, ThreePulsePund
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 from piec.drivers.awg.k_81150a import Keysight81150a
@@ -71,16 +71,10 @@ class FEMeasurementApp(MeasurementApp):
         self.timeshift_entry.grid(row=5, column=1, padx=5, pady=5)
         self.timeshift_entry.insert(0, DEFAULTS["time_offset"])
 
-        # Add a checkbox for auto_timeshift
-        self.auto_timeshift_entry = tk.BooleanVar(value=False)  # Default state is checked
-        self.auto_timeshift_checkbox = ttk.Checkbutton(
-            self.static_frame,
-            text="Automatic?",
-            variable=self.auto_timeshift_entry,
-            onvalue=True,
-            offvalue=False
+        self.measure_offset_button = ttk.Button(
+            self.static_frame, text="Measure Offset", command=self.measure_time_offset
         )
-        self.auto_timeshift_checkbox.grid(row=5, column=2, columnspan=1, pady=5, sticky="w")
+        self.measure_offset_button.grid(row=5, column=2, pady=5, sticky="w")
 
         # Measurement type selection
         ttk.Label(self.static_frame, text="Measurement Type:").grid(row=6, column=0, sticky="w")
@@ -349,6 +343,41 @@ class FEMeasurementApp(MeasurementApp):
         self.dynamic_inputs["offset"].grid(row=6, column=1, padx=5, pady=5)
         self.dynamic_inputs["offset"].insert(0, DEFAULTS["offset"])
 
+    def measure_time_offset(self):
+        if not messagebox.askokcancel(
+            "Measure hardware time offset",
+            "Ensure the measurement probes are shorted before proceeding.\n\n"
+            "Keep the AWG trigger connected to the scope's external trigger. "
+            "Calibration will apply a 100 mV pulse. Continue?",
+            parent=self.root,
+        ):
+            return
+        self.measure_offset_button.configure(state='disabled')
+        self.run_button.configure(state='disabled')
+        self.root.update_idletasks()
+        try:
+            if 'VIRTUAL' in (self.awg_address_entry.get(), self.osc_address_entry.get()):
+                raise ValueError("Select physical instruments to measure the hardware delay.")
+            awg, osc = self._get_instruments()
+            calibration = DiscreteWaveform(awg=awg, osc=osc)
+            offset = calibration.measure_time_offset()
+            self.timeshift_entry.delete(0, tk.END)
+            self.timeshift_entry.insert(0, f"{offset * 1e9:.6g}")
+            print(f"Measured hardware time offset: {offset * 1e9:.6g} ns. "
+                  "Remove the probe short before measuring the sample.")
+        except Exception as error:
+            messagebox.showerror("Time offset calibration failed", str(error), parent=self.root)
+        finally:
+            self.measure_offset_button.configure(state='normal')
+            self.run_button.configure(state='normal')
+
+    def _get_instruments(self):
+        awg_address = self.awg_address_entry.get()
+        osc_address = self.osc_address_entry.get()
+        awg = VirtualAwg(awg_address) if awg_address == 'VIRTUAL' else Keysight81150a(awg_address)
+        osc = VirtualScope(osc_address) if osc_address == 'VIRTUAL' else KeysightDSOX3024a(osc_address)
+        return awg, osc
+
     def run_measurement(self):
         if not self.measurement_type.get():
             print("No measurement type selected.")
@@ -357,17 +386,9 @@ class FEMeasurementApp(MeasurementApp):
         print(f"Running {self.measurement_type.get()} measurement...")
         # get static inputs for passthrough to measurment object
         awg_address = self.awg_address_entry.get()
-        osc_address = self.osc_address_entry.get()
         save_dir = self.save_dir_entry.get()
         measurement_type = self.measurement_type.get()
-        if awg_address == "VIRTUAL":
-            awg = VirtualAwg(awg_address)
-        else:
-            awg = Keysight81150a(awg_address)
-        if osc_address == "VIRTUAL": 
-            osc = VirtualScope(osc_address)
-        else:
-            osc = KeysightDSOX3024a(osc_address)
+        awg, osc = self._get_instruments()
 
         v_div = float(self.vdiv_entry.get())
         area = float(eval(str(self.area_entry.get())))
@@ -376,7 +397,6 @@ class FEMeasurementApp(MeasurementApp):
             time_offset = 0.0
         save_plots = bool(self.saveplots_entry.get())
         show_plots = save_plots
-        auto_timeshift = bool(self.auto_timeshift_entry.get())
 
         if measurement_type == "HysteresisLoop":
             # get hyst specific inputs for passthrough to measurment object
@@ -389,7 +409,7 @@ class FEMeasurementApp(MeasurementApp):
                                              frequency=frequency, amplitude=amplitude,
                                              offset=offset, n_cycles=n_cycles,
                                              save_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area,
-                                             save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
+                                             save_plots=save_plots, show_plots=show_plots)
             
         elif measurement_type == "ThreePulsePund":
             # get pund specific inputs for passthrough to measurment object
@@ -405,7 +425,7 @@ class FEMeasurementApp(MeasurementApp):
                                              reset_amp=reset_amp, reset_width=reset_width, reset_delay=reset_delay,
                                              p_u_amp=p_u_amp, p_u_width=p_u_width, p_u_delay=p_u_delay,
                                              save_dir=save_dir, v_div=v_div, time_offset=time_offset, area=area, offset=offset,
-                                             save_plots=save_plots, show_plots=show_plots, auto_timeshift=auto_timeshift)
+                                             save_plots=save_plots, show_plots=show_plots)
         self.experiment.run_experiment()
         self.update_dynamic_defaults()
         self.plot_data(self.experiment.filename)
@@ -415,8 +435,6 @@ class FEMeasurementApp(MeasurementApp):
         metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
         x_data = data[self.x_axis.get()]
         y_data = data[self.y_axis.get()]
-        self.timeshift_entry.delete(0, tk.END)
-        self.timeshift_entry.insert(0, metadata["time_offset"].values[0]*1e9) # update time offset input in case auto is used
 
         self.ax.plot(x_data, y_data, marker='.',color='k', label=f"{self.y_axis.get()} vs {self.x_axis.get()}")
         self.ax.set_xlabel(self.x_axis.get())

@@ -127,6 +127,20 @@ by ``HysteresisLoop.analyze()``.  Here is what it does step by step:
    capture. Analysis normalizes the first sample to ``t=0``. ``auto_timeshift`` is
    retained for compatibility and no longer changes alignment.
 
+   To measure the hardware delay, short the measurement probes and call
+   ``measurement.measure_time_offset()``. It applies a 100 mV, 200 ns pulse in a
+   padded 2 µs scope window, measures the interpolated 50% leading edge relative
+   to the trigger, and subtracts the programmed pulse delay. It returns seconds
+   and updates ``measurement.time_offset``. Positive and negative offsets are
+   supported. The scope must provide samples no more than 2 ns apart. Failed
+   calibration leaves the previous offset unchanged, and AWG output is disabled
+   afterward. The next experiment reconfigures the instruments.
+
+   In the FE testing GUI, **Measure Offset** prompts you to short the probes and
+   then fills **Time Offset (ns)**. Use physical instruments with the AWG trigger
+   connected to the scope's external trigger input. Remove the probe short before
+   measuring the sample.
+
 5. **Applied voltage reconstruction** — a piecewise-linear triangle wave is generated from
    the metadata parameters (``amplitude``, ``frequency``, ``n_cycles``) using
    ``interpolate_sparse_to_dense()``, starting at ``t=0`` with padding only at the end.
