@@ -107,8 +107,7 @@ by ``HysteresisLoop.analyze()``.  Here is what it does step by step:
    ``standard_csv_to_metadata_and_data()``.
 
 2. **Current** — converts the oscilloscope voltage to current via the 50 Ω sense resistor
-   and subtracts the DC offset (mean of the first 20 points, which correspond to the
-   quiet baseline prepended by the AWG):
+   and subtracts the mean of the first 20 points:
 
    .. code-block:: python
 
@@ -123,14 +122,14 @@ by ``HysteresisLoop.analyze()``.  Here is what it does step by step:
       df['polarization (uC/cm^2)'] = cumulative_trapezoid(
           df['current (A)'] / area * 100, df['time (s)'], initial=0)
 
-4. **Time alignment** — if ``auto_timeshift=True``, the code assumes the first
-   polarization maximum coincides with the first applied-voltage maximum and computes the
-   time offset accordingly.  For leaky samples this heuristic can fail, in which case a
-   manual ``time_offset`` should be supplied.
+4. **Time alignment** — ``DiscreteWaveform.time_offset`` sets the trigger-to-response
+   delay in the scope configuration, so the response starts at the beginning of the
+   capture. Analysis normalizes the first sample to ``t=0``. ``auto_timeshift`` is
+   retained for compatibility and no longer changes alignment.
 
 5. **Applied voltage reconstruction** — a piecewise-linear triangle wave is generated from
    the metadata parameters (``amplitude``, ``frequency``, ``n_cycles``) using
-   ``interpolate_sparse_to_dense()`` and aligned to the data using the time offset.
+   ``interpolate_sparse_to_dense()``, starting at ``t=0`` with padding only at the end.
 
 6. **Plots** — if requested, three figures are generated: the P–V hysteresis loop, the
    I–V loop, and a dual-axis time trace of polarization and applied voltage.

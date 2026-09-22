@@ -30,7 +30,7 @@ class DiscreteWaveform:
     filename = None
     data = None
 
-    def __init__(self, awg, osc, v_div=0.01, voltage_channel='1', save_dir=r'\\scratch'):
+    def __init__(self, awg, osc, v_div=0.01, voltage_channel='1', save_dir=r'\\scratch', time_offset=1e-8):
         """Initialize core waveform measurement system.
 
         Args:
@@ -39,6 +39,7 @@ class DiscreteWaveform:
             :v_div: Oscilloscope vertical sensitivity (volts/division)
             :voltage_channel: AWG channel number for voltage output (default '1')
             :save_dir: Data storage directory path (default network scratch)
+            :time_offset: Trigger-to-response delay used to start scope capture (s)
         """
 
         self.v_div = v_div
@@ -46,6 +47,7 @@ class DiscreteWaveform:
         self.osc = osc
         self.voltage_channel = voltage_channel
         self.save_dir = save_dir
+        self.time_offset = time_offset
         self.history = []
         self._update_metadata()
 
@@ -100,13 +102,19 @@ class DiscreteWaveform:
         Set up oscilloscope for waveform capture.
         
         Configures timebase, triggering, and channel settings optimized for
-        capturing the generated waveform. Uses external triggering.
+        capturing the generated waveform. Uses external triggering. The ten-division
+        window starts at time_offset after the trigger and leaves 25% extra time
+        after the waveform. Negative horizontal positions move the trigger left
+        of the window center.
 
         Args:
             :channel: Oscilloscope channel to configure (default 1)
         """
         self.osc.initialize()
-        self.osc.configure_horizontal(tdiv=self.length/8, x_position=5*(self.length/10))
+        tdiv = self.length / 8
+        self.osc.configure_horizontal(
+            tdiv=tdiv, x_position=-(5 * tdiv + self.time_offset)
+        )
         self.osc.set_vertical_scale(channel=channel, vdiv=float(self.v_div))
         self.osc.set_trigger_source(trigger_source='EXT')
         self.osc.set_trigger_level(trigger_level=0.95) # Using the old high_level value
@@ -136,8 +144,9 @@ class DiscreteWaveform:
         self.awg.output_trigger()
         
         # New driver lacks a blocking operation complete query.
-        # Wait for a duration slightly longer than the waveform to ensure capture.
-        time.sleep(self.length * 1.2)
+        # Include the trigger-to-response delay and trailing pillow in the wait.
+        capture_duration = max(0.0, 1.25 * self.length + self.time_offset)
+        time.sleep(capture_duration * 1.2)
         
         self.osc.set_acquisition_channel(channel=1) # Setup waveform source
         
@@ -238,10 +247,10 @@ class HysteresisLoop(DiscreteWaveform):
             :offset: DC voltage offset (V)
             :n_cycles: Number of complete bipolar cycles
             :area: Device capacitor area for polarization calc (m²)
-            :time_offset: Manual trigger-capture time alignment (s)
+            :time_offset: Trigger-to-response delay used to start scope capture (s)
             :show_plots: Show matplotlib plots post analysis?
             :save_plots: Save analysis plots to disk?
-            :auto_timeshift: Try to automatically determine t0 of captured waveform - t0 of trigger waveform?
+            :auto_timeshift: Retained for compatibility; alignment is set by time_offset in scope setup.
         """
         self.length = 1/frequency
         self.frequency = frequency
@@ -249,12 +258,11 @@ class HysteresisLoop(DiscreteWaveform):
         self.offset = offset
         self.n_cycles = n_cycles
         self.area = area
-        self.time_offset = time_offset
         self.voltage_channel = voltage_channel
         self.show_plots = show_plots
         self.save_plots = save_plots
         self.auto_timeshift = auto_timeshift
-        super().__init__(awg, osc, v_div, voltage_channel, save_dir)
+        super().__init__(awg, osc, v_div, voltage_channel, save_dir, time_offset=time_offset)
 
     def _update_notes(self):
         self.notes = str(self.amplitude).replace('.', 'p')+'V_'+str(int(self.frequency))+'Hz'
@@ -263,7 +271,7 @@ class HysteresisLoop(DiscreteWaveform):
         """
         Process hysteresis data and calculate polarization parameters.
         
-        Performs time alignment, integration for polarization calculation,
+        Performs integration for polarization calculation,
         and generates hysteresis loop plots. Results appended to CSV.
         """
         if self.data is not None:
@@ -331,10 +339,10 @@ class ThreePulsePund(DiscreteWaveform):
             :p_u_width: Measurement pulse duration (s)
             :p_u_delay: Inter-pulse delay (s)
             :area: Capacitor area for polarization calc (m²)
-            :time_offset: Manual trigger-capture time alignment (s)
+            :time_offset: Trigger-to-response delay used to start scope capture (s)
             :show_plots: Show matplotlib plots post analysis?
             :save_plots: Save analysis plots to disk?
-            :auto_timeshift: Try to automatically determine t0 of captured waveform - t0 of trigger waveform?
+            :auto_timeshift: Retained for compatibility; alignment is set by time_offset in scope setup.
         """
         self.reset_amp = reset_amp
         self.reset_width = reset_width
@@ -345,12 +353,11 @@ class ThreePulsePund(DiscreteWaveform):
         self.offset = offset
         self.area = area
         self.voltage_channel = voltage_channel
-        self.time_offset = time_offset
         self.show_plots = show_plots
         self.save_plots = save_plots
         self.auto_timeshift = auto_timeshift
         self.length = (reset_width+(reset_delay)+(2*p_u_width)+(2*p_u_delay))
-        super().__init__(awg, osc, v_div, voltage_channel, save_dir)
+        super().__init__(awg, osc, v_div, voltage_channel, save_dir, time_offset=time_offset)
 
     def _update_notes(self):
         self.notes = str(self.reset_amp).replace('.', 'p')+'Vres_'+str(self.p_u_amp).replace('.', 'p')+'Vpu'
