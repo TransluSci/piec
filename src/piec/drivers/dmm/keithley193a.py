@@ -14,6 +14,7 @@ class Keithley193a(DMM):
     This instrument uses a non-SCPI command set (Device Dependent Commands).
     """
     AUTODETECT_ID = ["Keithley 193A", "NDCV"]
+    probe_type = ['RTD']
     # Keithley 193A DDC overflow prefixes and overflow float threshold (Manual 193A_901_01A)
     DDC_OVERLOAD_PREFIXES = ("OVOL", "OCUR", "OOHM", "OVERFLOW", "OVERLOAD")
     DDC_OVERLOAD_THRESHOLD = 9.9e30
@@ -156,7 +157,16 @@ class Keithley193a(DMM):
         raw_val = self.instrument.read()
         return self._parse_reading(raw_val)
 
-    def get_temperature(self, probe_type='RTD'):
+    def set_temp_probe_type(self, probe_type):
+        """
+        Sets the temperature probe type.
+
+        The Keithley 193A hardware only supports RTD probes.
+        """
+        if probe_type.upper() != 'RTD':
+            raise ValueError(f"Keithley 193A only supports 'RTD' probe type, got '{probe_type}'.")
+
+    def get_temperature(self):
         """
         Reads a temperature measurement using the RTD input.
 
@@ -167,13 +177,9 @@ class Keithley193a(DMM):
         The 193A only supports RTD probes; thermocouple and thermistor
         probe types are not available.
 
-        Args:
-            probe_type (str): Ignored — the 193A only supports 'RTD'.
         Returns:
             float: Temperature in °C.
         """
-        if probe_type.upper() != 'RTD':
-            print(f"[Keithley193A] probe_type '{probe_type}' not supported — using RTD.")
         self.instrument.write("F6X")  # F6 = Temperature °C (RTD)
         raw_val = self.instrument.read()
         return self._parse_reading(raw_val)

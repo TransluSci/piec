@@ -142,7 +142,7 @@ class RigolDS1000Z(Scpi, Oscilloscope):
         self.instrument.write(":SINGle")
 
     def set_acquisition(self):
-        pass # Standard run/stop
+        self.instrument.write(":SINGle")
 
     def set_acquisition_channel(self, channel):
         self.instrument.write(f":WAVeform:SOURce CHANnel{channel}")

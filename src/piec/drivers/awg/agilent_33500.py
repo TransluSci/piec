@@ -428,25 +428,29 @@ class Agilent33500(Scpi, Awg):
             raise ValueError("fall_time must be provided")
         self.instrument.write(f"SOUR{channel}:FUNC:PULS:TRAN:TRA {fall_time}")
 
-    def configure_pulse(self, channel=1, pulse_width=None,
+    def configure_pulse(self, channel=1, pulse_width=None, pulse_delay=None,
                         rise_time=None, fall_time=None, duty_cycle=None):
         """
-        Configures the pulse waveform on the selected channel. Calls the set_pulse_width, set_pulse_rise_time, set_pulse_duty_cycle and set_pulse_fall_time functions to configure the pulse waveform
+        Configures the pulse waveform on the selected channel. Calls the set_pulse_delay, set_pulse_width, set_pulse_rise_time, set_pulse_duty_cycle and set_pulse_fall_time functions to configure the pulse waveform
 
         Args:
             channel (int): The channel to configure the pulse waveform on
             pulse_width (float): The pulse width of the waveform in seconds
+            pulse_delay (float): Optional pulse delay in seconds; skipped when unsupported
             rise_time (float): The rise time of the waveform in seconds
             fall_time (float): The fall time of the waveform in seconds
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
 
         Notes:
-            Selects PULS first, then applies non-None width, rise time, fall time,
+            Selects PULS first, then applies non-None delay, width, rise time, fall time,
             and duty cycle in that order. None leaves the corresponding setting
             unchanged.
+            This driver inherits the optional skip for pulse delay.
             The channel defaults to 1; use a channel available on the connected model.
         """
         self.set_waveform(channel, "PULS")
+        if pulse_delay is not None:
+            self.set_pulse_delay(channel, pulse_delay)
         if pulse_width is not None:
             self.set_pulse_width(channel, pulse_width)
         if rise_time is not None:

@@ -19,6 +19,8 @@ class Keithley2000(Scpi, DMM):
     
     sense_range = (None, None)
     
+    probe_type = ['TC', 'RTD', 'THER']
+    
     # SCPI standard overload response is ±9.99999900E+37 (Model 2000 User's Manual Section 3)
     SCPI_OVERLOAD_THRESHOLD = 9.9e37
 
@@ -34,37 +36,28 @@ class Keithley2000(Scpi, DMM):
         super().reset()
         self._scpi_sense_func = "VOLT:DC"
 
-    def set_sense_function(self, sense_func, coupling="DC", sense_mode="2W"):
+    def set_sense_function(self, sense_func):
         """
         Sets the measurement function.
         Mappings:
-        VOLT + DC -> VOLT:DC
-        VOLT + AC -> VOLT:AC
-        CURR + DC -> CURR:DC
-        CURR + AC -> CURR:AC
-        RES + 2W -> RES
-        RES + 4W -> FRES
+        VOLT -> VOLT:DC
+        CURR -> CURR:DC
+        RES  -> RES
         FREQ -> FREQ
-        PER -> PER
+        PER  -> PER
         TEMP -> TEMP
+        Or any valid SCPI function string directly (e.g. 'VOLT:AC', 'FRES').
         """
-        cmd = ""
         sense_func = sense_func.upper()
-        coupling = coupling.upper()
-        sense_mode = sense_mode.upper()
-        
         if sense_func == "VOLT":
-            cmd = f"VOLT:{coupling}"
+            cmd = "VOLT:DC"
         elif sense_func == "CURR":
-             cmd = f"CURR:{coupling}"
+            cmd = "CURR:DC"
         elif sense_func == "RES":
-            if sense_mode == "4W":
-                cmd = "FRES"
-            else:
-                cmd = "RES"
+            cmd = "RES"
         else:
             cmd = sense_func
-            
+
         # Keithley 2000: :SENS:FUNC 'VOLT:DC' (string with quotes)
         self.instrument.write(f":SENS:FUNC '{cmd}'")
         self._scpi_sense_func = cmd
@@ -158,16 +151,22 @@ class Keithley2000(Scpi, DMM):
         self._scpi_sense_func = "FREQ"
         return self._parse_reading(self.instrument.query(":READ?"))
 
-    def get_temperature(self, probe_type='TC'):
+    def set_temp_probe_type(self, probe_type):
         """
-        Returns the measured temperature.
+        Sets the temperature sensor probe type ('TC', 'RTD', 'THER').
         args:
-            probe_type (str): 'TC' (thermocouple), 'RTD', 'THER' (thermistor)
+            probe_type (str): 'TC' (thermocouple), 'RTD', 'THER' (thermistor).
+        """
+        probe_type = probe_type.upper()
+        if probe_type not in self.probe_type:
+            raise ValueError(f"Unsupported probe_type '{probe_type}'. Supported: {self.probe_type}")
+        self.instrument.write(f":SENS:TEMP:TRAN {probe_type}")
+        self._temp_probe_type = probe_type
+
+    def get_temperature(self):
+        """
+        Returns the measured temperature in the configured unit (typically °C).
         """
         self.instrument.write(":SENS:FUNC 'TEMP'")
         self._scpi_sense_func = "TEMP"
-        # Set probe type if supported
-        PROBE_MAP = {'TC': 'TC', 'RTD': 'RTD', 'THER': 'THER'}
-        pt = PROBE_MAP.get(probe_type.upper(), probe_type)
-        self.instrument.write(f":SENS:TEMP:TRAN {pt}")
         return self._parse_reading(self.instrument.query(":READ?"))

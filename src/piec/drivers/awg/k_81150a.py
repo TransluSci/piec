@@ -197,37 +197,6 @@ class Keysight81150a(Scpi, Awg):
         """
         self.instrument.write(":OUTP{}:POL {}".format(channel, polarity))
 
-    def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None, user_func=None):
-        """
-        Configures the waveform to be generated on the selected channel. Calls the set_waveform, set_frequency, set_amplitude, set_offset, set_load_impedance, and set_polarity functions to configure the waveform
-        NOTE: Add arb waveform to toggle here
-        args:
-            channel (int): The channel to configure the waveform on
-            waveform (str): The waveform to be generated
-            frequency (float): The frequency of the waveform in Hz
-            amplitude (float): The amplitude of the waveform in volts
-            offset (float): The offset of the waveform in volts
-            load_impedance (float): The load impedance of the waveform in ohms
-            polarity (str): The polarity of the waveform
-        """
-        if waveform == "user":
-            if user_func is not None:
-                self.set_arb_waveform(channel, user_func)
-            else:
-                print("Please input a user_func arg to configure the user defined wave")
-        else:
-            self.set_waveform(channel, waveform)
-        if frequency is not None:
-            self.set_frequency(channel, frequency)
-        if amplitude is not None:
-            self.set_amplitude(channel, amplitude)
-        if offset is not None:
-            self.set_offset(channel, offset)
-        if load_impedance is not None:
-            self.set_load_impedance(channel, load_impedance)
-        if polarity is not None:
-            self.set_polarity(channel, polarity)
-
     #functions that are specific to waveform types
 
     #First for square waves

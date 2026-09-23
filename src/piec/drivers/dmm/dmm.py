@@ -20,6 +20,7 @@ class DMM(Instrument):
     coupling = ['DC', 'AC']
     sense_mode = ['2W', '4W']
     sense_range = (None, None)
+    probe_type = []
     
     # --- Default SCPI Command Skeletons ---
     # These provide the standard IEEE 488.2 / SCPI-99 command interface.
@@ -218,16 +219,21 @@ class DMM(Instrument):
         """
 
     @optional
-    def get_temperature(self, probe_type='TC'):
+    def get_temperature(self):
         """
-        Returns the measured temperature.
-        Some DMMs support multiple temperature sensor types (thermocouple, RTD,
-        thermistor) — the probe_type tells the instrument which conversion to use.
-        args:
-            probe_type (str): 'TC' (thermocouple), 'RTD', 'THER' (thermistor)
+        Returns the measured temperature in the configured unit (typically °C).
         returns:
-            (float): Temperature in configured unit (typically °C)
+            (float): The measured temperature.
         """
+
+    @optional
+    def set_temp_probe_type(self, probe_type):
+        """
+        Sets the temperature probe type.
+        args:
+            probe_type (str): The temperature probe type (e.g., 'TC', 'RTD', 'THER').
+        """
+        raise NotImplementedError
 
     @optional
     def get_capacitance(self):

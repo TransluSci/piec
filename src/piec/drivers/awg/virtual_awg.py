@@ -201,7 +201,7 @@ class VirtualAwg(VirtualInstrument, Awg):
         """
         self.state['polarity'][channel] = polarity
 
-    def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None, user_func=None):
+    def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None):
         """
         Configure the waveform settings for a channel.
 
@@ -213,7 +213,9 @@ class VirtualAwg(VirtualInstrument, Awg):
             offset (float, optional): DC offset in volts
             load_impedance (float, optional): Load impedance in ohms
             polarity (str, optional): Polarity mode ('NORM' or 'INV')
-            user_func (callable, optional): User-defined function for 'USER' waveform
+
+        This simulation stores one arbitrary waveform per channel and ignores
+        its name. Upload data with create_arb_waveform before using USER.
         """
         self.set_waveform(channel, waveform)
         if frequency is not None:
@@ -226,12 +228,6 @@ class VirtualAwg(VirtualInstrument, Awg):
             self.set_load_impedance(channel, load_impedance)
         if polarity is not None:
             self.set_polarity(channel, polarity)
-        if waveform == 'USER' and user_func is not None:
-            warn_for_large_simulation_input(
-                user_func,
-                label="virtual AWG user waveform",
-            )
-            self.state['arb_waveform'][channel] = np.array(user_func)
 
     def set_square_duty_cycle(self, channel, duty_cycle):
         """

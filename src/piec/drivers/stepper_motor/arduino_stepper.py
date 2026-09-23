@@ -9,6 +9,7 @@ class Geos_Stepper(Stepper):
     """
     Driver for the Arduino Stepper. Requires motor_control_serial_piec.ino from the motor_control_serial_piec directory.
     """
+    AUTODETECT_ID = "Not Supported on Geo's Stepper"
     num_steps = (0, 600) #typical step sizes (arduino code as limit of -300 to 300)
     direction = [0,1] #0 is CW 1 is CCW
 
@@ -37,19 +38,19 @@ class Geos_Stepper(Stepper):
             print("Timeout error occurred while waiting for the Arduino.")
             return "Not connected"
 
-    def step(self, num_steps, direction):
+    def step(self, steps, direction):
         """
         Steps the stepper motor by sending a write string (via query) where the format is "{steps},{direction}"
         where direction = 0 is for CW and 1 is for CCW
         returns the current position after the stepper stops moving
         args:
             self (pyvisa.resources.asrl.not sure): Arduino
-            num_steps (str/int): Desired step size, must be an integer value
+            steps (str/int): Desired step size, must be an integer value
             direction (str/int): [0,1] are the ONLY allowed values, 0 for CW 1 for CCW (not could be backwards)
         returns:
             current_position (int) The current position as read from the arduino
         """
-        answer = self.instrument.query("{},{}".format(num_steps, direction)) #specially formatted string for arduino code to work. See arduino code under src\piec\drivers\Arduino\motor_control_serial_piec\motor_control_serial_piec.ino for more information
+        answer = self.instrument.query("{},{}".format(steps, direction)) #specially formatted string for arduino code to work. See arduino code under src\piec\drivers\Arduino\motor_control_serial_piec\motor_control_serial_piec.ino for more information
         number = int(re.search(r'-?\d+', answer).group())
                 
         if "Complete" in answer:
@@ -78,3 +79,15 @@ class Geos_Stepper(Stepper):
             return position
         else:
             print("Position unknown")
+
+    def wait(self):
+        """
+        Blocks until motion is complete by reading the stepper position.
+        """
+        return self.read_position()
+
+    def clear(self):
+        """
+        Clears status and resets the stepper position to zero to restore a safe state.
+        """
+        self.set_zero()

@@ -27,6 +27,7 @@ class Awg(Instrument):
     trigger_mode = ["EDGE", "LEV"] #[EDGE (edge), LEV (level)]
     slew_rate = None #useful information about the instrument, but need not be implemented
     arb_data_range = (None, None) #range of data points for arbitrary waveform generation
+    arb_name = ["VOLATILE"] # Default arbitrary waveform name, to be used if an instrument doesn't support named waveforms.
 
     # --- Optional feature class attributes ---
     pulse_delay = pulse_width #typically the same
@@ -194,6 +195,9 @@ class Awg(Instrument):
     def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None):
         """
         Configures the waveform to be generated on the selected channel. Calls the set_waveform, set_frequency, set_amplitude, set_offset, set_load_impedance, and set_polarity functions to configure the waveform
+        For USER waveforms, select the stored waveform separately with
+        set_arb_waveform before calling this method. Upload waveform data with
+        create_arb_waveform first when needed.
         args:
             channel (int): The channel to configure the waveform on
             waveform (str): The waveform to be generated
@@ -271,17 +275,20 @@ class Awg(Instrument):
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
         """
 
-    def configure_pulse(self, channel, pulse_width=None, rise_time=None, fall_time=None, duty_cycle=None):
+    def configure_pulse(self, channel, pulse_width=None, pulse_delay=None, rise_time=None, fall_time=None, duty_cycle=None):
         """
         Configures the pulse waveform on the selected channel. Calls the set_pulse_width, set_pulse_delay, set_pulse_rise_time, set_pulse_duty_cycle and set_pulse_fall_time functions to configure the pulse waveform
         args:
             channel (int): The channel to configure the pulse waveform on
             pulse_width (float): The pulse width of the waveform in seconds
+            pulse_delay (float): Optional pulse delay in seconds; skipped when unsupported
             rise_time (float): The rise time of the waveform in seconds
             fall_time (float): The fall time of the waveform in seconds
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
         """
         self.set_waveform(channel, "PULS") # Ensure waveform is pulse
+        if pulse_delay is not None:
+            self.set_pulse_delay(channel, pulse_delay)
         if pulse_width is not None:
             self.set_pulse_width(channel, pulse_width)
         if rise_time is not None:
@@ -306,6 +313,9 @@ class Awg(Instrument):
     def set_arb_waveform(self, channel, name):
         """
         Sets the arbitrary waveform to be generated on the selected channel
+        Model drivers translate the common VOLATILE name to a device-specific
+        slot when necessary. Devices without named storage may ignore name.
+        Selecting a name does not create or upload waveform data.
         args:
             channel (int): The channel to set the arbitrary waveform on
             name (str): The name of the arbitrary waveform to be set

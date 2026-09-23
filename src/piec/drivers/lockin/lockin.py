@@ -9,14 +9,14 @@ class Lockin(Instrument):
     channel = [1] 
     reference_source = None
     frequency = (None, None) 
-    harmonic = None
+    harmonic = (None, None)
     phase = (None, None) 
-    input_configuration = None
+    input_configuration = ["A", "A-B"] #single ended, differential
     input_coupling = ["AC", "DC"]
-    sensitivity = None
-    notch_filter = (None, None)
-    time_constant = (None, None)
-    filter_slope = (None, None)
+    sensitivity = None #may depend on model instrument, SR830 is a dict
+    notch_filter = []
+    time_constant = []
+    filter_slope = []
 
     """
     All lockins must be able to lockin to a signal and measure it

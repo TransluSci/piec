@@ -14,17 +14,17 @@ class VirtualStepper(VirtualInstrument, Stepper):
     def idn(self):
         return "Virtual Stepper"
 
-    def step(self, num_steps, direction):
+    def step(self, steps, direction):
         # Update internal position
         if direction == 1: # CW
-             self.current_pos += num_steps
+             self.current_pos += steps
         else:
-             self.current_pos -= num_steps
+             self.current_pos -= steps
         
         # Update shared magnetic sample angle
         if hasattr(self, 'mag_sample') and self.mag_sample:
             # Convert steps to degrees (assuming 200 steps/rev)
-            delta_angle = (num_steps * 360.0 / self.steps_per_revolution)
+            delta_angle = (steps * 360.0 / self.steps_per_revolution)
             if direction == 1: # CW
                 self.mag_sample.current_angle += delta_angle
             else: # CCW

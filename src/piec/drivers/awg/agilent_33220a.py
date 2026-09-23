@@ -179,7 +179,21 @@ class Agilent33220A(Scpi, Awg):
 
     def configure_waveform(self, channel=1, waveform=None, frequency=None, amplitude=None,
                            offset=None, load_impedance=None, polarity=None):
-        """Configures the waveform to be generated on the selected channel."""
+        """Configure the waveform settings.
+
+        Args:
+            channel (int): Output channel; defaults to 1.
+            waveform (str, optional): Waveform type, including USER.
+            frequency (float, optional): Waveform frequency in Hz.
+            amplitude (float, optional): Waveform amplitude in volts.
+            offset (float, optional): DC offset in volts.
+            load_impedance (float, optional): Output load impedance in ohms.
+            polarity (str, optional): Output polarity, NORM or INV.
+
+        None settings are left unchanged. For USER waveforms, select the stored
+        waveform separately with set_arb_waveform before calling this method.
+        Upload data with create_arb_waveform first when needed.
+        """
         if waveform is not None:
             self.set_waveform(channel, waveform)
         if frequency is not None:
@@ -207,10 +221,8 @@ class Agilent33220A(Scpi, Awg):
             raise ValueError("symmetry must be provided")
         self.instrument.write(f"FUNC:RAMP:SYMM {symmetry}")
 
-    def set_pulse_width(self, channel=1, pulse_width=None, width=None):
+    def set_pulse_width(self, channel=1, pulse_width=None):
         """Set the pulse width in seconds (FUNCtion:PULSe:WIDTh <seconds>)."""
-        if pulse_width is None:
-            pulse_width = width
         if pulse_width is None:
             raise ValueError("pulse_width must be provided")
         self.instrument.write(f"FUNC:PULS:WIDT {pulse_width}")
@@ -242,10 +254,12 @@ class Agilent33220A(Scpi, Awg):
             raise ValueError("duty_cycle must be provided")
         self.instrument.write(f"FUNC:PULS:DCYC {duty_cycle}")
 
-    def configure_pulse(self, channel=1, pulse_width=None,
+    def configure_pulse(self, channel=1, pulse_width=None, pulse_delay=None,
                         rise_time=None, fall_time=None, duty_cycle=None):
-        """Configures the pulse waveform on the selected channel."""
+        """Configure pulse settings; unsupported pulse_delay requests are skipped."""
         self.set_waveform(channel, "PULS")
+        if pulse_delay is not None:
+            self.set_pulse_delay(channel, pulse_delay)
         if pulse_width is not None:
             self.set_pulse_width(channel, pulse_width)
         if rise_time is not None:

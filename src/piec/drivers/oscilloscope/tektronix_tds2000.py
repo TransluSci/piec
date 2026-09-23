@@ -161,7 +161,9 @@ class TektronixTDS2000(Scpi, Oscilloscope):
         self.instrument.write("ACQuire:STATE ON")
 
     def set_acquisition(self):
-        pass # TDS2000 generally set up mode and then query curve
+        """Prepares and starts single-sequence acquisition."""
+        self.instrument.write("ACQuire:STOPAfter SEQuence")
+        self.instrument.write("ACQuire:STATE ON")
 
     def set_acquisition_channel(self, channel):
         self.instrument.write(f"DATa:SOUrce CH{channel}")
@@ -177,8 +179,15 @@ class TektronixTDS2000(Scpi, Oscilloscope):
         self.instrument.write(f"ACQuire:MODe {mapped}")
 
     def set_acquisition_points(self, acquisition_points):
-        # Fixed 2500 usually
-        pass
+        """
+        Sets the number of points to transfer for CURVe? queries (1 to 2500).
+        TDS2000 record length is fixed at 2500; transfer window is configured
+        via DATa:STARt and DATa:STOP.
+        """
+        pts = min(max(int(acquisition_points), 1), 2500)
+        self.instrument.write("DATa:STARt 1")
+        self.instrument.write(f"DATa:STOP {pts}")
+        self._acquisition_points = pts
 
     def configure_acquisition(self, channel=None, acquisition_mode=None, acquisition_points=None):
         if channel:

@@ -140,22 +140,17 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         if x_position is not None:
             self.set_horizontal_position(x_position=x_position)
 
-    def wait(self, timeout=0):
+    def wait(self):
         """
         Waits until the current acquisition has completed.
 
         Uses LeCroy's WAIT command instead of *WAI, which specifically blocks
-        until acquisition is finished. timeout=0 waits indefinitely (default).
+        until acquisition is finished.
         """
-        original_timeout = self.instrument.timeout
-        if timeout > 0:
-            self.instrument.timeout = int(timeout * 1000) + 1000
         try:
-            self.instrument.write(f"WAIT {timeout}")
+            self.instrument.write("WAIT")
         except Exception as e:
-            print(f"Warning: WAIT timed out after {timeout}s — {e}")
-        finally:
-            self.instrument.timeout = original_timeout
+            print(f"Warning: WAIT failed — {e}")
 
     def _to_lecroy_source(self, source):
         """
@@ -278,7 +273,26 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         self._current_acquisition_channel = channel
 
     def set_acquisition_mode(self, acquisition_mode=None):
-        pass # Not broadly used in basic LeCroy readouts
+        """
+        Sets the acquisition/sampling mode on the LeCroy oscilloscope.
+        Supported modes: RealTime (normal single-shot), Sequence, RIS.
+        """
+        if acquisition_mode is None:
+            return
+        mode = str(acquisition_mode).upper()
+        mapping = {
+            "NORM": "RealTime",
+            "NORMAL": "RealTime",
+            "REAL_TIME": "RealTime",
+            "REALTIME": "RealTime",
+            "SINGLE_SHOT": "RealTime",
+            "RIS": "RIS",
+            "SEQUENCE": "Sequence",
+            "SEQ": "Sequence",
+        }
+        vbs_mode = mapping.get(mode, "RealTime")
+        self.instrument.write(f"VBS 'app.Acquisition.Horizontal.SampleMode = \"{vbs_mode}\"'")
+        self._acquisition_mode = vbs_mode
 
     def set_acquisition_points(self, acquisition_points=None):
         if acquisition_points is not None:
@@ -295,20 +309,22 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         if acquisition_points is not None:
             self.set_acquisition_points(acquisition_points=acquisition_points)
 
-    def quick_read(self, channel=1):
+    def quick_read(self):
         """
         Quick read function that returns the default data in a numpy array.
         """
+        channel = getattr(self, "_current_acquisition_channel", None) or 1
         self.set_acquisition()
         self.instrument.write("COMM_HEADER OFF")
         self.instrument.write("COMM_FORMAT DEF9,WORD,BIN")
         raw_data = self.instrument.query_binary_values(f"C{channel}:WF? DAT1", datatype='h', is_big_endian=False)
         return np.array(raw_data)
 
-    def get_data(self, channel=1):
+    def get_data(self):
         """
         Returns the data in a Pandas Dataframe.
         """
+        channel = getattr(self, "_current_acquisition_channel", None) or 1
         self.set_acquisition()
         
         # LeCroy waveform descriptors contain necessary scaling factors

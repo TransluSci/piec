@@ -32,7 +32,7 @@ Category Overview
    * - :ref:`Dmm <dmm>`
      - 3 supported models
    * - :ref:`Lockin <lockin>`
-     - 2 supported models
+     - 1 supported model
    * - :ref:`Oscilloscope <oscilloscope>`
      - 6 supported models
    * - :ref:`Pulser <pulser>`
@@ -177,10 +177,6 @@ Lockin
         - Requirements
       * - SRS 830 Lock-In Amplifier
         - :py:class:`~piec.drivers.lockin.srs830.SRS830`
-        - SCPI
-        - NI-VISA
-      * - Stanford Research Systems SR830 Lock-In Amplifier
-        - :py:class:`~piec.drivers.lockin.srs830_old.SRS830`
         - SCPI
         - NI-VISA
 

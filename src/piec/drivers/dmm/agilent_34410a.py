@@ -36,38 +36,29 @@ class Agilent34410A(Scpi, DMM):
         super().reset()
         self._scpi_sense_func = "VOLT:DC"
 
-    def set_sense_function(self, sense_func, coupling="DC", sense_mode="2W"):
+    def set_sense_function(self, sense_func):
         """
         Sets the measurement function.
         Mappings:
-        VOLT + DC -> VOLT:DC
-        VOLT + AC -> VOLT:AC
-        CURR + DC -> CURR:DC
-        CURR + AC -> CURR:AC
-        RES + 2W -> RES
-        RES + 4W -> FRES
+        VOLT -> VOLT:DC
+        CURR -> CURR:DC
+        RES  -> RES
         FREQ -> FREQ
-        PER -> PER
-        CAP -> CAP
+        PER  -> PER
+        CAP  -> CAP
         DIOD -> DIOD
+        Or any valid SCPI function string directly (e.g. 'VOLT:AC', 'FRES').
         """
-        cmd = ""
         sense_func = sense_func.upper()
-        coupling = (coupling or "DC").upper()
-        sense_mode = (sense_mode or "2W").upper()
-        
         if sense_func == "VOLT":
-            cmd = f"VOLT:{coupling}"
+            cmd = "VOLT:DC"
         elif sense_func == "CURR":
-             cmd = f"CURR:{coupling}"
+            cmd = "CURR:DC"
         elif sense_func == "RES":
-            if sense_mode == "4W":
-                cmd = "FRES"
-            else:
-                cmd = "RES"
+            cmd = "RES"
         else:
-            cmd = sense_func # FREQ, PER, etc.
-            
+            cmd = sense_func
+
         self.instrument.write(f"CONF:{cmd}")
         self._scpi_sense_func = cmd # Store specific SCPI func for other methods
 
