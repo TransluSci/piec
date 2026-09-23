@@ -6,6 +6,15 @@ This module provides tools for simulating various materials and their responses.
 
 `sample.py` defines `Sample`, the common base for all simulated samples. `Material` and `MagneticSample` inherit from it; `Resistor`, `Dielectric`, and `Ferroelectric` inherit through `Material`.
 
+Every sample accepts a `name` and `parameter_dict`, initialized by `Sample`.
+Existing default names are preserved, including `None` for an unnamed
+ferroelectric sample. Each sample without a supplied dictionary gets its own
+empty dictionary. Resistor, dielectric, and magnetic models fill missing keys
+with their scalar constructor arguments; supplied dictionary values take
+precedence. These models initialize their existing mutable attributes from
+the dictionary. Ferroelectric models read their nested parameters directly
+from the supplied dictionary, as before.
+
 The core logic is implemented in `fe_material.py` and includes:
 
 *   **`Material`**: Base class for all material simulations.
@@ -28,7 +37,7 @@ import numpy as np
 from piec.simulation.fe_material import Resistor
 
 # Create a resistor
-r = Resistor(resistance=2000)
+r = Resistor(parameter_dict={'resistance': 2000}, name='test_resistor')
 
 # Define a waveform
 t = np.linspace(0, 1e-3, 1000)
@@ -43,7 +52,9 @@ v_response, t_out = r.current_response(i_response, t)
 
 ### Example: Simulating a Ferroelectric Capacitor
 
-The `Ferroelectric` class requires a material property dictionary for initialization.
+The `Ferroelectric` class requires a parameter dictionary for initialization.
+The keyword and attribute previously called `material_dict` are now
+`parameter_dict`; the nested dictionary structure is unchanged.
 
 ```python
 from piec.simulation.fe_material import Ferroelectric
@@ -60,7 +71,7 @@ material_props = {
     'electrode': {'screening_lambda': 5e-11, 'permittivity_e': 8.0, 'area': 4e-10}
 }
 
-fe_sample = Ferroelectric(material_dict=material_props)
+fe_sample = Ferroelectric(parameter_dict=material_props)
 fe_sample.apply_waveform(v, t)
 output_voltage, time = fe_sample.get_voltage_response()
 ```
