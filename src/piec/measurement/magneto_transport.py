@@ -3,9 +3,10 @@ import time
 import pandas as pd
 import matplotlib.pyplot as plt
 from piec.analysis.utilities import *
+from piec.measurement.experiment import Experiment
 
 
-class MagnetoTransport:
+class MagnetoTransport(Experiment):
     """
     Parent class for managing all magneto transport measurements
 

@@ -1,6 +1,7 @@
 import numpy as np
+from piec.simulation.sample import Sample
 
-class MagneticSample:
+class MagneticSample(Sample):
     """
     Simulation model for a magnetic sample, used for generating synthetic magneto-transport data.
     """

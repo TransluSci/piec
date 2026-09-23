@@ -4,6 +4,8 @@ This module provides tools for simulating various materials and their responses.
 
 ## Contents
 
+`sample.py` defines `Sample`, the common base for all simulated samples. `Material` and `MagneticSample` inherit from it; `Resistor`, `Dielectric`, and `Ferroelectric` inherit through `Material`.
+
 The core logic is implemented in `fe_material.py` and includes:
 
 *   **`Material`**: Base class for all material simulations.

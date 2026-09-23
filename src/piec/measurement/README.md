@@ -4,6 +4,7 @@ This directory contains classes for managing discrete waveform generation, measu
 
 ## Directory Structure
 
+- **`experiment.py`**: Contains `Experiment`, the common base for all measurement types. `DiscreteWaveform`, `IVSweep`, and `MagnetoTransport` inherit from it; their specific implementations inherit through those classes.
 - **`discrete_waveform.py`**: Contains the `DiscreteWaveform` base class and specific implementations:
     -   `HysteresisLoop`: For ferroelectric hysteresis measurements using triangular waveforms.
     -   `ThreePulsePund`: For PUND (Positive-Up-Negative-Down) switching measurements.
