@@ -14,8 +14,33 @@ import pytest
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.drivers.virtual_instrument import VirtualInstrument
-from piec.measurement.discrete_waveform import HysteresisLoop
+from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
+
+
+def test_pund_full_pipeline_preserves_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(VirtualInstrument, '_shared_fe_sample', None)
+    monkeypatch.setattr(VirtualInstrument, '_shared_mag_sample', None)
+    experiment = ThreePulsePund(
+        awg=VirtualAwg(), osc=VirtualScope(),
+        reset_amp=2.0, p_u_amp=1.5,
+        show_plots=False, save_plots=False,
+        save_dir=str(tmp_path),
+    )
+    experiment.run_experiment()
+
+    metadata, data = standard_csv_to_metadata_and_data(experiment.filename)
+    assert metadata.loc[0, 'mtype'] == '3pulsepund'
+    assert metadata.loc[0, 'reset_amp'] == 2.0
+    assert metadata.loc[0, 'p_u_amp'] == 1.5
+    assert metadata.loc[0, 'length'] == pytest.approx(experiment.length)
+    assert metadata.loc[0, 'awg'] == experiment.awg.idn()
+    assert metadata.loc[0, 'osc'] == experiment.osc.idn()
+    assert bool(metadata.loc[0, 'processed']) is True
+    assert not data.empty
+    assert {'current (A)', 'polarization (uC/cm^2)', 'applied voltage (V)'} <= set(data)
+    assert len(experiment.history) == 1
+    assert experiment.history[0].loc[0, 'reset_amp'] == 2.0
 
 
 class TestVirtualDriverInit:

@@ -27,6 +27,8 @@ class MagnetoTransport(Experiment):
         :metadata (pd.DataFrame): Measurement parameters and metadata
     """
 
+    _metadata_instruments = ('dmm', 'calibrator', 'arduino', 'lockin')
+
     def __init__(self, dmm, calibrator, arduino, lockin,  field, save_dir=r'\\scratch', voltage_callibration=10000,
                  live_plot=True, plot_config=None):
         """Initialize core waveform measurement system.
@@ -48,7 +50,6 @@ class MagnetoTransport(Experiment):
         self.arduino = arduino
         self.lockin = lockin
         self.field = field
-        self.save_dir = save_dir
         self.filename = None
         self.voltage_callibration = voltage_callibration #1V == 10000 Oe, but depends on hardware settings
         self.data = None
@@ -59,6 +60,7 @@ class MagnetoTransport(Experiment):
         self._fig = None
         self._ax = None
         self._in_jupyter = self._is_jupyter()
+        super().__init__(save_dir=save_dir)
         #self._initialize() #checks communication
 
     def initialize(self):
@@ -234,6 +236,7 @@ class MagnetoTransport(Experiment):
         self.shut_off() #Sets the field to zero
         self.analyze()
         self.plot_results()
+        self._update_history()
 
 ### SPECIFIC WAVEFORM MEASURMENT CLASSES ###
 class AMR(MagnetoTransport):
@@ -272,8 +275,6 @@ class AMR(MagnetoTransport):
             :voltage_callibration (float): Voltage calibration factor for field conversion (default: 10000)
         """
 
-        super().__init__(dmm, calibrator, arduino, lockin, field, save_dir, voltage_callibration,
-                         live_plot=live_plot, plot_config=plot_config or {'x': 'angle', 'y': 'X'})
         self.angle_step = angle_step
         self.total_angle = total_angle
         self.amplitude = amplitude
@@ -281,17 +282,10 @@ class AMR(MagnetoTransport):
         self.measure_time = measure_time
         self.sensitivity = sensitivity
         self.notes = str(amplitude).replace('.', 'p')+'V_'+str(int(frequency))+'Hz' #i got nothing
-        self.metadata = pd.DataFrame(locals(), index=[0])
-        del self.metadata['self']
-        self.metadata['mtype'] = self.mtype
-        self.metadata['lockin'] = self.lockin.idn()
-        self.metadata['dmm'] = self.dmm.idn()
-        #self.metadata['calibrator'] = self.calibrator.idn()
-        self.metadata['arduino'] = self.arduino.idn()
-        self.metadata['timestamp'] = time.time()
-        self.metadata['processed'] = False
-        self.filename = create_measurement_filename(self.save_dir, self.mtype, self.notes) #create filename now so its blank
         self.angle = 0 #initial angle
+        super().__init__(dmm, calibrator, arduino, lockin, field, save_dir, voltage_callibration,
+                         live_plot=live_plot, plot_config=plot_config or {'x': 'angle', 'y': 'X'})
+        self.filename = create_measurement_filename(self.save_dir, self.mtype, self.notes) #create filename now so its blank
 
     def analyze(self):
         """
@@ -396,6 +390,7 @@ class AMR(MagnetoTransport):
         Requires successful capture_data_point from lockin and stores in self.data attribute. 
         """
         if self.data is not None and self.filename is not None:
+            self._update_metadata()
             metadata_and_data_to_csv(self.metadata, self.data, self.filename)
             print(f"Data point saved to {self.filename}")
         else:

@@ -5,7 +5,8 @@ class MagneticSample(Sample):
     """
     Simulation model for a magnetic sample, used for generating synthetic magneto-transport data.
     """
-    def __init__(self, r_base=100.0, amr_ratio=0.02, phi_offset=0.0):
+    def __init__(self, r_base=100.0, amr_ratio=0.02, phi_offset=0.0, *,
+                 parameter_dict=None, name="virtual_magnetic_sample"):
         """
         Initialize the magnetic sample.
         
@@ -13,13 +14,15 @@ class MagneticSample(Sample):
             r_base (float): Base resistance in Ohms.
             amr_ratio (float): (R_par - R_perp) / R_perp.
             phi_offset (float): Angle offset in degrees.
+            parameter_dict (dict, optional): Overrides the scalar model parameters.
+            name (str, optional): Sample name.
         """
-        self.r_base = r_base
-        self.amr_ratio = amr_ratio
-        self.phi_offset = phi_offset
+        super().__init__(parameter_dict=parameter_dict, name=name)
+        self.r_base = self.parameter_dict.setdefault('r_base', r_base)
+        self.amr_ratio = self.parameter_dict.setdefault('amr_ratio', amr_ratio)
+        self.phi_offset = self.parameter_dict.setdefault('phi_offset', phi_offset)
         self.current_angle = 0.0 # degrees
         self.current_field = 0.0 # Oe
-        self.name = "virtual_magnetic_sample"
 
     def get_resistance(self, angle=None, field=None):
         """

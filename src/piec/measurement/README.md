@@ -9,12 +9,16 @@ This directory contains classes for managing discrete waveform generation, measu
     -   `HysteresisLoop`: For ferroelectric hysteresis measurements using triangular waveforms.
     -   `ThreePulsePund`: For PUND (Positive-Up-Negative-Down) switching measurements.
 - **`magneto_transport.py`**: Contains `MagnetoTransport` and `AMR` (Anisotropic Magnetoresistance) classes for controlling magnets, stepper motors, and lock-in amplifiers.
-- **`amr.py`**: (Currently empty/placeholder).
+- **`iv_sweep.py`**: Contains `IVSweep` for sourcemeter voltage sweeps.
+- **`amr.py`**: Re-exports `AMR` and magneto-transport helpers.
 
 `Experiment` provides save-directory initialization, metadata collection, and
-independent history snapshots. `DiscreteWaveform` initializes this shared state
-after setting its waveform parameters, and declares the instrument IDs and
-waveform length to include in metadata.
+independent history snapshots. `DiscreteWaveform`, `IVSweep`, and
+`MagnetoTransport` initialize this shared state after setting their measurement
+parameters and declare their instrument attributes in `_metadata_instruments`.
+The collector stores instrument IDs and current public parameters, including
+dictionary-valued settings such as plot configuration. Each measurement refreshes
+metadata before saving and records a history snapshot at the end of its run.
 
 ## Usage
 

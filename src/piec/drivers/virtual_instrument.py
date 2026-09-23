@@ -163,8 +163,9 @@ class VirtualInstrument(Instrument):
                     'area': 1.0e-10               # m²
                 }
             }
-            VirtualInstrument._shared_fe_sample = Ferroelectric(material_dict=default_fe_material)
-            VirtualInstrument._shared_fe_sample.name = "virtual_fe_sample"
+            VirtualInstrument._shared_fe_sample = Ferroelectric(
+                parameter_dict=default_fe_material, name="virtual_fe_sample"
+            )
         
         if VirtualInstrument._shared_mag_sample is None:
             VirtualInstrument._shared_mag_sample = MagneticSample()

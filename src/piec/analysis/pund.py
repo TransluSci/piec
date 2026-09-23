@@ -74,7 +74,8 @@ def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift
     array_dict = {'P^':ph, 'P*':ps, 'P^r':phr, 'P*r':psr, 'dP':dp} # this naming convention mimics the one set by Radiant
 
     for key in array_dict.keys():
-        array_dict[key] -= array_dict[key][0] # zero polarizations
+        # Pandas may expose read-only arrays; keep the captured polarization intact.
+        array_dict[key] = array_dict[key] - array_dict[key][0] # zero polarizations
         repeat_values = np.zeros(len(processed_df)-len(array_dict[key]))+array_dict[key][-1]
         array_dict[key] = np.concatenate([array_dict[key], repeat_values]) # add repeat values to the end of arrays so they can be added to the dataframe
         processed_df[key+' (uC/cm^2)'] = array_dict[key] # add analysys arrays to dataframe

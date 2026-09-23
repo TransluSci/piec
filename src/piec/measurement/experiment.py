@@ -33,7 +33,7 @@ class Experiment:
             and key not in ('data', 'metadata', 'history')
             and key not in self._metadata_instruments
         }
-        self.metadata = pd.DataFrame(params, index=[0])
+        self.metadata = pd.DataFrame([params])
         self.metadata['mtype'] = self.mtype
         for name in self._metadata_instruments:
             self.metadata[name] = getattr(self, name).idn()

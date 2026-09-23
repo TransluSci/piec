@@ -7,6 +7,7 @@ from piec.drivers.scpi import Scpi
 from piec.drivers.sourcemeter.sourcemeter import Sourcemeter
 from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
 from piec.drivers.virtual_instrument import VirtualInstrument
+from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.iv_sweep import IVSweep
 from piec.simulation.fe_material import Resistor
 
@@ -83,6 +84,24 @@ def test_iv_sweep_uses_channel_aware_driver_interface(
     assert experiment.filename is not None
     assert Path(experiment.filename).exists()
     assert resistive_sourcemeter.state["output_on"] is False
+
+    metadata, saved_data = standard_csv_to_metadata_and_data(experiment.filename)
+    assert metadata.loc[0, 'mtype'] == 'iv_sweep'
+    assert metadata.loc[0, 'sourcemeter'] == resistive_sourcemeter.idn()
+    assert metadata.loc[0, 'num_steps'] == 3
+    assert metadata.loc[0, 'save_dir'] == str(tmp_path)
+    assert len(saved_data) == 3
+    assert len(experiment.history) == 1
+    assert not {'data', 'metadata', 'history'} & set(metadata)
+
+    experiment.v_stop = 2.0
+    experiment.run_experiment()
+    metadata, saved_data = standard_csv_to_metadata_and_data(experiment.filename)
+    assert metadata.loc[0, 'v_stop'] == 2.0
+    assert saved_data['voltage (V)'].tolist() == pytest.approx([0, 1, 2])
+    assert len(experiment.history) == 2
+    assert experiment.history[0].loc[0, 'v_stop'] == 1.0
+    assert experiment.history[1].loc[0, 'v_stop'] == 2.0
 
 
 @pytest.mark.parametrize(
