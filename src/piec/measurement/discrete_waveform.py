@@ -26,7 +26,8 @@ class DiscreteWaveform(Experiment):
         :data (pd.DataFrame): Captured waveform data (time and voltage)
         :metadata (pd.DataFrame): Measurement parameters and metadata
     """
-    mtype = None
+    _metadata_instruments = ('awg', 'osc')
+    _metadata_attributes = ('length',)
     length = None
     filename = None
     data = None
@@ -46,44 +47,7 @@ class DiscreteWaveform(Experiment):
         self.awg = awg
         self.osc = osc
         self.voltage_channel = voltage_channel
-        self.save_dir = save_dir
-        self.history = []
-        self._update_metadata()
-
-    def _update_metadata(self):
-        """
-        Update metadata DataFrame with current measurement parameters.
-        
-        Captures instrument IDs, measurement type, and timestamp.
-        Should be called after any parameter changes or before saving data.
-        """
-        params = {key: value for key, value in self.__dict__.items() 
-                if not key.startswith('_') and 
-                not callable(value) and
-                key not in ['awg', 'osc', 'data', 'metadata', 'history']}
-        
-        self.metadata = pd.DataFrame(params, index=[0])
-
-        # Other info
-        self.metadata['mtype'] = self.mtype
-        self.metadata['awg'] = self.awg.idn()
-        self.metadata['osc'] = self.osc.idn()
-        if hasattr(self, 'length'):
-            self.metadata['length'] = self.length
-        self.metadata['timestamp'] = time.time()
-        self.metadata['processed'] = False
-
-    def _update_notes(self):
-        """
-        Does nothing, overwrite in child class if you want to change the name of the saved file with each parameter change.
-        """
-        pass
-
-    def _update_history(self):
-        """
-        Does nothing, overwrite in child class if you want to change the name of the saved file with each parameter change.
-        """
-        self.history.append(self.metadata.copy())
+        super().__init__(save_dir=save_dir)
 
     def initialize_awg(self):
         """
