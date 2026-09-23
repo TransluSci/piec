@@ -10,11 +10,12 @@ Classes:
 
 import numpy as np
 from scipy.optimize import fsolve
+from piec.simulation.sample import Sample
 
 EPSILON_0 = 8.854e-12  # F/m
 
 
-class Material:
+class Material(Sample):
     def __init__(self):
         self.name = "pass_through"
 

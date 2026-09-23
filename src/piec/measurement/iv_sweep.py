@@ -2,9 +2,10 @@ import numpy as np
 import time
 import pandas as pd
 from piec.analysis.utilities import metadata_and_data_to_csv, create_measurement_filename
+from piec.measurement.experiment import Experiment
 
 
-class IVSweep:
+class IVSweep(Experiment):
     """
     IV sweep measurement using a sourcemeter.
     Attributes:

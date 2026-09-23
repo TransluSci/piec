@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 from piec.analysis.utilities import *
 from piec.analysis.pund import *
 from piec.analysis.hysteresis import *
+from piec.measurement.experiment import Experiment
 
-class DiscreteWaveform:
+class DiscreteWaveform(Experiment):
     """
     Parent class for managing discrete waveform generation and measurement experiments.
 
