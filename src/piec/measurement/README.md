@@ -11,6 +11,11 @@ This directory contains classes for managing discrete waveform generation, measu
 - **`magneto_transport.py`**: Contains `MagnetoTransport` and `AMR` (Anisotropic Magnetoresistance) classes for controlling magnets, stepper motors, and lock-in amplifiers.
 - **`amr.py`**: (Currently empty/placeholder).
 
+`Experiment` provides save-directory initialization, metadata collection, and
+independent history snapshots. `DiscreteWaveform` initializes this shared state
+after setting its waveform parameters, and declares the instrument IDs and
+waveform length to include in metadata.
+
 ## Usage
 
 ### Hysteresis Measurement
