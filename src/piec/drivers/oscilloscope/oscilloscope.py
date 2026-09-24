@@ -8,10 +8,12 @@ class Oscilloscope(Instrument):
     """
     All oscilloscopes must be able to read some data and give it to the computer
 
-    Reset must restore AUTO trigger sweep so acquisition is free-running and fresh
-    waveforms replace previously displayed data.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
+
+    After reset(), trigger sweep must be in AUTO mode and acquisition must be
+    running so the scope acquires fresh waveforms. Model drivers must override
+    reset() and send any additional commands needed if the native reset does
+    not achieve this, then call self._initialize_state().
     """
     # Initializer / Instance attributes
     channel = [1]

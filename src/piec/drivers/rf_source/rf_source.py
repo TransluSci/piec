@@ -12,9 +12,7 @@ class RFSource(Instrument):
     """
     All rf sources must be able to generate an RF signal
 
-    Reset must leave the output off and restore default parameters.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Class attributes for parameter restrictions
     channel = [1]

@@ -8,10 +8,7 @@ class Lockin(Instrument):
     """
     All lockins must be able to lockin to a signal and measure it
 
-    Reset must restore factory filter settings and safe internal oscillator
-    defaults, typically low amplitude and low frequency.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Initializer / Instance attributes
     channel = [1] 

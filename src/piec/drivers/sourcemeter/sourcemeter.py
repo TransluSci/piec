@@ -9,9 +9,7 @@ class Sourcemeter(Instrument):
     """
     Here we define the MINIMUM required methods for a sourcemeter.
 
-    Reset must leave the output off and restore default parameters.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Class attributes defining the "contract" for any implementing class.
     # All sourcemeters must support these basic functions and modes.

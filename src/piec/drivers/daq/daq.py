@@ -12,9 +12,7 @@ class Daq(Instrument):
     """
     All daqs must be able to either acquire or output signals.
 
-    Reset must restore the device to its default state.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Initializer / Instance attributes
 

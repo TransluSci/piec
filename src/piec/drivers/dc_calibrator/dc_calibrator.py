@@ -8,10 +8,7 @@ class DCCalibrator(Instrument):
     """
     Base class for DC Calibrators.
 
-    Reset must leave the output disabled in a safe state, for example with the
-    crowbar or short circuit engaged.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Class attributes for parameter restrictions
     channel = [1]

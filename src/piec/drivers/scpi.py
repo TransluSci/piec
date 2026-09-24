@@ -39,16 +39,11 @@ class Scpi(Instrument):
 
     def reset(self):
         """
-        Resets the instrument to its default state via ``*RST`` with the
-        trigger sweep left in **AUTO** mode.
+        Send ``*RST`` and clear the internal state tracker.
 
-        After reset the instrument should be free-running and acquiring fresh
-        data so that any previously displayed waveforms are cleared.  Also
-        re-initialises the internal state tracker.
-
-        Subclasses should override this method if the instrument's ``*RST``
-        behavior differs (e.g., LeCroy scopes stop the trigger on ``*RST``
-        and need an explicit command to restore AUTO sweep).
+        Model drivers must override this when ``*RST`` alone does not satisfy
+        :meth:`Instrument.reset`, including disabling controllable outputs.
+        Overrides must also call ``self._initialize_state()``.
         """
         #SCPI Command
         self.instrument.write("*RST")

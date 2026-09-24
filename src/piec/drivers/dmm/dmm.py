@@ -14,10 +14,7 @@ class DMM(Instrument):
         This class defines the minimum required methods and attributes for a DMM driver.
         It focuses solely on measurement functions.
 
-    Reset must restore a safe, idle measurement state, typically DC volts with
-    autorange.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # --- Class Attributes ---    
     channel = [1]

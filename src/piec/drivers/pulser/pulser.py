@@ -8,9 +8,7 @@ class Pulser(Instrument):
     """
     All Pulsers must be able to generate a pulse. Assumes 50Ohm output impedance unless otherwise specified.
 
-    Reset must leave the output off and restore default parameters.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Initializer / Instance attributes
     channel = [1]

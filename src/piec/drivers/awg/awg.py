@@ -7,9 +7,7 @@ class Awg(Instrument):
     """
     All awgs must be able to generate an arbitrary waveform and output it to the selected channel
 
-    Reset must leave all outputs OFF, with no signal being generated.
-    Hardware-specific reset behavior belongs in the protocol or model driver.
-    Other instrument-management methods are inherited from Instrument.
+    Instrument-management methods follow the shared contract in Instrument.
     """
     # Class attributes for parameter restrictions
     channel = [1]
