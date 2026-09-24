@@ -9,10 +9,14 @@ import threading
 import time
 from numbers import Integral, Real
 class Daq(Instrument):
-    # Initializer / Instance attributes
     """
     All daqs must be able to either acquire or output signals.
+
+    Reset must restore the device to its default state.
+    Hardware-specific reset behavior belongs in the protocol or model driver.
+    Other instrument-management methods are inherited from Instrument.
     """
+    # Initializer / Instance attributes
 
     # --- Class Attributes (Capabilities & Limits) ---
     # Child drivers MUST override these with their specific hardware values.
@@ -38,36 +42,9 @@ class Daq(Instrument):
     # would be represented as [0, 1, 2, 3]. Use [] when DIO is not supported.
     dio_channel = []
     dio_direction = ["I", "O"]         # Supported directions: Input, Output
-    # Instrument management methods are supplied by the protocol base (for
-    # example Digilent or Scpi) or by the concrete driver.
-    def idn(self):
-        """Return a device-identification string."""
-
-    def reset(self):
-        """Reset the device to its default state."""
-
-    def clear(self):
-        """Clear the device error/status state."""
-
-    def error(self):
-        """Return the most recent device error/status."""
-
-    def wait(self):
-        """Wait for pending operations to complete."""
-
-    def self_test(self):
-        """Run the device self-test, when supplied by the protocol."""
-
-    def operation_complete(self):
-        """Report whether the current operation is complete."""
 
     def close(self):
         """Release the device and associated resources."""
-
-    def initialize(self):
-        """Initialize the DAQ into a known state using reset and clear."""
-        self.reset()
-        self.clear()
 
     # --- DAQ-Specific Methods ---
 

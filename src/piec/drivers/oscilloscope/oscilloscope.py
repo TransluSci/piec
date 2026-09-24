@@ -5,10 +5,15 @@ A osc (oscilloscope) is defined as an instrument that has the typical features o
 """
 from ..instrument import Instrument, optional
 class Oscilloscope(Instrument):
-    # Initializer / Instance attributes
     """
     All oscilloscopes must be able to read some data and give it to the computer
+
+    Reset must restore AUTO trigger sweep so acquisition is free-running and fresh
+    waveforms replace previously displayed data.
+    Hardware-specific reset behavior belongs in the protocol or model driver.
+    Other instrument-management methods are inherited from Instrument.
     """
+    # Initializer / Instance attributes
     channel = [1]
     vdiv = (None, None)
     y_range = (None, None)
@@ -26,102 +31,6 @@ class Oscilloscope(Instrument):
     trigger_sweep = ["AUTO", "NORM"]
     acquisition_mode = ["NORM"]
     acquisition_points = (None, None)
-
-    # --- Default SCPI Command Skeletons ---
-    # These provide the standard IEEE 488.2 / SCPI-99 command interface.
-    # SCPI-compliant instruments will inherit real implementations from Scpi.
-    # Non-SCPI instruments should override these with their own protocol.
-
-    def idn(self):
-        """
-        Returns the identification string of the instrument.
-
-        For SCPI instruments this sends the ``*IDN?`` query.
-        Non-SCPI drivers should override this to return an equivalent
-        identification string from their native protocol.
-
-        Returns:
-            str: Instrument identification string.
-        """
-
-    def reset(self):
-        """
-        Resets the instrument to its default / factory state with the trigger
-        sweep left in **AUTO** mode.
-
-        After reset the instrument should be free-running and acquiring fresh
-        data so that any previously displayed waveforms are cleared.
-
-        For SCPI instruments this sends the ``*RST`` command and re-initializes
-        the internal state tracker.  Non-SCPI drivers should override this to
-        perform an equivalent reset via their native protocol, ensuring the
-        trigger is set back to AUTO if the native reset does not do so.
-        """
-
-    def clear(self):
-        """
-        Clears the instrument's status registers and error queue.
-
-        For SCPI instruments this sends the ``*CLS`` command.
-        Non-SCPI drivers should override this to perform an equivalent
-        status-clear operation.
-        """
-
-    def error(self):
-        """
-        Queries the instrument's error / event status register.
-
-        For SCPI instruments this sends the ``*ESR?`` query.
-        Non-SCPI drivers should override this to return error information
-        from their native protocol.
-
-        Returns:
-            str: The error status or message from the instrument.
-        """
-
-    def wait(self):
-        """
-        Blocks until all pending instrument operations have completed.
-
-        For SCPI instruments this sends the ``*WAI`` command.
-        Non-SCPI drivers should override this with an equivalent
-        synchronization mechanism.
-        """
-
-    def self_test(self):
-        """
-        Runs the instrument's built-in self-test routine.
-
-        For SCPI instruments this sends the ``*TST?`` query.
-        The call may take tens of seconds; implementations should handle
-        extended timeouts appropriately.
-
-        Returns:
-            str: Self-test result (typically ``'0'`` for pass).
-        """
-
-    def operation_complete(self):
-        """
-        Queries whether the last operation has finished.
-
-        For SCPI instruments this sends the ``*OPC?`` query.
-        Non-SCPI drivers should override this with their native
-        polling/synchronization command.
-
-        Returns:
-            str: ``'1'`` when the operation is complete.
-        """
-
-    def initialize(self):
-        """
-        Convenience method that resets and clears the instrument to bring it
-        to a known good starting state.
-
-        The default implementation simply calls :meth:`reset` followed by
-        :meth:`clear`.  Override if additional initialization steps are needed.
-        """
-        self.reset()
-        self.clear()
 
     # --- Oscilloscope-Specific Methods ---
 
@@ -210,7 +119,6 @@ class Oscilloscope(Instrument):
             x_range (float): The absolute time range in seconds
             x_position (float): The horizontal position in seconds
         """
-        
 
     #Now we can go to triggering
 
