@@ -24,10 +24,10 @@ Category Overview
    * - Category
      - Description
    * - :ref:`Awg <awg>`
-     - 6 supported models
+     - 4 supported models
    * - :ref:`Daq <daq>`
-     - 1 supported model
-   * - :ref:`Dc Callibrator <dc-callibrator>`
+     - 2 supported models
+   * - :ref:`Dc Calibrator <dc-calibrator>`
      - 1 supported model
    * - :ref:`Dmm <dmm>`
      - 3 supported models
@@ -59,7 +59,7 @@ Awg
         - Driver Class
         - Protocol
         - Requirements
-      * - Agilent 33220A Arbitrary Waveform Generator
+      * - Agilent 33220A 20 MHz Function / Arbitrary Waveform Generator
         - :py:class:`~piec.drivers.awg.agilent_33220a.Agilent33220A`
         - SCPI
         - NI-VISA
@@ -69,14 +69,6 @@ Awg
         - NI-VISA
       * - Keysight 81150A Arbitrary Waveform Generator
         - :py:class:`~piec.drivers.awg.k_81150a.Keysight81150a`
-        - SCPI
-        - NI-VISA
-      * - Rigol DG1000 Series Arbitrary Waveform Generators
-        - :py:class:`~piec.drivers.awg.rigol_dg1000.RigolDG1000`
-        - SCPI
-        - NI-VISA
-      * - Rigol DG4000 Series Arbitrary Waveform Generators
-        - :py:class:`~piec.drivers.awg.rigol_dg4000.RigolDG4000`
         - SCPI
         - NI-VISA
       * - Siglent SDG2000X Series Arbitrary Waveform Generator
@@ -105,13 +97,17 @@ Daq
         - :py:class:`~piec.drivers.daq.usb231.USB231`
         - Digilent VBS
         - Requires mcculw
+      * - One driver for all three USB-1208HS family models
+        - :py:class:`~piec.drivers.daq.usb1208hs.USB1208HS`
+        - Digilent VBS
+        - Requires mcculw
 
-.. _dc-callibrator:
+.. _dc-calibrator:
 
-Dc Callibrator
---------------
+Dc Calibrator
+-------------
 
-.. dropdown:: Click to view supported Dc Callibrator models
+.. dropdown:: Click to view supported Dc Calibrator models
    :color: primary
    :icon: device-desktop
 
@@ -124,7 +120,7 @@ Dc Callibrator
         - Protocol
         - Requirements
       * - EDC Model 522 DC Calibrator. Supporting voltage and current sourcing
-        - :py:class:`~piec.drivers.dc_callibrator.edc522.EDC522`
+        - :py:class:`~piec.drivers.dc_calibrator.edc522.EDC522`
         - Custom Serial/Vendor
         - NI-VISA
 
@@ -285,5 +281,5 @@ Stepper Motor
         - Requirements
       * - Arduino Stepper. Requires motor_control_serial_piec.ino from the motor_control_serial_piec directory
         - :py:class:`~piec.drivers.stepper_motor.arduino_stepper.Geos_Stepper`
-        - Custom Serial/Vendor
+        - Custom Serial/Vendor (manual connection; no autodetection)
         - NI-VISA

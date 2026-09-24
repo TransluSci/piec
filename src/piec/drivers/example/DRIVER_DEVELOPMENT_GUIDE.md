@@ -17,6 +17,10 @@ These rules apply to manual development, AI chats, and repository agents:
 * **New category:** add only its minimal `__init__.py`, `<category>.py` interface,
   one `virtual_<category>.py` implementation, and first model. Copy the new
   interface to start that model. Discovery requires no registration edits.
+  **Designing the category manually is HIGHLY recommended** to avoid erroneous
+  functions and check that the base class attributes make sense. Define common
+  names and capability defaults for features all instruments of that type should
+  have; individual drivers translate these into each manufacturer's commands.
 * Existing files are read-only, including `instrument.py`, `autodetect.py`,
   shared virtual infrastructure, parent interfaces, and other drivers. Give AI
   an exact allowed-file list, report shared-code blockers separately, and review
@@ -30,14 +34,21 @@ These rules apply to manual development, AI chats, and repository agents:
 PIEC drivers follow a strict 3-level hierarchy to ensure consistency and modularity.
 
 ### Level 1: The Foundation (`Instrument`)
-All instruments in the library MUST inherit from the base `Instrument` class. This class handles the core VISA communication and standard PIEC behavior.
+All instruments in the library MUST inherit from the base `Instrument` class.
+It defines core VISA communication, validation, state tracking, and the common
+lifecycle interface (`idn`, `reset`, `clear`, `error`, `wait`, `self_test`,
+`operation_complete`, and `initialize`). Hardware implementations belong in
+protocol convenience classes or model drivers; the base interface alone does
+not provide every device's behavior.
 
 ### Convenience Classes (e.g., `Scpi`)
 `Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard IEEE 488.2 / SCPI-99 functions (like `idn`, `reset`, `clear`, `error`, `wait`, `self_test`, `operation_complete`, `initialize`) that most SCPI-compliant instruments share.
 
 **How it works with Level 2 base classes:**
 
-Every Level 2 base class (e.g., `Oscilloscope`, `Awg`) already defines **skeleton versions** of these SCPI commands — empty methods with full docstrings but no implementation. This means:
+Level 2 classes inherit the common lifecycle interface from `Instrument`.
+Several existing categories also redeclare lifecycle stubs to document their
+requirements. A new category does not need to repeat the base interface:
 
 * A driver that inherits **only** from the Level 2 class has the correct interface and can override each skeleton with its own native protocol commands.
 * A driver that **also** inherits from `Scpi` can reuse its real SCPI implementations via MRO. If you copied lifecycle stubs into the model class, fill them with delegation to `super()` or the required hardware-specific implementation; copied blank stubs would hide the inherited implementations.
@@ -48,8 +59,16 @@ Every Level 2 base class (e.g., `Oscilloscope`, `Awg`) already defines **skeleto
 ### Level 2: Instrument-Type Interface (`example.py`, `oscilloscope.py`)
 These files define the **Template/Interface** for an entire category of instruments.
 * They list all **requirements** (methods and attributes) for that type.
-* They include **skeleton versions** of the standard SCPI commands (`idn`, `reset`, `clear`, etc.) so that the interface is complete even without `Scpi` inheritance.
+* They inherit common lifecycle methods from `Instrument`; redeclare one only
+  to document a category-specific requirement, not to add hardware commands.
 * They contain no specific SCPI command strings — only the "vocabulary" of the instrument type.
+
+Design the minimum requirements of the instrument type: the most general
+interface, with consolidations for convenience where useful. Prefer `set_`,
+`get_`, and `configure_` methods; use the other conventions below when needed.
+Define common capability defaults for features expected on all models, and use
+`@optional` for useful features found on many instruments but absent from others.
+Model drivers translate these common names into each manufacturer's commands.
 
 ### Level 3: Specific Instrument Model (`agilent_33220a.py`)
 This is the **Actual Implementation** of the driver.
@@ -302,7 +321,10 @@ Function naming strictly determines scope:
   the manual. Non-VISA drivers use their applicable transport or convenience
   class, such as `Digilent` for Universal Library communication.
 * **The Role of `Scpi`**: Inheritance from `Scpi` is a convenience to avoid rewriting the same basic `*IDN?`, `*RST`, `*CLS`, `*ESR?`, `*WAI`, `*TST?`, `*OPC?` commands. However, the driver developer is responsible for verifying that the inherited `reset()`, `clear()`, etc., map correctly to the instrument's manual.
-* **When to skip `Scpi`**: If your instrument does not speak SCPI at all (e.g., it uses a proprietary serial/binary protocol), simply inherit from the Level 2 category class alone. The skeleton methods defined there give you the correct interface — just override each one with your native protocol commands.
+* **When to skip `Scpi`**: For a proprietary protocol, inherit from the category
+  alone and implement the required native behavior. The common lifecycle
+  interface is inherited from `Instrument`, possibly with category-specific
+  documentation; its placeholders are not hardware implementations.
 
 ## 8. Automatic State Tracking
 The `piec` framework automatically tracks the "last set" value of any parameter that has a corresponding class attribute. 
@@ -352,6 +374,10 @@ class Oscilloscope(Instrument):
 * Only use `@optional` in base classes (e.g., `Oscilloscope`, `Awg`), **never** in specific drivers.
 * If a specific driver supports the feature, override the method as usual.
 * If it doesn't, do nothing — calls will print `[OPTIONAL SKIP]` and return `None`.
+
+Virtual drivers follow the same rule: simulate required methods, and implement
+optional methods only when that simulation is needed. Otherwise inherit the skip
+behavior; copying a physical model's capabilities does not add simulated features.
 
 ### 9b. Automatic Optional (Child-Specific Methods)
 Any public method that a specific driver defines **beyond** what the parent class provides is automatically treated as optional. If measurement code calls that method on a different driver that doesn't have it, it gracefully skips.

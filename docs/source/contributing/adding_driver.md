@@ -297,6 +297,31 @@ branch. Supply that file to any AI assisting with a driver.
 ## Create a new instrument category
 
 Use this route only when the instrument does not fit an existing category.
+**It is HIGHLY recommended to create the category manually**, even if you use AI
+to fill out the specific drivers afterwards. This helps ensure erroneous
+functions aren't added and the base class attributes make sense for the whole
+instrument type.
+
+This is the most important part because it sets up the entire category. Think
+of the minimum requirements of the instrument: what is the most general
+interface, with some consolidations for convenience where useful? Prefer
+`set_`, `get_`, and `configure_` methods for individual settings, values, and
+groups of settings. Use the guide's `read_` or `run_` conventions when needed;
+existing methods such as `quick_read()` remain part of their current interfaces.
+
+For things we expect all instruments of that type to have, define common names
+and capability defaults in the base class. For example, `channel = [1]` means
+every model has at least channel 1; a model with more channels adds them to its
+list. Different manufacturers may call the same feature different things, but
+the specific driver translates from the defaults and names in the file you are
+making into the instrument's commands. This keeps the measurement code valid across all drivers in that class.
+
+These defaults describe the shared capabilities, not arbitrary values to send
+to hardware. Leave model-specific limits unspecified, and use `None` if an
+attribute has different implementations across instruments (e.g. a tuple on one model and a list on another). Features that not
+every instrument has belong in optional methods, rather than becoming required
+just because one manufacturer's manual lists them.
+
 For example, a new `thermometer` category with its first model would add:
 
 ```text
@@ -313,19 +338,26 @@ These are new files, confined to the new category directory:
 2. **`thermometer.py`**: define exactly one canonical category class inheriting
    from `Instrument`. The interface filename must match the directory name.
    Use `example/example.py` and a current category interface as references.
-   Define manufacturer-independent capability names, method signatures, units,
-   return formats, and documented lifecycle methods (`idn`, `reset`, etc.).
+   Define the category's capability names, method signatures, units, and return
+   formats. Common lifecycle methods (`idn`, `reset`, `clear`, etc.) are already
+   defined by `Instrument`; do not copy them into a new category unless you need
+   to document a category-specific requirement. Actual hardware behavior belongs
+   in the protocol convenience class or the specific driver.
    Initialize a capability to `None` when its representation may vary by model
    (for example, a tuple on one instrument and a list on another). Use a concrete
    type only when the category requires that representation across models.
    Keep device command strings out of the interface. Use `@optional` here for
-   features not required of every model.
+   features that are useful in practice and available on many instruments, but
+   not every model. Expose them in the common interface while recognizing that
+   cheaper or simpler models may not have that capability.
 3. **`virtual_thermometer.py`**: define one virtual class inheriting from
    `VirtualInstrument` first and the new category second. Implement the required
    interface with in-memory simulation. Its constructor must call
    `super().__init__(...)` exactly once. Use a current virtual driver as a
    reference. The dynamic suite expects a virtual implementation for every
    category; this is driver code, not a new test.
+   Optional features do not need simulated implementations; inherit the parent's
+   skip behavior unless you need to simulate them.
 4. **`<model_name>.py`**: copy the new category interface, rename the copied class
    and make it inherit from that category, then fill in the physical implementation.
    Preserve the method docstrings and signatures and use the programming manual
@@ -340,8 +372,10 @@ API changes and are outside this contribution.
 ### Implement the new category manually or with AI
 
 All three contribution methods still apply, with the new category's files as
-the scope. In addition to the guide and programming manual,
-gather `src/piec/drivers/example/example.py`, a current category interface,
+the scope, but review and define the shared interface manually first wherever
+possible. If using AI to draft it, check every proposed method and capability
+against what the category should actually support. In addition to the guide and
+programming manual, gather `src/piec/drivers/example/example.py`, a current category interface,
 `src/piec/drivers/virtual_instrument.py`, and a current virtual driver as references.
 
 - **Manually:** define the category interface first, implement its virtual
@@ -368,6 +402,14 @@ inheriting Instrument, one virtual implementation inheriting VirtualInstrument
 first and the new category second, and the physical model. Implement all
 required interface methods in the virtual and physical drivers. Keep hardware
 command strings out of the category interface and simulation out of the model.
+Use the reviewed category requirements to define common names and capability
+defaults for features expected on all models. Do not invent functions or turn
+one manufacturer's extra features into category requirements. The physical
+driver translates these common names into the manufacturer's commands. Leave
+optional virtual features unimplemented unless their simulation is needed.
+Keep the category general: prefer set_, get_, and configure_ methods, and mark
+useful features absent from some models as optional. Inherit common lifecycle
+methods from Instrument; only document category-specific requirements here.
 Declare parent capability attributes as None when the representation can vary
 by instrument, such as a continuous tuple versus a discrete list. Supply the
 actual limits or options on the physical model class.

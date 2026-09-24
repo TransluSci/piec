@@ -14,7 +14,6 @@ class VirtualDMM(VirtualInstrument, DMM):
             "sense_range": None,
             "autorange": True,
             "integration_time": 1.0,
-            "temp_probe_type": "TC",
         }
         self._voltage_reader = None
         self.set_voltage_reader(voltage_reader)
@@ -70,12 +69,6 @@ class VirtualDMM(VirtualInstrument, DMM):
             # Or just return current_field / 10000.0
             return self.mag_sample.current_field / 10000.0
         return 0.0015
-
-    def set_temp_probe_type(self, probe_type):
-        self.state["temp_probe_type"] = str(probe_type).upper()
-
-    def get_temperature(self):
-        return 25.0
 
     def quick_read(self):
         return self.get_voltage(ac=self.state["coupling"] == "AC")
