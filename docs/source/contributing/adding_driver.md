@@ -54,11 +54,11 @@ In the copy:
    tuple for a continuous range or a list for discrete choices as appropriate.
    A parent value of `(None, None)` fixes the type as a tuple; it is not the same
    as `None`. See the guide's class-attribute rules below.
-4. For copied lifecycle methods supplied by `Scpi` or another convenience
-   class, keep the docstring and delegate to the working inherited method
-   (for example, `return super().idn()`), unless the instrument needs its own
-   implementation. A copied empty method would override the working inherited
-   method, so do not leave those bodies blank.
+4. Lifecycle methods such as `reset()` are inherited from `Instrument` and
+   the applicable protocol convenience class. Reuse working implementations;
+   override them in the model when required by the manual or category contract.
+   Inherited placeholders do not perform hardware operations. Do not add empty
+   methods that hide working implementations.
 5. For supported optional methods, fill in the body and remove the copied
    `@optional` decorator: that decorator belongs only on the category interface.
    Omit unsupported optional methods from the model copy so the parent provides
@@ -83,7 +83,7 @@ matches its current contracts. Paths are relative to the repository root.
 | Instrument programming manual | Required source of command strings |
 | Instrument user manual or specifications | Include if needed for limits and features |
 | `src/piec/drivers/<category>/<category>.py` | Required starting template: copy it and fill in the implementation while preserving its docstrings |
-| `src/piec/drivers/instrument.py` | Read-only framework reference |
+| `src/piec/drivers/instrument.py` | Required read-only reference for lifecycle contracts and state tracking |
 | `src/piec/drivers/scpi.py` or `src/piec/drivers/digilent.py` | Include the applicable convenience class |
 
 `Scpi` supplies standard IEEE 488.2 / SCPI lifecycle methods. `Digilent` supplies
@@ -100,7 +100,21 @@ class MyDaq(Digilent, Daq):
 ```
 
 For a proprietary protocol, inherit from the category alone and implement the
-required protocol behavior in the copied methods using the instrument manual.
+required protocol behavior using the instrument manual, including lifecycle
+methods absent from the category file.
+
+Read the shared lifecycle docstrings in `Instrument` and the category class
+docstring. Reset restores default operating settings with controllable outputs
+off; scopes additionally require AUTO trigger sweep and running acquisition.
+After resetting hardware, call `self._initialize_state()` to clear cached
+`_current_*` settings to `None`; this helper sends no commands and does not reset
+the hardware. A working inherited reset may already call it. `clear()` clears
+errors/status/buffers without resetting settings, and `initialize()` calls reset
+then clear rather than performing a power cycle.
+
+Document additional or different behavior in the class docstring, and explain
+model-specific implementation details in method docstrings. Model differences
+must still satisfy the shared and category contracts.
 
 ## Method 1: Write the driver manually
 
@@ -152,9 +166,15 @@ category, with the applicable protocol convenience class first.
 Preserve the parent method docstrings, signatures, defaults, capability names,
 and return formats. Fill in the method bodies and model capability values.
 Append model-specific details to docstrings; do not replace the shared text.
-Implement all required methods. For copied methods already implemented by a
-convenience class, preserve the docstrings and delegate to super() unless the
-hardware needs an override; never leave copied stubs masking working methods.
+Implement all required methods, including hardware behavior for inherited
+lifecycle placeholders. Read instrument.py and the category class docstring;
+reuse working protocol methods and override them when required. Reset must
+restore defaults with controllable outputs off; scopes must also acquire in
+AUTO mode. After hardware reset, call self._initialize_state() to clear cached
+_current_* settings unless the inherited reset already does so. This helper
+does not reset hardware. Document additional or different behavior in the class
+docstring while preserving the shared and category contracts. Never add empty
+methods that hide working inherited implementations.
 Remove copied @optional decorators from supported method implementations.
 Omit unsupported optional methods so the parent's skip behavior is inherited.
 
@@ -340,9 +360,10 @@ These are new files, confined to the new category directory:
    Use `example/example.py` and a current category interface as references.
    Define the category's capability names, method signatures, units, and return
    formats. Common lifecycle methods (`idn`, `reset`, `clear`, etc.) are already
-   defined by `Instrument`; do not copy them into a new category unless you need
-   to document a category-specific requirement. Actual hardware behavior belongs
-   in the protocol convenience class or the specific driver.
+   defined by `Instrument`; do not copy them into a new category. Document
+   additional or different category requirements in the class docstring.
+   Actual hardware behavior belongs in the protocol convenience class or the
+   specific driver.
    Initialize a capability to `None` when its representation may vary by model
    (for example, a tuple on one instrument and a list on another). Use a concrete
    type only when the category requires that representation across models.
@@ -409,7 +430,8 @@ driver translates these common names into the manufacturer's commands. Leave
 optional virtual features unimplemented unless their simulation is needed.
 Keep the category general: prefer set_, get_, and configure_ methods, and mark
 useful features absent from some models as optional. Inherit common lifecycle
-methods from Instrument; only document category-specific requirements here.
+methods from Instrument; document additional or different category requirements
+in the class docstring instead of adding duplicate lifecycle stubs.
 Declare parent capability attributes as None when the representation can vary
 by instrument, such as a continuous tuple versus a discrete list. Supply the
 actual limits or options on the physical model class.

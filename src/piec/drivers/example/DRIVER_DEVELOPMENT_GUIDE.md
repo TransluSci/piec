@@ -41,17 +41,24 @@ lifecycle interface (`idn`, `reset`, `clear`, `error`, `wait`, `self_test`,
 protocol convenience classes or model drivers; the base interface alone does
 not provide every device's behavior.
 
+`reset()` must restore default operating settings with controllable outputs off;
+`clear()` clears errors/status/buffers without resetting settings; `initialize()`
+calls reset then clear, not a power cycle. After a hardware reset, call
+`self._initialize_state()` to set cached `_current_*` values to `None`. This
+clears Python's record of the settings; it sends no commands and does not reset
+the hardware. A working inherited reset may already perform this step.
+
 ### Convenience Classes (e.g., `Scpi`)
 `Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard IEEE 488.2 / SCPI-99 functions (like `idn`, `reset`, `clear`, `error`, `wait`, `self_test`, `operation_complete`, `initialize`) that most SCPI-compliant instruments share.
 
 **How it works with Level 2 base classes:**
 
 Level 2 classes inherit the common lifecycle interface from `Instrument`.
-Several existing categories also redeclare lifecycle stubs to document their
-requirements. A new category does not need to repeat the base interface:
+Categories document additional requirements in their class docstrings instead
+of repeating lifecycle stubs:
 
-* A driver that inherits **only** from the Level 2 class has the correct interface and can override each skeleton with its own native protocol commands.
-* A driver that **also** inherits from `Scpi` can reuse its real SCPI implementations via MRO. If you copied lifecycle stubs into the model class, fill them with delegation to `super()` or the required hardware-specific implementation; copied blank stubs would hide the inherited implementations.
+* A driver that inherits **only** from the Level 2 class must implement the required hardware behavior using its native protocol; inherited placeholders are not hardware implementations.
+* A driver that **also** inherits from `Scpi` can reuse its working implementations via MRO. Override them only when needed to meet the shared and category-specific contracts; do not add empty methods that hide working implementations.
 
 > [!IMPORTANT]
 > **Verification**: Always cross-check the instrument manual. If your instrument is SCPI-compliant but does *not* support a standard `Scpi` method (e.g., `*RST` doesn't reset properly), or uses a different command string, you MUST override the method in your Level 3 driver.
@@ -59,8 +66,9 @@ requirements. A new category does not need to repeat the base interface:
 ### Level 2: Instrument-Type Interface (`example.py`, `oscilloscope.py`)
 These files define the **Template/Interface** for an entire category of instruments.
 * They list all **requirements** (methods and attributes) for that type.
-* They inherit common lifecycle methods from `Instrument`; redeclare one only
-  to document a category-specific requirement, not to add hardware commands.
+* They inherit common lifecycle methods from `Instrument`. Document additional
+  or different requirements in the **class docstring**, rather than repeating
+  lifecycle stubs. For example, scopes must acquire in AUTO mode after reset.
 * They contain no specific SCPI command strings — only the "vocabulary" of the instrument type.
 
 Design the minimum requirements of the instrument type: the most general
@@ -91,7 +99,7 @@ class Agilent33220a(Scpi, Awg):
 ```python
 from .oscilloscope import Oscilloscope
 
-# No Scpi mixin — override the skeletons with native protocol commands
+# No Scpi mixin — implement lifecycle methods with native protocol commands
 class MyProprietaryScope(Oscilloscope):
     AUTODETECT_ID = "PROPSCOPE"
 
