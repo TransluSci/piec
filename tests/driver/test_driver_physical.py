@@ -599,18 +599,8 @@ def _visa_autodetect_driver_cases():
 
 
 def make_test_physical_driver(driver_cls: Type[Instrument], check_params: bool = True) -> Any:
-    """Construct physical driver instance with ScriptedTransport and DG1000 dialect."""
-    responses = {
-        "*IDN?": f"TEST,{getattr(driver_cls, 'AUTODETECT_ID', 'ID')},12345,1.0",
-        "ID?": f"{getattr(driver_cls, 'AUTODETECT_ID', 'ID')}",
-        "?": f"{getattr(driver_cls, 'AUTODETECT_ID', 'ID')}",
-    }
-    return create_test_driver(
-        driver_cls,
-        responses=responses,
-        check_params=check_params,
-        protocol="dg1000",
-    )
+    """Construct a physical driver with fake communication and no hardware."""
+    return create_test_driver(driver_cls, check_params=check_params)
 
 
 class TestPhysicalDriverAutodetect:
@@ -900,14 +890,18 @@ class TestPhysicalDriverRuntimeParameterValidation:
 
                         try:
                             getattr(inst, m_name)(**call_kwargs)
-                            state_attr = f"_current_{p_name}"
-                            current_state = getattr(inst, state_attr, None)
-                            if current_state is not None:
-                                expected_comparison = str(valid_val).lower() if isinstance(valid_val, str) else valid_val
-                                assert current_state == expected_comparison
-                                return
                         except Exception:
+                            # Some methods need model-specific setup or vendor APIs.
+                            # Try another method, but fail below if none succeeds.
                             continue
+                        state_attr = f"_current_{p_name}"
+                        expected = valid_val.lower() if isinstance(valid_val, str) else valid_val
+                        assert getattr(inst, state_attr, None) == expected, (
+                            f"{driver_cls.__name__}.{m_name} did not update {state_attr}"
+                        )
+                        return
+
+        pytest.fail(f"No successful state-tracking check for {driver_cls.__name__}")
 
 
 # ============================================================================
