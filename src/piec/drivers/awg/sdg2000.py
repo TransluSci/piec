@@ -10,25 +10,23 @@ class SDG2000X(Scpi, Awg):
 
     Supported trigger capabilities: output_trigger (manual trigger via BTWV MTRIG),
     set_trigger_source (BTWV TRSR), set_trigger_slope (BTWV EDGE), and set_trigger_mode (BTWV GATE_NCYC).
-    set_trigger_level is unimplemented in this Python driver and inherits an empty
-    Awg method. Hardware/protocol support for an adjustable external trigger threshold
-    has not been established by this code audit.
+    set_trigger_level inherits the optional skip behavior from Awg.
     """
 
     # --- AUTODETECT IDENTIFIER ---
     # Derived from *IDN? response examples in the manual.
-    # The manual explicitly lists responses for these models in the examples[cite: 198, 1407, 1467].
+    # The manual explicitly lists responses for these models in the examples.
     AUTODETECT_ID = ["SDG2042X", "SDG2122X", "SDG2102X"]
 
     # --- INSTRUMENT PARAMETERS ---
     
-    # Channel: The manual specifies C1 and C2[cite: 318].
+    # Channel: The manual specifies C1 and C2.
     channel = [1, 2]
 
-    # Waveform: Mapped from manual types SINE, SQUARE, RAMP, PULSE, NOISE, ARB, DC, PRBS[cite: 328].
+    # Waveform: Mapped from manual types SINE, SQUARE, RAMP, PULSE, NOISE, ARB, DC, PRBS.
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER', 'PRBS']
 
-    # Frequency: Manual refers to the data sheet for valid ranges[cite: 328].
+    # Frequency: Manual refers to the data sheet for valid ranges.
     frequency = {
         'waveform': {
             'SIN': (None, None), 
@@ -42,54 +40,54 @@ class SDG2000X(Scpi, Awg):
         }
     }
 
-    # Amplitude: Manual refers to the data sheet for valid ranges[cite: 328].
+    # Amplitude: Manual refers to the data sheet for valid ranges.
     amplitude = (None, None)
     
-    # Offset: Manual refers to the data sheet for valid ranges[cite: 328].
+    # Offset: Manual refers to the data sheet for valid ranges.
     offset = (None, None)
 
-    # Load Impedance: Manual lists 50 to 100000 Hz for SDG2000X[cite: 321].
+    # Load Impedance: Manual lists 50 to 100000 Hz for SDG2000X.
     load_impedance = (50, 100000)
 
-    # Source Impedance: Not specified as a settable parameter in the OUTPUT command[cite: 318].
+    # Source Impedance: Not specified as a settable parameter in the OUTPUT command.
     source_impedance = None
 
-    # Polarity: Manual lists NOR (Normal) and INVT (Invert)[cite: 318].
+    # Polarity: Manual lists NOR (Normal) and INVT (Invert).
     polarity = ['NORM', 'INV']
 
-    # Duty Cycle: Manual lists 0 to 100%[cite: 328].
+    # Duty Cycle: Manual lists 0 to 100%.
     duty_cycle = (0.0, 100.0)
 
-    # Symmetry: Manual lists 0 to 100%[cite: 328].
+    # Symmetry: Manual lists 0 to 100%.
     symmetry = (0.0, 100.0)
 
-    # Pulse Width: Manual refers to the data sheet[cite: 328].
+    # Pulse Width: Manual refers to the data sheet.
     pulse_width = (None, None)
     
-    # Pulse Delay: Manual refers to the data sheet[cite: 337].
+    # Pulse Delay: Manual refers to the data sheet.
     pulse_delay = (None, None)
 
-    # Rise/Fall Time: Manual refers to the data sheet[cite: 328, 337].
+    # Rise/Fall Time: Manual refers to the data sheet.
     rise_time = (None, None)
     fall_time = (None, None)
 
-    # Trigger Source: Manual lists EXT, INT, MAN[cite: 463].
+    # Trigger Source: Manual lists EXT, INT, MAN.
     trigger_source = ['INT', 'EXT', 'MAN']
 
-    # Trigger Slope: Manual lists RISE, FALL[cite: 463].
+    # Trigger Slope: Manual lists RISE, FALL.
     trigger_slope = ['POS', 'NEG']
 
-    # Trigger Mode: Manual lists GATE and NCYC[cite: 463].
+    # Trigger Mode: Manual lists GATE and NCYC.
     # Mapped to 'LEV' (Level/Gated) and 'EDGE' (Cycle/Edge).
     trigger_mode = ["EDGE", "LEV"] 
 
-    # Arb Data Range: Manual specifies 16B - 16MB for SDG2000X[cite: 715].
+    # Arb Data Range: Manual specifies 16B - 16MB for SDG2000X.
     arb_data_range = (16, 16777216)
 
 
     def output(self, channel, on=True):
         """
-        Turns the output of a specified channel on or off[cite: 318].
+        Turns the output of a specified channel on or off.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -99,7 +97,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_waveform(self, channel, waveform):
         """
-        Sets the built_in waveform type[cite: 328].
+        Sets the built_in waveform type.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -117,7 +115,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_frequency(self, channel, frequency):
         """
-        Sets the frequency of the waveform[cite: 328].
+        Sets the frequency of the waveform.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -126,7 +124,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_amplitude(self, channel, amplitude):
         """
-        Sets the amplitude (Vpp)[cite: 328].
+        Sets the amplitude (Vpp).
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -135,7 +133,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_offset(self, channel, offset):
         """
-        Sets the offset voltage[cite: 328].
+        Sets the offset voltage.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -144,7 +142,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_load_impedance(self, channel, load_impedance):
         """
-        Sets the output load impedance[cite: 318, 321].
+        Sets the output load impedance.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -153,7 +151,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_polarity(self, channel, polarity):
         """
-        Sets the output polarity[cite: 318].
+        Sets the output polarity.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -166,7 +164,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_square_duty_cycle(self, channel, duty_cycle):
         """
-        Sets the duty cycle for Square waves[cite: 328].
+        Sets the duty cycle for Square waves.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -175,7 +173,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_ramp_symmetry(self, channel, symmetry):
         """
-        Sets the symmetry for Ramp waves[cite: 328].
+        Sets the symmetry for Ramp waves.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -184,7 +182,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_pulse_width(self, channel, pulse_width):
         """
-        Sets the positive pulse width[cite: 328].
+        Sets the positive pulse width.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -193,7 +191,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_pulse_rise_time(self, channel, rise_time):
         """
-        Sets the rise time for Pulse waves[cite: 328].
+        Sets the rise time for Pulse waves.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -202,7 +200,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_pulse_fall_time(self, channel, fall_time):
         """
-        Sets the fall time for Pulse waves[cite: 337].
+        Sets the fall time for Pulse waves.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -211,7 +209,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_pulse_duty_cycle(self, channel, duty_cycle):
         """
-        Sets the duty cycle for Pulse waves[cite: 328].
+        Sets the duty cycle for Pulse waves.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -220,7 +218,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_pulse_delay(self, channel, pulse_delay):
         """
-        Sets the pulse delay[cite: 337].
+        Sets the pulse delay.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -229,7 +227,7 @@ class SDG2000X(Scpi, Awg):
 
     def create_arb_waveform(self, channel, name, data):
         """
-        Creates/Downloads an arbitrary waveform to the instrument[cite: 697, 715, 1549].
+        Creates/Downloads an arbitrary waveform to the instrument.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -252,7 +250,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_arb_waveform(self, channel, name):
         """
-        Selects an arbitrary waveform by name[cite: 501].
+        Selects an arbitrary waveform by name.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -261,7 +259,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_trigger_source(self, channel, trigger_source):
         """
-        Sets the trigger source for Burst/Sweep modes[cite: 463].
+        Sets the trigger source for Burst/Sweep modes.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -275,7 +273,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_trigger_slope(self, channel, trigger_slope):
         """
-        Sets the trigger edge (slope)[cite: 463].
+        Sets the trigger edge (slope).
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -289,7 +287,7 @@ class SDG2000X(Scpi, Awg):
 
     def set_trigger_mode(self, channel, trigger_mode):
         """
-        Sets the burst mode (Gated or Cycle) which corresponds to Level or Edge triggering[cite: 463].
+        Sets the burst mode (Gated or Cycle) which corresponds to Level or Edge triggering.
         """
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
@@ -303,7 +301,7 @@ class SDG2000X(Scpi, Awg):
 
     def output_trigger(self):
         """
-        Sends a manual trigger signal[cite: 446].
+        Sends a manual trigger signal.
         Defaulting to Channel 1 as this is a device-action.
         """
         self.instrument.write(f"C1:BTWV MTRIG")

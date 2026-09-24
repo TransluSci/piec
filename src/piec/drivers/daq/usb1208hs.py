@@ -84,7 +84,10 @@ class USB1208HS(Digilent, Daq):
         Exactly one pulse is requested. Software controls launch latency; hardware
         controls the pulse width. This does not arm or synchronize an AO/AI scan.
         The TMR terminal must be reserved by the caller for the duration of this call.
-        See docs/daq_trigger_output.md for the manufacturer references.
+        Manufacturer references:
+        https://files.digilent.com/manuals/Mcculw_WebHelp/Users_Guide/Analog_Input_Boards/USB-1208HS_Series.htm
+        https://files.digilent.com/manuals/Mcculw_WebHelp/Function_Reference/Ctr-python/pulse_out_start.htm
+        https://files.digilent.com/manuals/Mcculw_WebHelp/Function_Reference/Ctr-python/pulse_out_stop.htm
         """
         if resource == 'digital':
             return super().send_trigger_pulse(channel, pulse_width, active_high,

@@ -26,9 +26,9 @@ class USB231(Digilent, Daq):
     Driver for the MCC USB-231 DAQ device.
     
     Based on Manual:
-    - [cite_start]8 Single-Ended Analog Inputs (16-bit, +/- 10V) [cite: 668]
-    - [cite_start]2 Analog Outputs (16-bit, +/- 10V) [cite: 677]
-    - [cite_start]8 Digital I/O (Bit configurable) [cite: 683]
+    - 8 Single-Ended Analog Inputs (16-bit, +/- 10V)
+    - 2 Analog Outputs (16-bit, +/- 10V)
+    - 8 Digital I/O (Bit configurable)
     """
 
     # --- Class Attributes ---
@@ -39,10 +39,10 @@ class USB231(Digilent, Daq):
     # This will be updated dynamically by set_input_mode().
     ai_channel = [0, 1, 2, 3]
 
-    # [cite_start]Analog Output Channels: 2 channels (indices 0-1) [cite: 677]
+    # Analog Output Channels: 2 channels (indices 0-1)
     ao_channel = [0, 1]
 
-    # [cite_start]Digital I/O Channels: 8 channels (indices 0-7) [cite: 683]
+    # Digital I/O Channels: 8 channels (indices 0-7)
     dio_channel = [0, 1, 2, 3, 4, 5, 6, 7]
 
     # Analog Input Range: fixed at +/-10 V.
@@ -57,10 +57,10 @@ class USB231(Digilent, Daq):
     # Maximum simultaneous hardware-paced update rate per AO channel.
     ao_sample_rate = (1, 5_000)
 
-    # [cite_start]Analog Input Modes: SE (Single-Ended) or DIFF (Differential) [cite: 668]
+    # Analog Input Modes: SE (Single-Ended) or DIFF (Differential)
     ai_mode = ['SE', 'DIFF']
 
-    # [cite_start]Digital Direction: Configurable as Input ('I') or Output ('O') [cite: 683]
+    # Digital Direction: Configurable as Input ('I') or Output ('O')
     dio_direction = ['I', 'O']
 
     def __init__(self, address, **kwargs):
@@ -83,7 +83,7 @@ class USB231(Digilent, Daq):
     def read_AI(self, channel):
         """
         Reads a float value (voltage) from the specified Analog Input channel.
-        [cite_start]Manual Page 10: Software paced mode[cite: 124].
+        Manual Page 10: Software paced mode.
         
         args:
             channel (int): The channel to read from.
@@ -96,7 +96,7 @@ class USB231(Digilent, Daq):
 
         try:
             # v_in returns the voltage directly. 
-            # [cite_start]Range is fixed at +/- 10V (BIP10VOLTS) [cite: 668]
+            # Range is fixed at +/- 10V (BIP10VOLTS)
             value = self.ul.v_in(self.board_num, channel, ULRange.BIP10VOLTS)
             return value
         except Exception as e:
@@ -106,7 +106,7 @@ class USB231(Digilent, Daq):
     def read_AI_scan(self, channel, points, rate):
         """
         Reads a stream of Analog input data (hardware paced).
-        [cite_start]Manual Page 10: Hardware paced mode[cite: 124].
+        Manual Page 10: Hardware paced mode.
         
         args:
             channel (int): The channel to read from.
@@ -171,7 +171,7 @@ class USB231(Digilent, Daq):
     def write_AO(self, channel, data):
         """
         Writes data to the Analog Output channel.
-        [cite_start]Manual Page 17: Software paced mode[cite: 489].
+        Manual Page 17: Software paced mode.
         
         args:
             channel (int): The channel to write to (0-1).
@@ -186,7 +186,7 @@ class USB231(Digilent, Daq):
             
             # Software paced loop
             for v in data:
-                # [cite_start]Range is fixed at +/- 10V [cite: 677]
+                # Range is fixed at +/- 10V
                 voltage = float(v)
                 if not -10.0 <= voltage <= 10.0:
                     raise ValueError("analog-output values must be within +/-10 V")
@@ -199,7 +199,7 @@ class USB231(Digilent, Daq):
     def set_input_mode(self, ai_mode):
         """
         Configures the Analog Input Mode and updates self.ai_channel list.
-        [cite_start]Manual Page 22: "8 single-ended or 4 differential; software-selectable"[cite: 668].
+        Manual Page 22: "8 single-ended or 4 differential; software-selectable".
         
         args:
             ai_mode (str): 'SE' (Single-Ended) or 'DIFF' (Differential).
@@ -209,14 +209,14 @@ class USB231(Digilent, Daq):
         try:
             if 'DIFF' in mode_str:
                 # Differential Mode: Limits to 4 channels (0-3)
-                # [cite_start]Pins 0-3 become High, Pins 4-7 become Low inputs [cite: 261]
+                # Pins 0-3 become High, Pins 4-7 become Low inputs
                 self.ul.a_input_mode(self.board_num, AnalogInputMode.DIFFERENTIAL)
                 self.ai_channel = [0, 1, 2, 3]
                 print(f"USB231: Set to DIFFERENTIAL mode. Available Channels: {self.ai_channel}")
                 
             elif 'SE' in mode_str or 'SINGLE' in mode_str:
                 # Single-Ended Mode: Enables 8 channels (0-7)
-                # [cite_start]All inputs referenced to AGND [cite: 358]
+                # All inputs referenced to AGND
                 self.ul.a_input_mode(self.board_num, AnalogInputMode.SINGLE_ENDED)
                 self.ai_channel = [0, 1, 2, 3, 4, 5, 6, 7]
                 print(f"USB231: Set to SINGLE-ENDED mode. Available Channels: {self.ai_channel}")
@@ -231,7 +231,7 @@ class USB231(Digilent, Daq):
     def set_ai_range(self, ai_channel, ai_range):
         """
         Configures the gain/range for an Analog Input channel.
-        [cite_start]The USB-231 has a fixed input range of +/- 10V[cite: 668].
+        The USB-231 has a fixed input range of +/- 10V.
         
         args:
             ai_channel (int): The channel to configure.
@@ -248,7 +248,7 @@ class USB231(Digilent, Daq):
     def set_ao_range(self, ao_channel, ao_range):
         """
         Configures the output range for an Analog Output channel.
-        [cite_start]The USB-231 has a fixed output range of +/- 10V[cite: 677].
+        The USB-231 has a fixed output range of +/- 10V.
         
         args:
             ao_channel (int): The channel to configure.
@@ -274,7 +274,7 @@ class USB231(Digilent, Daq):
     def read_DI(self, channel):
         """
         Reads the state of a single digital channel (DIO0 - DIO7).
-        [cite_start]Manual Page 18: "All digital I/O updates and samples are software-paced."[cite: 508].
+        Manual Page 18: "All digital I/O updates and samples are software-paced.".
         
         args:
             channel (int): The channel to read.
@@ -317,7 +317,7 @@ class USB231(Digilent, Daq):
     def set_dio_direction(self, dio_channel, dio_direction):
         """
         Configures the physics of the digital pin (Input vs Output).
-        [cite_start]Manual Page 18: "Each digital I/O line is bit-configurable as input or output."[cite: 505].
+        Manual Page 18: "Each digital I/O line is bit-configurable as input or output.".
         
         args:
             dio_channel (int): The channel to configure.

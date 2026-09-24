@@ -6,21 +6,15 @@ class Keithley2000(Scpi, DMM):
     """
     Driver for the Keithley 2000 Digital Multimeter.
     """
-    
+
     AUTODETECT_ID = "MODEL 2000"
-    
+
     channel = [1]
-    
     sense_func = ['VOLT', 'CURR', 'RES', 'FRES', 'FREQ', 'PER', 'TEMP']
-    
     coupling = ['DC', 'AC']
-    
     sense_mode = ['2W', '4W']
-    
     sense_range = (None, None)
-    
     probe_type = ['TC', 'RTD', 'THER']
-    
     # SCPI standard overload response is ±9.99999900E+37 (Model 2000 User's Manual Section 3)
     SCPI_OVERLOAD_THRESHOLD = 9.9e37
 
@@ -97,7 +91,7 @@ class Keithley2000(Scpi, DMM):
     def set_sense_range(self, range_val=None, auto=True):
         # :VOLT:DC:RANG <n> or :AUTO ON
         func = self._get_current_scpi_func()
-             
+
         if auto:
             self.instrument.write(f":SENS:{func}:RANG:AUTO ON")
         else:

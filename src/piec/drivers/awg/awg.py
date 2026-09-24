@@ -353,9 +353,9 @@ class Awg(Instrument):
         Sets the trigger mode for the selected channel (aka trigger type)
         args:
             channel (int): The channel to set the trigger mode on
-            trigger_mode (str): The trigger mode, e.g., 'EDGE' 
+            trigger_mode (str): The trigger mode, e.g., 'EDGE'
         """
-        
+
     def configure_trigger(self, channel, trigger_source=None, trigger_level=None, trigger_slope=None, trigger_mode=None):
         """
         Configures the trigger for the selected channel. Calls the set_trigger_source, set_trigger_level, set_trigger_slope, and set_trigger_mode functions to configure the trigger
@@ -373,7 +373,7 @@ class Awg(Instrument):
         if trigger_slope is not None:
             self.set_trigger_slope(channel, trigger_slope)
         if trigger_mode is not None:
-            self.set_trigger_mode(channel, trigger_mode) 
+            self.set_trigger_mode(channel, trigger_mode)
 
     def output_trigger(self):
         """
@@ -388,7 +388,7 @@ class Awg(Instrument):
     @optional
     def set_pulse_delay(self, channel, pulse_delay):
         """
-        Set the pulse delay on the configured channel in units of seconds. Delay is the time between the start of the 
+        Set the pulse delay on the configured channel in units of seconds. Delay is the time between the start of the
         pulse period and the start of the leading edge of the pulse.
         args:
             channel (int): The channel to set the delay on

@@ -21,7 +21,7 @@ def auto_check_params(func):
     if the instance's `check_params` flag is True.
     Also converts all string arguments to lowercase.
     
-    *** NEW: This decorator also updates the instrument's internal state
+    This decorator also updates the instrument's internal state
     (e.g., self._current_frequency) with any valid arguments passed.
     """
     @functools.wraps(func)
