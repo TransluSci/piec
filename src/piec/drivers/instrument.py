@@ -10,29 +10,8 @@ import inspect
 import re
 import numpy as np
 import pandas as pd
+from .utilities import PiecManager
 
-# Placeholder PiecManager if utilities.py is not present
-# and to make this file runnable for testing.
-try:
-    from .utilities import PiecManager
-except ImportError:
-    print("Warning: Could not import PiecManager. Using placeholder.")
-    class PiecManager:
-        def open_resource(self, address, **kwargs):
-            # print(f"PiecManager: Opening {address} with {kwargs}")
-            class DummyResource:
-                def __init__(self, addr, **kwargs):
-                    self.resource_name = addr
-                def query(self, q): return f"DUMMY QUERY: {q}"
-                def write(self, c): print(f"DUMMY WRITE: {c}")
-                def read(self): return ""
-                def query_binary_values(self, query, datatype='h', is_big_endian=True):
-                    print(f"DUMMY BINARY QUERY: {query}")
-                    return [0.0] * 10
-                def query_ascii_values(self, query):
-                    print(f"DUMMY ASCII QUERY: {query}")
-                    return [0.0] * 10
-            return DummyResource(address, **kwargs)
 
 # --- Metaclass and Decorator for Auto-Checking ---
 
@@ -42,7 +21,7 @@ def auto_check_params(func):
     if the instance's `check_params` flag is True.
     Also converts all string arguments to lowercase.
     
-    *** NEW: This decorator also updates the instrument's internal state
+    This decorator also updates the instrument's internal state
     (e.g., self._current_frequency) with any valid arguments passed.
     """
     @functools.wraps(func)
@@ -256,6 +235,8 @@ class Instrument(metaclass=AutoCheckMeta):
     and the automatic parameter-checking framework.
     """
 
+    AUTODETECT_ID = ""
+
     def _initialize_state(self):
         """
         Initializes all _current_ attributes to None.
@@ -332,6 +313,77 @@ class Instrument(metaclass=AutoCheckMeta):
         This method should be overridden by child classes.
         """
         return "Default IDN function not implemented, please override in subclass"
+
+    def reset(self):
+        """
+        Restore factory-default operating settings and leave controllable outputs off.
+
+        This is the shared PIEC reset contract. Protocol or model drivers must
+        supply the hardware commands, explicitly disabling outputs if the device's
+        native reset does not do so. This does not require a physical power cycle.
+
+        The base implementation is a template: it only clears tracked Python state.
+        After resetting the hardware, implementations must call
+        ``self._initialize_state()`` to clear cached settings.
+        """
+        self._initialize_state()
+
+    def clear(self):
+        """
+        Clear errors, status registers, or communication buffers without resetting
+        operating settings.
+
+        Protocol or model drivers supply the appropriate commands, such as ``*CLS``
+        or a serial buffer flush. The base implementation is a placeholder.
+        """
+
+    def error(self):
+        """
+        Queries the instrument's error status or message queue.
+
+        Returns:
+            str: Error message or status code (default '0' for no error).
+        """
+        return "0"
+
+    def wait(self):
+        """
+        Blocks until all pending instrument operations (acquisition, settling,
+        motion, etc.) have completed.
+
+        Subclasses should override this with their native synchronization command
+        (e.g., *WAI for SCPI, motion-complete wait for steppers).
+        """
+
+    def self_test(self):
+        """
+        Runs the instrument's built-in self-test routine.
+
+        Returns:
+            str: Self-test result (default '0' for pass).
+        """
+        return "0"
+
+    def operation_complete(self):
+        """
+        Queries whether the last commanded operation has finished.
+
+        Returns:
+            str: '1' when the operation is complete.
+        """
+        return "1"
+
+    def initialize(self):
+        """
+        Prepare the instrument for a measurement by calling :meth:`reset` followed
+        by :meth:`clear`.
+
+        This restores default operating settings with controllable outputs off and
+        clears errors/status. It does not perform a power cycle or reproduce saved
+        power-on settings. Override when the device needs additional setup.
+        """
+        self.reset()
+        self.clear()
 
     def _check_params(self, instance_self, locals_dict):
         """

@@ -24,7 +24,9 @@ Pull request workflow
 
 1. Fork the repository on GitHub and create a feature branch from ``master``.
 2. Make your changes, following the code style of the surrounding code.
-3. Add or update tests for any changed functionality (see :ref:`test-functions`).
+3. For driver contributions, **do not add or modify tests**: run the existing
+   dynamic suites as described in :doc:`adding_driver`. For other functionality,
+   add or update tests as appropriate (see :ref:`test-functions`).
 4. Open a pull request against ``master`` with a clear description of what changed and why.
 
 .. _test-functions:
@@ -38,17 +40,20 @@ All tests are in the ``tests/`` directory at the repository root:
 
 * ``test_imports.py`` — tests that every public module and subpackage imports
   without error.
-* ``test_instrument_core.py`` — unit tests for the
+* ``driver/test_instrument_core.py`` — unit tests for the
   :class:`~piec.drivers.instrument.Instrument` base class and its helper functions.
 * ``test_measurement_pipeline.py`` — integration tests for measurement classes. Each
   measurement goes through its complete pipeline.
+* ``driver/test_driver_physical.py`` and ``driver/test_driver_virtual.py`` — dynamic
+  checks that discover model drivers, category interfaces, and virtual drivers.
+  New drivers and categories are checked without adding tests or registrations.
 
 **Running tests locally**
 
-Install the package in editable mode with its development dependencies, then run
+Install the package in editable mode and install pytest, then run
 pytest from the repository root::
 
-   pip install -e ".[dev]"
+   pip install -e . pytest
    pytest tests/ -v
 
 Run a single file or test class::
@@ -93,10 +98,10 @@ Each notebook follows the same structure:
 * **Sections 3+ — Driver-specific tests:** 
 * **Final section — Cleanup:** 
 
-When adding a new driver, copy ``src/piec/drivers/example/example_test.ipynb`` as
-your starting template and add a cell for each method your driver implements. Run
-each cell sequentially from top to bottom and confirm the expected behaviour before
-submitting a pull request.
+Use an existing notebook interactively where applicable, but **do not add tests
+or create or modify test notebooks for driver contributions**. Run the existing
+dynamic suites and verify the driver on physical hardware, recording the results
+in your pull request. See :doc:`adding_driver` for both existing and new categories.
 
 
 AI use guidelines
@@ -111,6 +116,6 @@ DeepSeek R1). When using AI tools in contributions:
   against the instrument manual or source code.
 * Disclose significant AI assistance in your pull request description.
 
-.. todo::
-   Add recommended prompts for virtual mode driver responses. The general driver scaffolding
-   prompts have been documented in :doc:`adding_driver`.
+See :doc:`adding_driver` for manual development, AI chat attachments, and repository
+agent prompts with explicit file boundaries. Review the actual changed-file list
+to ensure an agent has not modified shared framework code or existing files.

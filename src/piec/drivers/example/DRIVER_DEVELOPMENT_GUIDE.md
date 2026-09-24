@@ -2,22 +2,63 @@
 
 This guide outlines the strict requirements and conventions for creating new instrument drivers within the `piec` library. Adhering to these rules ensures a globally consistent, interface-compliant, and minimal codebase across all supported instruments.
 
+## Contribution Workflow
+
+These rules apply to manual development, AI chats, and repository agents:
+
+* **Existing category:** copy `<category>/<category>.py` to
+  `<category>/<model_name>.py`. Rename the class and inherit from the original
+  category, with any protocol convenience class first, e.g. `SpecificAwg(Scpi, Awg)`.
+* Preserve method docstrings, signatures, defaults, and return formats. Fill in
+  bodies and class-level capabilities from the manual; append model-specific details.
+* Copied stubs hide inherited methods. Delegate to `super()` when reusing an
+  implementation. Remove copied `@optional` decorators from supported methods;
+  omit unsupported optional methods to inherit the parent's skip behavior.
+* **New category:** add only its minimal `__init__.py`, `<category>.py` interface,
+  one `virtual_<category>.py` implementation, and first model. Copy the new
+  interface to start that model. Discovery requires no registration edits.
+  **Designing the category manually is HIGHLY recommended** to avoid erroneous
+  functions and check that the base class attributes make sense. Define common
+  names and capability defaults for features all instruments of that type should
+  have; individual drivers translate these into each manufacturer's commands.
+* Existing files are read-only, including `instrument.py`, `autodetect.py`,
+  shared virtual infrastructure, parent interfaces, and other drivers. Give AI
+  an exact allowed-file list, report shared-code blockers separately, and review
+  the diff and untracked files yourself.
+* **DO NOT ADD OR MODIFY TESTS, fixtures, or notebooks.** Run the existing dynamic
+  tests with `python -m pytest tests/driver/ -v`, then `python -m pytest tests/ -v`.
+  Verify commands against the manual and physical hardware before contributing.
+
 ## 1. The 3-Level Architecture
 
 PIEC drivers follow a strict 3-level hierarchy to ensure consistency and modularity.
 
 ### Level 1: The Foundation (`Instrument`)
-All instruments in the library MUST inherit from the base `Instrument` class. This class handles the core VISA communication and standard PIEC behavior.
+All instruments in the library MUST inherit from the base `Instrument` class.
+It defines core VISA communication, validation, state tracking, and the common
+lifecycle interface (`idn`, `reset`, `clear`, `error`, `wait`, `self_test`,
+`operation_complete`, and `initialize`). Hardware implementations belong in
+protocol convenience classes or model drivers; the base interface alone does
+not provide every device's behavior.
+
+`reset()` must restore default operating settings with controllable outputs off;
+`clear()` clears errors/status/buffers without resetting settings; `initialize()`
+calls reset then clear, not a power cycle. After a hardware reset, call
+`self._initialize_state()` to set cached `_current_*` values to `None`. This
+clears Python's record of the settings; it sends no commands and does not reset
+the hardware. A working inherited reset may already perform this step.
 
 ### Convenience Classes (e.g., `Scpi`)
 `Scpi` is a **convenience class**, not a structural level. It provides vetted implementations of standard IEEE 488.2 / SCPI-99 functions (like `idn`, `reset`, `clear`, `error`, `wait`, `self_test`, `operation_complete`, `initialize`) that most SCPI-compliant instruments share.
 
 **How it works with Level 2 base classes:**
 
-Every Level 2 base class (e.g., `Oscilloscope`, `Awg`) already defines **skeleton versions** of these SCPI commands — empty methods with full docstrings but no implementation. This means:
+Level 2 classes inherit the common lifecycle interface from `Instrument`.
+Categories document additional requirements in their class docstrings instead
+of repeating lifecycle stubs:
 
-* A driver that inherits **only** from the Level 2 class has the correct interface and can override each skeleton with its own native protocol commands.
-* A driver that **also** inherits from `Scpi` gets the real SCPI implementations for free via MRO — no extra work needed for standard `*IDN?`, `*RST`, `*CLS`, etc.
+* A driver that inherits **only** from the Level 2 class must implement the required hardware behavior using its native protocol; inherited placeholders are not hardware implementations.
+* A driver that **also** inherits from `Scpi` can reuse its working implementations via MRO. Override them only when needed to meet the shared and category-specific contracts; do not add empty methods that hide working implementations.
 
 > [!IMPORTANT]
 > **Verification**: Always cross-check the instrument manual. If your instrument is SCPI-compliant but does *not* support a standard `Scpi` method (e.g., `*RST` doesn't reset properly), or uses a different command string, you MUST override the method in your Level 3 driver.
@@ -25,8 +66,17 @@ Every Level 2 base class (e.g., `Oscilloscope`, `Awg`) already defines **skeleto
 ### Level 2: Instrument-Type Interface (`example.py`, `oscilloscope.py`)
 These files define the **Template/Interface** for an entire category of instruments.
 * They list all **requirements** (methods and attributes) for that type.
-* They include **skeleton versions** of the standard SCPI commands (`idn`, `reset`, `clear`, etc.) so that the interface is complete even without `Scpi` inheritance.
+* They inherit common lifecycle methods from `Instrument`. Document additional
+  or different requirements in the **class docstring**, rather than repeating
+  lifecycle stubs. For example, scopes must acquire in AUTO mode after reset.
 * They contain no specific SCPI command strings — only the "vocabulary" of the instrument type.
+
+Design the minimum requirements of the instrument type: the most general
+interface, with consolidations for convenience where useful. Prefer `set_`,
+`get_`, and `configure_` methods; use the other conventions below when needed.
+Define common capability defaults for features expected on all models, and use
+`@optional` for useful features found on many instruments but absent from others.
+Model drivers translate these common names into each manufacturer's commands.
 
 ### Level 3: Specific Instrument Model (`agilent_33220a.py`)
 This is the **Actual Implementation** of the driver.
@@ -49,7 +99,7 @@ class Agilent33220a(Scpi, Awg):
 ```python
 from .oscilloscope import Oscilloscope
 
-# No Scpi mixin — override the skeletons with native protocol commands
+# No Scpi mixin — implement lifecycle methods with native protocol commands
 class MyProprietaryScope(Oscilloscope):
     AUTODETECT_ID = "PROPSCOPE"
 
@@ -134,28 +184,86 @@ belongs in the category's dedicated virtual class; model-level dispatch is handl
 centrally before the physical constructor runs.
 
 ## 3. Autodetection (`AUTODETECT_ID`)
-Every driver MUST (if possible) define a class-level string attribute named `AUTODETECT_ID`. This is a unique substring expected to be returned by the instrument when queried with an .idn() command.
+Use a verified, unique identification substring or list of substrings.
+If automatic identification is unsupported or unknown, use
+**`"MANUAL_ONLY:<ClassName>"`** instead of `None`, for example:
 
 ```python
-    AUTODETECT_ID = "MODEL_1234"
+AUTODETECT_ID = "MANUAL_ONLY:Geos_Stepper"
 ```
+
+Keep the class-name suffix unique to avoid registry collisions. Document direct
+construction with an explicit address. This is an ordinary registry string, not
+special runtime handling; mocked tests passing does not prove hardware detection.
+Do not make `idn()` return the marker. Replace it when a real identifier is verified.
+
+```python
+    # Single model
+    AUTODETECT_ID = "MODEL_1234"
+
+    # Multi-model family or model aliases
+    AUTODETECT_ID = [
+        "USB-1208HS",
+        "USB-1208HS-2AO",
+        "USB-1208HS-4AO",
+    ]
+```
+
+When using a list of identifiers for a hardware family with differing channel counts or limits, declare the family maximum capabilities at the class level (ensuring model-profiled virtual dispatch works out-of-the-box), and let the physical constructor inspect `self.idn()` (e.g. matching `max(matches, key=len)`) to configure instance-specific capabilities.
+
 
 ## 4. Class Attributes (Capabilities & Limits)
 Class attributes define the valid parameters an instrument can accept. The parent base classes (e.g., `Oscilloscope`, `Awg`) define a strict vocabulary of these attribute names.
 * Drivers MUST explicitly assign their supported capabilities using these exact class attribute names (e.g., `frequency`, `voltage`, `waveform`).
-* **NEVER** introduce new vocabulary terms (like `waveform = ['WEIRD_WAVE']`) in the child class that do not exist in the parent class's definitions.
+* Preserve the interface's capability names and required options. Map vendor
+  terminology into that vocabulary instead of replacing it with vendor-specific
+  names. The dynamic tests require a model's lists to include the parent's
+  required values; additional supported options must remain consistent with the
+  interface contract.
+* Channel lists describe physical availability. Use an empty list only when that
+  channel type is absent. A fixed or non-configurable property does not make the
+  channel absent: advertise its actual limits and retain the standard setter or
+  configure method as a documented no-op when no hardware command is needed.
+* Interface names are manufacturer-independent. Model drivers map vendor names,
+  channel identifiers, modes, and ranges into this common vocabulary so
+  measurement code does not need model-specific branches.
+* Read and acquisition methods cannot be no-ops when their channel type is
+  advertised. They must return the interface's documented data. For example, a
+  DAQ without hardware-paced scanning must implement `read_AI_scan` with a
+  documented software-paced fallback.
 
-**Attribute Formatting Rules:**
+### Parent Declarations and Model Values
+
+**If a capability can be a tuple on one instrument and a list on another,
+initialize it to `None` in the parent.** The model supplies its actual range or
+options at class level. For example, `Awg.load_impedance = None` allows a model
+to declare `(1.0, 10000.0)` or `[50.0, 1000.0]`, according to its manual.
+
+A non-`None` parent declaration fixes the type: `(None, None)` requires a
+two-element tuple, while `[]` requires a list. Parent list entries are required
+options that the model must retain. Leaving `None` on the model disables
+validation; fill in known limits. Report conflicting parent declarations
+separately instead of editing them in a model-only contribution.
+
+### Attribute Formatting Rules
 The class attributes must follow a specific syntax based on what kind of parameter they restrict:
 1. **Lists (Discrete Sets):** If the argument takes a limited number of defined values, use a list of the appropriate type. Examples:
    ```python
    channel = [1, 2]
    waveform = ['SIN', 'SQU', 'RAMP']
    ```
-2. **Tuples (Ranges):** If the argument accepts any continuous float/int value within a range, use a geometric tuple `(min, max)`. Examples:
+2. **Tuples (Ranges):** If the argument accepts any numeric value within an interval, use a two-element tuple `(min, max)`. Examples:
    ```python
    amplitude = (0.01, 10.0) # Vpp
    offset = (-5.0, 5.0) 
+   ```
+   If the instrument offers a discrete selection of continuous ranges, use a
+   list of tuples. Use a one-element list when there is only one supported
+   range, and an empty list when there are no available options. Examples:
+   ```python
+   voltage_range = [(-10.0, 10.0), (-5.0, 5.0)]
+   fixed_voltage_range = [(-10.0, 10.0)]
+   unsupported_option = []
    ```
 3. **Dictionaries (Dependent Arguments):** If the valid range or options of an argument depend on the state of *another* argument (e.g., the maximum frequency is restricted depending on the waveform selected), write this as a dictionary. The primary key is the name of the argument it depends on:
    ```python
@@ -187,7 +295,9 @@ Function naming strictly determines scope:
 * **`read_<property>` Methods:** Must **RETURN** formatted or complex data (e.g., an array of waveform points, a multi-value response, or a post-processed string). 
   - **Formatting**: The specific data structure (typically a `pandas.DataFrame`) must adhere to the return specification detailed in the parent class's docstring.
 * **`configure_<module>` Methods:** Must perform **MULTIPLE** actions by wrapping and calling several individual `set_` functions. For instance, `configure_waveform` might call `set_waveform`, `set_frequency`, and `set_amplitude`. 
-  - For EVERY `configure_` command, initialize all non-essential arguments to `None` in the signature, and only invoke the corresponding `set_` method if the parameter is not `None`.
+  - Preserve the parent signature. When designing a new interface, use `None`
+    for optional settings and call their `set_` methods only when supplied.
+    Existing parent-defined convenience defaults remain part of the contract.
 * **`quick_read` Method:** A specialized **convenience function** (common in Oscilloscopes) used to return whatever data is currently ready or displayed on the hardware (e.g., a cursor value or mean measurement). It is used for fast, unformatted polling.
 * **`run_<routine>` Methods:** Used for **hardware-executed routines** where the instrument performs a complete operation internally (at hardware speed) and then returns the results. The key distinction is that a `run_` method triggers autonomous instrument behavior — unlike `set_` (which only writes a parameter) or `configure_` (which just calls multiple `set_` methods). Examples:
   - `run_voltage_sweep(...)` — the sourcemeter executes the full I-V sweep internally and returns all data points at once.
@@ -196,7 +306,11 @@ Function naming strictly determines scope:
 
 ## 6. Method Signatures and Default Parameters
 * Method signatures must perfectly mirror the parent interface.
-* **DO NOT** provide arbitrary magnitude or state defaults in your `set_` functions. Parameters like `voltage=0.0`, `waveform="SIN"`, or `frequency=1000` must be set to `None` in the signature.
+* **DO NOT** invent magnitude or state defaults in a model's `set_` methods.
+  Copy the parent signature exactly, including required arguments and any existing
+  defaults. When designing a new interface, keep magnitude/state arguments
+  required or use `None` with explicit validation, rather than inventing defaults
+  such as `voltage=0.0`, `waveform="SIN"`, or `frequency=1000`.
 * Drivers must enforce explicit parameter assignments, looking like:
   ```python
   def set_voltage(self, channel=1, voltage=None):
@@ -210,14 +324,24 @@ Function naming strictly determines scope:
   - **Convenience `configure_` Methods:** These are allowed to retain sensible default values if those defaults are established in the parent interface. 
 
 ## 7. Communication & Protocol Convenience
-* Read variables using `self.instrument.query("SCPI?")`.
-* Write variables using `self.instrument.write("SCPI")`.
+* For VISA-based drivers, read variables using `self.instrument.query("SCPI?")`
+  and write variables using `self.instrument.write("SCPI")`, with commands from
+  the manual. Non-VISA drivers use their applicable transport or convenience
+  class, such as `Digilent` for Universal Library communication.
 * **The Role of `Scpi`**: Inheritance from `Scpi` is a convenience to avoid rewriting the same basic `*IDN?`, `*RST`, `*CLS`, `*ESR?`, `*WAI`, `*TST?`, `*OPC?` commands. However, the driver developer is responsible for verifying that the inherited `reset()`, `clear()`, etc., map correctly to the instrument's manual.
-* **When to skip `Scpi`**: If your instrument does not speak SCPI at all (e.g., it uses a proprietary serial/binary protocol), simply inherit from the Level 2 category class alone. The skeleton methods defined there give you the correct interface — just override each one with your native protocol commands.
+* **When to skip `Scpi`**: For a proprietary protocol, inherit from the category
+  alone and implement the required native behavior. The common lifecycle
+  interface is inherited from `Instrument`, possibly with category-specific
+  documentation; its placeholders are not hardware implementations.
 
 ## 8. Automatic State Tracking
 The `piec` framework automatically tracks the "last set" value of any parameter that has a corresponding class attribute. 
-* Whenever a `set_<property>(value=...)` method finishes successfully, the decorator updates `self._current_<property>` with that value.
+* After a wrapped public method succeeds, the decorator records each non-`None`
+  argument whose name matches a capability attribute as `self._current_<name>`.
+  This applies to public methods generally, not just `set_` methods, and includes
+  applied argument defaults. Failed calls do not record their arguments.
+* State tracking and string normalization operate even when `check_params=False`;
+  that flag controls automatic parameter validation.
 * These attributes are useful for **dependent parameter checks** (handled by the framework) and for **driver-side conditional logic**.
 * **Example:** If you need to know the current `mode` to set the correct `voltage` range, you can access `self._current_mode`.
 
@@ -229,7 +353,12 @@ The `auto_check_params` decorator **automatically converts all string arguments 
 * If your instrument requires an uppercase string in its command (e.g. the instrument rejects `FUNC sin`), call `.upper()` on the argument inside your method before writing it to the instrument.
 
 > [!CAUTION]  
-> **Initial State is `None`:** Upon first connection, all tracked attributes are initialized to `None`. This means the first few `set_` calls (where one parameter depends on another) might skip validation or cause errors if your logic expects a value. Always perform a hardware query in `__init__` (see Rule 2) to synchronize these states immediately.
+> **Initial State is `None`:** The framework initially sets tracked attributes
+> to `None`. Dependent validation can skip a check when the dependency is unknown.
+> If your driver relies on an existing hardware setting, query it in `__init__`
+> and synchronize the relevant state before relying on it. Do not add a
+> constructor solely to query state the driver does not need, or guess a state
+> when a required query fails.
 > This synchronization applies only to physical instances. A model-profiled
 > virtual instance does not run the physical constructor, so its usable limits
 > must already be present in the model's class attributes.
@@ -254,6 +383,10 @@ class Oscilloscope(Instrument):
 * If a specific driver supports the feature, override the method as usual.
 * If it doesn't, do nothing — calls will print `[OPTIONAL SKIP]` and return `None`.
 
+Virtual drivers follow the same rule: simulate required methods, and implement
+optional methods only when that simulation is needed. Otherwise inherit the skip
+behavior; copying a physical model's capabilities does not add simulated features.
+
 ### 9b. Automatic Optional (Child-Specific Methods)
 Any public method that a specific driver defines **beyond** what the parent class provides is automatically treated as optional. If measurement code calls that method on a different driver that doesn't have it, it gracefully skips.
 
@@ -273,7 +406,7 @@ In cases where the Level 2 interface uses a generic argument (e.g., `channel=1`,
 ```python
     def set_mode(self, channel, mode):
         # Map generic PIEC mode to specific hardware command
-        mode_map = {'CONSTANT': 'FIXED', 'SWEEP': 'SWE'}
+        mode_map = {'constant': 'FIXED', 'sweep': 'SWE'}
         hw_mode = mode_map.get(mode)
         if hw_mode is None:
              raise ValueError(f"Mode {mode} not supported by this instrument")

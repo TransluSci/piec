@@ -18,7 +18,7 @@ class RigolDS1000Z(Scpi, Oscilloscope):
     # Vertical Scale: 1mV/div to 10V/div
     vdiv = (1e-3, 10.0)
     
-    y_range = None
+    y_range = (None, None)  # Dynamic: depends on probe attenuation (8 mV - 80 V at 1X, up to 800 V at 10X)
     y_position = (-100.0, 100.0) # Varies by scale
     
     input_coupling = ["AC", "DC", "GND"]
@@ -28,13 +28,13 @@ class RigolDS1000Z(Scpi, Oscilloscope):
     # Timebase: 5ns/div to 50s/div
     tdiv = (5e-9, 50.0)
     
-    x_range = None
+    x_range = (60e-9, 600.0) # 12 divisions * 5ns to 50s
     x_position = (-500.0, 500.0)
     
     trigger_source = [1, 2, 3, 4, "EXT", "LINE", "AC"]
     trigger_level = (-100.0, 100.0)
     trigger_slope = ["POS", "NEG", "RFAL"]
-    trigger_mode = ["AUTO", "NORM", "SING"]
+    trigger_mode = ["EDGE"]
     trigger_sweep = ["AUTO", "NORM", "SING"]
     
     acquisition_mode = ["NORM", "AVER", "PEAK", "HRES"]
@@ -51,8 +51,10 @@ class RigolDS1000Z(Scpi, Oscilloscope):
         self.instrument.write(f":CHANnel{channel}:DISPlay {int(on)}")
 
     def set_vertical_scale(self, channel, vdiv=None, y_range=None):
-        if vdiv:
+        if vdiv is not None:
             self.instrument.write(f":CHANnel{channel}:SCALe {vdiv}")
+        elif y_range is not None:
+            self.instrument.write(f":CHANnel{channel}:RANGe {y_range}")
 
     def set_vertical_position(self, channel, y_position):
         self.instrument.write(f":CHANnel{channel}:OFFSet {y_position}")
@@ -64,19 +66,27 @@ class RigolDS1000Z(Scpi, Oscilloscope):
         self.instrument.write(f":CHANnel{channel}:PROBe {probe_attenuation}")
     
     def set_channel_impedance(self, channel, channel_impedance):
-        pass # Only 1M usually
+        norm = str(channel_impedance).upper().strip().removesuffix("OHM").strip()
+        if norm in ("1M", "1MEG", "1000000", "1E6"):
+            pass # Only 1M supported
+        else:
+            raise ValueError(
+                f"channel_impedance {channel_impedance!r} not supported on RigolDS1000Z (only '1M' supported)"
+            )
 
     def set_horizontal_scale(self, tdiv=None, x_range=None):
-        if tdiv:
+        if tdiv is not None:
             self.instrument.write(f":TIMebase:SCALe {tdiv}")
+        elif x_range is not None:
+            self.instrument.write(f":TIMebase:SCALe {x_range / 12.0}")
 
     def set_horizontal_position(self, x_position):
         self.instrument.write(f":TIMebase:POSition {x_position}")
 
     def configure_horizontal(self, tdiv=None, x_range=None, x_position=None):
-        if tdiv:
-            self.set_horizontal_scale(tdiv=tdiv)
-        if x_position:
+        if tdiv is not None or x_range is not None:
+            self.set_horizontal_scale(tdiv=tdiv, x_range=x_range)
+        if x_position is not None:
             self.set_horizontal_position(x_position)
 
     def set_trigger_source(self, trigger_source):
@@ -91,20 +101,32 @@ class RigolDS1000Z(Scpi, Oscilloscope):
         self.instrument.write(f":TRIGger:EDGE:SLOPe {trigger_slope}")
 
     def set_trigger_mode(self, trigger_mode):
-        pass # Rigol puts sweep in sweep command usually
+        mode = str(trigger_mode).upper()
+        if mode not in self.trigger_mode:
+            raise ValueError(
+                f"trigger_mode {trigger_mode!r} not supported on RigolDS1000Z (supported: {self.trigger_mode})"
+            )
+        self.instrument.write(f":TRIGger:MODE {mode}")
     
     def set_trigger_sweep(self, trigger_sweep):
-        self.instrument.write(f":TRIGger:SWEep {trigger_sweep}")
+        sweep = str(trigger_sweep).upper()
+        if sweep not in self.trigger_sweep:
+            raise ValueError(
+                f"trigger_sweep {trigger_sweep!r} not supported on RigolDS1000Z (supported: {self.trigger_sweep})"
+            )
+        self.instrument.write(f":TRIGger:SWEep {sweep}")
 
-    def configure_trigger(self, trigger_source=None, trigger_level=None, trigger_slope=None, trigger_mode=None):
-        if trigger_source:
+    def configure_trigger(self, trigger_source=None, trigger_level=None, trigger_slope=None, trigger_mode=None, trigger_sweep=None):
+        if trigger_source is not None:
             self.set_trigger_source(trigger_source)
-        if trigger_level:
+        if trigger_level is not None:
             self.set_trigger_level(trigger_level)
-        if trigger_slope:
+        if trigger_slope is not None:
             self.set_trigger_slope(trigger_slope)
-        if trigger_mode:
-            self.set_trigger_sweep(trigger_mode) # Rigol uses sweep for mode
+        if trigger_mode is not None:
+            self.set_trigger_mode(trigger_mode)
+        if trigger_sweep is not None:
+            self.set_trigger_sweep(trigger_sweep)
 
     def manual_trigger(self):
         """Sends a manual force trigger event to the oscilloscope."""
@@ -120,13 +142,20 @@ class RigolDS1000Z(Scpi, Oscilloscope):
         self.instrument.write(":SINGle")
 
     def set_acquisition(self):
-        pass # Standard run/stop
+        self.instrument.write(":SINGle")
 
     def set_acquisition_channel(self, channel):
         self.instrument.write(f":WAVeform:SOURce CHANnel{channel}")
         
     def set_acquisition_mode(self, acquisition_mode):
-        self.instrument.write(f":ACQuire:TYPE {acquisition_mode}")
+        mode = str(acquisition_mode).upper()
+        mapping = {"NORM": "NORM", "NORMAL": "NORM", "AVER": "AVER", "AVERAGE": "AVER", "PEAK": "PEAK", "HRES": "HRES"}
+        mapped = mapping.get(mode)
+        if mapped is None:
+            raise ValueError(
+                f"acquisition_mode {acquisition_mode!r} not supported on RigolDS1000Z (supported: {self.acquisition_mode})"
+            )
+        self.instrument.write(f":ACQuire:TYPE {mapped}")
 
     def set_acquisition_points(self, acquisition_points):
         # Sets MEM DEPTH

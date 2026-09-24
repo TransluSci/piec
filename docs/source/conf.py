@@ -1,5 +1,6 @@
 # Configuration file for the Sphinx documentation builder.
 import os
+import runpy
 import sys
 from pathlib import Path
 sys.path.insert(0, os.path.abspath('../../src/'))
@@ -109,8 +110,6 @@ epub_show_urls = 'footnote'
 try:
     print("Generating supported_instruments.rst...")
     script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'gen_instruments.py')
-    with open(script_path, 'r', encoding='utf-8') as f:
-        code = f.read()
-        exec(code, {'__file__': script_path, 'os': os, 'sys': sys, 'Path': Path})
+    runpy.run_path(script_path, run_name='__main__')
 except Exception as e:
     print(f"Warning: Failed to generate supported_instruments.rst: {e}")

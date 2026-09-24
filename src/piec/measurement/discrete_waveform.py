@@ -280,7 +280,7 @@ class HysteresisLoop(DiscreteWaveform):
         """
         interp_v_array = [0,1,0,-1,0]+([1,0,-1,0]*((self.n_cycles)-1))
 
-        n_points = self.awg.arb_data_range[1] # Use attribute for max points
+        n_points = self.awg.arb_data_range[1] if self.awg.arb_data_range[1] is not None else 4000 # Use attribute for max points, or fallback
         dense = interpolate_sparse_to_dense(np.linspace(0,len(interp_v_array),len(interp_v_array)), interp_v_array, total_points=n_points)
 
         # Create the arbitrary waveform in the AWG's volatile memory
@@ -394,7 +394,7 @@ class ThreePulsePund(DiscreteWaveform):
         sparse_v = np.array([-abs(frac_reset_amp), -abs(frac_reset_amp), 0, 0, abs(frac_p_u_amp), abs(frac_p_u_amp), 0, 0,
                              abs(frac_p_u_amp), abs(frac_p_u_amp), 0, 0,]) * polarity
         
-        n_points = self.awg.arb_data_range[1] # n points to use is max
+        n_points = self.awg.arb_data_range[1] if self.awg.arb_data_range[1] is not None else 4000 # n points to use is max, or fallback
 
         # densify the array
         dense_v = interpolate_sparse_to_dense(sparse_t, sparse_v, total_points=n_points)

@@ -24,12 +24,14 @@ class Keysight81150a(Scpi, Awg):
     # the selected mode's limits by configure_output_amplifier.
     frequency = {
         'waveform': {
-            'sin': (1e-6, 240e6),
-            'squ': (1e-6, 120e6),
-            'ramp': (1e-6, 5e6),
-            'puls': (1e-6, 120e6),
-            'pattern': (1e-6, 120e6),
-            'user': (1e-6, 120e6),
+            'SIN': (1e-6, 240e6),
+            'SQU': (1e-6, 120e6),
+            'RAMP': (1e-6, 5e6),
+            'PULS': (1e-6, 120e6),
+            'NOIS': None,
+            'DC': None,
+            'USER': (1e-6, 120e6),
+            'PATTERN': (1e-6, 120e6),
         }
     }
     amplitude = (0, 5)
@@ -194,37 +196,6 @@ class Keysight81150a(Scpi, Awg):
             polarity (str): The polarity of the waveform
         """
         self.instrument.write(":OUTP{}:POL {}".format(channel, polarity))
-
-    def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None, user_func=None):
-        """
-        Configures the waveform to be generated on the selected channel. Calls the set_waveform, set_frequency, set_amplitude, set_offset, set_load_impedance, and set_polarity functions to configure the waveform
-        NOTE: Add arb waveform to toggle here
-        args:
-            channel (int): The channel to configure the waveform on
-            waveform (str): The waveform to be generated
-            frequency (float): The frequency of the waveform in Hz
-            amplitude (float): The amplitude of the waveform in volts
-            offset (float): The offset of the waveform in volts
-            load_impedance (float): The load impedance of the waveform in ohms
-            polarity (str): The polarity of the waveform
-        """
-        if waveform == "user":
-            if user_func is not None:
-                self.set_arb_waveform(channel, user_func)
-            else:
-                print("Please input a user_func arg to configure the user defined wave")
-        else:
-            self.set_waveform(channel, waveform)
-        if frequency is not None:
-            self.set_frequency(channel, frequency)
-        if amplitude is not None:
-            self.set_amplitude(channel, amplitude)
-        if offset is not None:
-            self.set_offset(channel, offset)
-        if load_impedance is not None:
-            self.set_load_impedance(channel, load_impedance)
-        if polarity is not None:
-            self.set_polarity(channel, polarity)
 
     #functions that are specific to waveform types
 
@@ -407,7 +378,7 @@ class Keysight81150a(Scpi, Awg):
             trigger_slope (str): The trigger slope
             trigger_mode (str): The trigger mode
         """
-        if trigger_source is None:
+        if trigger_source is not None:
             self.set_trigger_source(channel, trigger_source)
         if trigger_level is not None:
             self.set_trigger_level(channel, trigger_level)
@@ -435,10 +406,10 @@ class Keysight81150a(Scpi, Awg):
         """
         if amplifier_type == 'HIV' or amplifier_type == 'hiv':
             self.amplitude = (0, 10)
-            self.frequency = {'waveform': {'sin': (1e-6, 5e6), 'squ': (1e-6, 50e6), 'ramp': (1e-6, 5e6), 'puls': (1e-6, 50e6), 'pattern': (1e-6, 50e6), 'user': (1e-6, 50e6)}}
+            self.frequency = {'waveform': {'SIN': (1e-6, 5e6), 'SQU': (1e-6, 50e6), 'RAMP': (1e-6, 5e6), 'PULS': (1e-6, 50e6), 'NOIS': None, 'DC': None, 'PATTERN': (1e-6, 50e6), 'USER': (1e-6, 50e6)}}
         if amplifier_type == 'HIB' or amplifier_type == 'hib':
             self.amplitude = (0, 5)
-            self.frequency = {'waveform': {'sin': (1e-6, 240e6), 'squ': (1e-6, 120e6), 'ramp': (1e-6, 5e6), 'puls': (1e-6, 120e6), 'pattern': (1e-6, 120e6), 'user': (1e-6, 120e6)}}
+            self.frequency = {'waveform': {'SIN': (1e-6, 240e6), 'SQU': (1e-6, 120e6), 'RAMP': (1e-6, 5e6), 'PULS': (1e-6, 120e6), 'NOIS': None, 'DC': None, 'PATTERN': (1e-6, 120e6), 'USER': (1e-6, 120e6)}}
         self.instrument.write("OUTP{}:ROUT {}".format(channel, amplifier_type))
 
     #ovveride SCPI reset

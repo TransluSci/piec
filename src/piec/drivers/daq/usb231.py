@@ -2,24 +2,33 @@ from ..digilent import Digilent
 from .daq import Daq
 
 try:
-    from mcculw.enums import ULRange, DigitalIODirection, DigitalPortType, AnalogInputMode, ScanOptions
-    from mcculw import ul
+    from mcculw.enums import (
+        AnalogInputMode,
+        DigitalIODirection,
+        DigitalPortType,
+        FunctionType,
+        ScanOptions,
+        Status,
+        ULRange,
+    )
 except ImportError:
     # Digilent raises a contextual ImportError when hardware is initialized.
     ULRange = None
     DigitalIODirection = None
     DigitalPortType = None
     AnalogInputMode = None
+    FunctionType = None
     ScanOptions = None
+    Status = None
 
 class USB231(Digilent, Daq):
     """
     Driver for the MCC USB-231 DAQ device.
     
     Based on Manual:
-    - [cite_start]8 Single-Ended Analog Inputs (16-bit, +/- 10V) [cite: 668]
-    - [cite_start]2 Analog Outputs (16-bit, +/- 10V) [cite: 677]
-    - [cite_start]8 Digital I/O (Bit configurable) [cite: 683]
+    - 8 Single-Ended Analog Inputs (16-bit, +/- 10V)
+    - 2 Analog Outputs (16-bit, +/- 10V)
+    - 8 Digital I/O (Bit configurable)
     """
 
     # --- Class Attributes ---
@@ -30,22 +39,28 @@ class USB231(Digilent, Daq):
     # This will be updated dynamically by set_input_mode().
     ai_channel = [0, 1, 2, 3]
 
-    # [cite_start]Analog Output Channels: 2 channels (indices 0-1) [cite: 677]
+    # Analog Output Channels: 2 channels (indices 0-1)
     ao_channel = [0, 1]
 
-    # [cite_start]Digital I/O Channels: 8 channels (indices 0-7) [cite: 683]
+    # Digital I/O Channels: 8 channels (indices 0-7)
     dio_channel = [0, 1, 2, 3, 4, 5, 6, 7]
 
-    # [cite_start]Analog Input Range: Fixed at +/- 10V [cite: 668]
+    # Analog Input Range: fixed at +/-10 V.
     ai_range = [(-10.0, 10.0)]
 
-    # [cite_start]Analog Output Range: Fixed at +/- 10V [cite: 677]
+    # Maximum aggregate hardware-paced analog input rate.
+    ai_sample_rate = (1, 50_000)
+
+    # Analog Output Range: fixed at +/-10 V.
     ao_range = [(-10.0, 10.0)]
 
-    # [cite_start]Analog Input Modes: SE (Single-Ended) or DIFF (Differential) [cite: 668]
+    # Maximum simultaneous hardware-paced update rate per AO channel.
+    ao_sample_rate = (1, 5_000)
+
+    # Analog Input Modes: SE (Single-Ended) or DIFF (Differential)
     ai_mode = ['SE', 'DIFF']
 
-    # [cite_start]Digital Direction: Configurable as Input ('I') or Output ('O') [cite: 683]
+    # Digital Direction: Configurable as Input ('I') or Output ('O')
     dio_direction = ['I', 'O']
 
     def __init__(self, address, **kwargs):
@@ -56,13 +71,19 @@ class USB231(Digilent, Daq):
         # Initialize the parent Digilent class (handles connection)
         super().__init__(address, **kwargs)
 
+        self._ai_sample_rates = {}
+        self._ao_sample_rates = {}
+        self._selected_ai_channel = 0
+        self._selected_ao_channel = 0
+        self._selected_dio_channel = 0
+
         # Force hardware to match the class default (Differential) on startup
         self.set_input_mode('DIFF')
 
     def read_AI(self, channel):
         """
         Reads a float value (voltage) from the specified Analog Input channel.
-        [cite_start]Manual Page 10: Software paced mode[cite: 124].
+        Manual Page 10: Software paced mode.
         
         args:
             channel (int): The channel to read from.
@@ -75,7 +96,7 @@ class USB231(Digilent, Daq):
 
         try:
             # v_in returns the voltage directly. 
-            # [cite_start]Range is fixed at +/- 10V (BIP10VOLTS) [cite: 668]
+            # Range is fixed at +/- 10V (BIP10VOLTS)
             value = self.ul.v_in(self.board_num, channel, ULRange.BIP10VOLTS)
             return value
         except Exception as e:
@@ -85,7 +106,7 @@ class USB231(Digilent, Daq):
     def read_AI_scan(self, channel, points, rate):
         """
         Reads a stream of Analog input data (hardware paced).
-        [cite_start]Manual Page 10: Hardware paced mode[cite: 124].
+        Manual Page 10: Hardware paced mode.
         
         args:
             channel (int): The channel to read from.
@@ -97,124 +118,67 @@ class USB231(Digilent, Daq):
         if channel not in self.ai_channel:
             raise ValueError(f"Channel {channel} is not valid in current Input Mode. Available: {self.ai_channel}")
 
-        memhandle = None
+        if not isinstance(points, int) or isinstance(points, bool) or points <= 0:
+            raise ValueError("points must be a positive integer")
+        if not 1 <= rate <= 50_000:
+            raise ValueError("rate must be between 1 S/s and 50,000 S/s")
+
+        # USB-231 supports SCALEDATA. Let Universal Library apply the board's
+        # calibration coefficients and return engineering-unit voltages rather
+        # than approximating volts from ideal 16-bit raw counts.
+        memhandle = self.ul.scaled_win_buf_alloc(points)
+        if not memhandle:
+            raise MemoryError("Universal Library could not allocate the AI scan buffer")
+
         try:
-            # Allocate memory buffer
-            memhandle = self.ul.win_buf_alloc(points)
-            if not memhandle:
-                raise Exception("Failed to allocate memory for scan.")
+            scan_options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
+            self._last_ai_scan_rate = self.ul.a_in_scan(
+                self.board_num,
+                channel,
+                channel,
+                points,
+                int(rate),
+                ULRange.BIP10VOLTS,
+                memhandle,
+                scan_options,
+            )
 
-            # Prepare Scan Options
-            # Use BACKGROUND mode with explicit polling
-            scan_options = ScanOptions.BACKGROUND
-            
-            # Configure rate 
-            rate_in = int(rate)
-            
-            # Start Scan
-            try:
-                self.ul.a_in_scan(
-                    self.board_num, 
-                    channel, 
-                    channel, 
-                    points, 
-                    rate_in, 
-                    ULRange.BIP10VOLTS, 
-                    memhandle, 
-                    scan_options
-                )
-            except Exception as e:
-                print(f"DEBUG: a_in_scan FAILED with: {e}")
-                raise
-
-            # Poll for completion
-            from mcculw.enums import FunctionType, Status
             import time
-            
-            # Wait loop
-            expected_duration = points / rate
-            timeout = time.time() + expected_duration + 5.0
-            
+
+            timeout = time.monotonic() + points / float(rate) + 5.0
             while True:
-                status, curr_count, curr_index = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                status, _, _ = self.ul.get_status(
+                    self.board_num, FunctionType.AIFUNCTION
+                )
                 if status == Status.IDLE:
                     break
-                if time.time() > timeout:
-                    self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
-                    raise TimeoutError("Hardware scan timed out.")
+                if time.monotonic() >= timeout:
+                    raise TimeoutError("USB-231 analog-input scan timed out")
                 time.sleep(0.01)
 
-            # Retrieve Data manually to avoid Error 35 in scaled_win_buf_to_array
-            # [cite_start]Manual Page 10: 16-bit resolution[cite: 124]
-            # Data is 16-bit unsigned integers (raw counts)
-            from ctypes import c_ushort, POINTER, cast
-            
-            # Create array for raw data
-            raw_array = (c_ushort * points)()
-            
-            # Use raw win_buf_to_array which might be more stable?
-            # Or better: cast the memhandle directly if possible.
-            # But win_buf_alloc returns an opaque handle.
-            # Let's try ul.win_buf_to_array first.
-            
-            try:
-                self.ul.win_buf_to_array(memhandle, raw_array, 0, points)
-            except Exception as e:
-                print(f"DEBUG: win_buf_to_array failed: {e}")
-                raise
+            from ctypes import c_double
 
-            # Convert raw counts to Voltage
-            # Range: +/- 10V (BIP10VOLTS)
-            # Resolution: 16-bit (0 to 65535) or (-32768 to 32767)?
-            # USB-231 is 12-bit SE, 16-bit Differential? No, manual says 12-bit??
-            # Wait, docstring says 16-bit. Let's assume 16-bit for now.
-            # If BIP10V: 
-            #   0 = -10V, 65535 = +10V? 
-            #   or is it signed?
-            #   Usually MCC uses unsigned 0-65535 mapping.
-            
-            # Let's use the helper to_eng_units for a single point to verify scale/offset if needed,
-            # but that's slow.
-            # Standard MCC conversion:
-            # Volts = (Raw - Offset) * Scale
-            # Full Scale Range = 20V.
-            # 65536 codes.
-            # Volts = (Raw / 65536) * 20 - 10
-            
-            data_volts = []
-            for val in raw_array:
-                # 12-bit device usually returns 12-bit values shifted (e.g. 0-4095).
-                # USB-231 is 12-bit according to some docs, but this driver said 16.
-                # Let's try standard 16-bit scaling first.
-                v = (val / 65536.0) * 20.0 - 10.0
-                data_volts.append(v)
-            
-            return data_volts
-            
-        except Exception as e:
-            print(f"USB231 Scan Error: {e}")
-            raise
-            
-        except Exception as e:
-            print(f"USB231 Scan Error: {e}")
-            raise
-            
-        except Exception as e:
-            print(f"USB231 Scan Error: {e}")
-            raise
+            data_volts = (c_double * points)()
+            self.ul.scaled_win_buf_to_array(memhandle, data_volts, 0, points)
+            return list(data_volts)
         finally:
-            if memhandle:
-                self.ul.win_buf_free(memhandle)
+            try:
+                self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
+            except Exception:
+                pass
+            self.ul.win_buf_free(memhandle)
 
     def write_AO(self, channel, data):
         """
         Writes data to the Analog Output channel.
-        [cite_start]Manual Page 17: Software paced mode[cite: 489].
+        Manual Page 17: Software paced mode.
         
         args:
             channel (int): The channel to write to (0-1).
             data (float or list/ndarray): The voltage(s) to output (+/- 10V).
         """
+        if channel not in self.ao_channel:
+            raise ValueError(f"AO channel {channel} is invalid; valid channels are {self.ao_channel}")
         try:
             # Handle single value vs array
             if isinstance(data, (int, float)):
@@ -222,8 +186,11 @@ class USB231(Digilent, Daq):
             
             # Software paced loop
             for v in data:
-                # [cite_start]Range is fixed at +/- 10V [cite: 677]
-                self.ul.v_out(self.board_num, channel, ULRange.BIP10VOLTS, float(v))
+                # Range is fixed at +/- 10V
+                voltage = float(v)
+                if not -10.0 <= voltage <= 10.0:
+                    raise ValueError("analog-output values must be within +/-10 V")
+                self.ul.v_out(self.board_num, channel, ULRange.BIP10VOLTS, voltage)
                 
         except Exception as e:
             print(f"USB231 Error writing AO{channel}: {e}")
@@ -232,7 +199,7 @@ class USB231(Digilent, Daq):
     def set_input_mode(self, ai_mode):
         """
         Configures the Analog Input Mode and updates self.ai_channel list.
-        [cite_start]Manual Page 22: "8 single-ended or 4 differential; software-selectable"[cite: 668].
+        Manual Page 22: "8 single-ended or 4 differential; software-selectable".
         
         args:
             ai_mode (str): 'SE' (Single-Ended) or 'DIFF' (Differential).
@@ -242,14 +209,14 @@ class USB231(Digilent, Daq):
         try:
             if 'DIFF' in mode_str:
                 # Differential Mode: Limits to 4 channels (0-3)
-                # [cite_start]Pins 0-3 become High, Pins 4-7 become Low inputs [cite: 261]
+                # Pins 0-3 become High, Pins 4-7 become Low inputs
                 self.ul.a_input_mode(self.board_num, AnalogInputMode.DIFFERENTIAL)
                 self.ai_channel = [0, 1, 2, 3]
                 print(f"USB231: Set to DIFFERENTIAL mode. Available Channels: {self.ai_channel}")
                 
             elif 'SE' in mode_str or 'SINGLE' in mode_str:
                 # Single-Ended Mode: Enables 8 channels (0-7)
-                # [cite_start]All inputs referenced to AGND [cite: 358]
+                # All inputs referenced to AGND
                 self.ul.a_input_mode(self.board_num, AnalogInputMode.SINGLE_ENDED)
                 self.ai_channel = [0, 1, 2, 3, 4, 5, 6, 7]
                 print(f"USB231: Set to SINGLE-ENDED mode. Available Channels: {self.ai_channel}")
@@ -264,45 +231,61 @@ class USB231(Digilent, Daq):
     def set_ai_range(self, ai_channel, ai_range):
         """
         Configures the gain/range for an Analog Input channel.
-        [cite_start]The USB-231 has a fixed input range of +/- 10V[cite: 668].
+        The USB-231 has a fixed input range of +/- 10V.
         
         args:
             ai_channel (int): The channel to configure.
             ai_range (tuple): The (min, max) range desired.
         """
-        # Check if the requested range is the supported range (-10, 10)
+        if ai_channel not in self.ai_channel:
+            raise ValueError(f"AI channel {ai_channel} is invalid; valid channels are {self.ai_channel}")
         valid_range = (-10.0, 10.0)
-        if ai_range != valid_range:
-            print(f"Warning: USB-231 has a fixed AI range of +/- 10V. Requested {ai_range} ignored.")
+        if self._normalize_range(ai_range) != valid_range:
+            raise ValueError("USB-231 analog inputs have a fixed +/-10 V range")
         
         # No UL command needed; hardware is fixed.
 
     def set_ao_range(self, ao_channel, ao_range):
         """
         Configures the output range for an Analog Output channel.
-        [cite_start]The USB-231 has a fixed output range of +/- 10V[cite: 677].
+        The USB-231 has a fixed output range of +/- 10V.
         
         args:
             ao_channel (int): The channel to configure.
             ao_range (tuple): The (min, max) range desired.
         """
+        if ao_channel not in self.ao_channel:
+            raise ValueError(f"AO channel {ao_channel} is invalid; valid channels are {self.ao_channel}")
         valid_range = (-10.0, 10.0)
-        if ao_range != valid_range:
-            print(f"Warning: USB-231 has a fixed AO range of +/- 10V. Requested {ao_range} ignored.")
+        if self._normalize_range(ao_range) != valid_range:
+            raise ValueError("USB-231 analog outputs have a fixed +/-10 V range")
+
+    @staticmethod
+    def _normalize_range(voltage_range):
+        """Return the common DAQ ``(minimum, maximum)`` range representation."""
+        try:
+            low, high = voltage_range
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "range must be a two-value (minimum, maximum) pair"
+            ) from error
+        return float(low), float(high)
 
     def read_DI(self, channel):
         """
         Reads the state of a single digital channel (DIO0 - DIO7).
-        [cite_start]Manual Page 18: "All digital I/O updates and samples are software-paced."[cite: 508].
+        Manual Page 18: "All digital I/O updates and samples are software-paced.".
         
         args:
             channel (int): The channel to read.
         returns:
             int: 1 (High) or 0 (Low).
         """
+        if channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {channel} is invalid; valid channels are {self.dio_channel}")
         try:
-            # [cite_start]USB-231 uses FIRSTPORTA for the 8 DIO bits (Pins 17-24) [cite: 741]
-            bit_value = self.ul.d_bit_in(self.board_num, DigitalPortType.FIRSTPORTA, channel)
+            # Universal Library exposes the USB-231's eight-bit DIO block as AUXPORT.
+            bit_value = self.ul.d_bit_in(self.board_num, DigitalPortType.AUXPORT, channel)
             return bit_value
         except Exception as e:
             print(f"USB231 Error reading DIO{channel}: {e}")
@@ -316,13 +299,17 @@ class USB231(Digilent, Daq):
             channel (int): The channel to write to.
             data (int/bool or list): 1/True for High, 0/False for Low.
         """
+        if channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {channel} is invalid; valid channels are {self.dio_channel}")
         try:
             if isinstance(data, (int, bool)):
                 data = [data]
 
             for state in data:
+                if state not in (0, 1, False, True):
+                    raise ValueError("digital-output values must be 0/1 or False/True")
                 bit_val = 1 if state else 0
-                self.ul.d_bit_out(self.board_num, DigitalPortType.FIRSTPORTA, channel, bit_val)
+                self.ul.d_bit_out(self.board_num, DigitalPortType.AUXPORT, channel, bit_val)
         except Exception as e:
             print(f"USB231 Error writing DIO{channel}: {e}")
             raise
@@ -330,23 +317,109 @@ class USB231(Digilent, Daq):
     def set_dio_direction(self, dio_channel, dio_direction):
         """
         Configures the physics of the digital pin (Input vs Output).
-        [cite_start]Manual Page 18: "Each digital I/O line is bit-configurable as input or output."[cite: 505].
+        Manual Page 18: "Each digital I/O line is bit-configurable as input or output.".
         
         args:
             dio_channel (int): The channel to configure.
             dio_direction (str): 'IN' or 'OUT'.
         """
+        if dio_channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {dio_channel} is invalid; valid channels are {self.dio_channel}")
         direction_str = str(dio_direction).upper()
         
         # Map string to UL Enum
-        if 'I' in direction_str and 'OUT' not in direction_str:
+        if direction_str in {"I", "IN", "INPUT"}:
             ul_dir = DigitalIODirection.IN
-        else:
+        elif direction_str in {"O", "OUT", "OUTPUT"}:
             ul_dir = DigitalIODirection.OUT
+        else:
+            raise ValueError("dio_direction must be 'I' or 'O'")
 
         try:
             # d_config_bit configures individual bits
-            self.ul.d_config_bit(self.board_num, DigitalPortType.FIRSTPORTA, dio_channel, ul_dir)
+            self.ul.d_config_bit(self.board_num, DigitalPortType.AUXPORT, dio_channel, ul_dir)
         except Exception as e:
             print(f"USB231 Error configuring DIO{dio_channel}: {e}")
             raise
+
+    # Daq interface adapters. Universal Library receives channel/range/rate
+    # values when an operation starts, so selection methods retain the settings.
+    def set_AI_channel(self, channel):
+        if channel not in self.ai_channel:
+            raise ValueError(f"AI channel {channel} is invalid; valid channels are {self.ai_channel}")
+        self._selected_ai_channel = channel
+
+    def set_AI_range(self, channel, range):
+        self.set_ai_range(channel, range)
+
+    def set_AI_sample_rate(self, channel, sample_rate):
+        self.set_AI_channel(channel)
+        if not 1 <= sample_rate <= 50_000:
+            raise ValueError("sample_rate must be between 1 and 50,000 S/s")
+        self._ai_sample_rates[channel] = sample_rate
+
+    def configure_AI_channel(self, channel, range=None, sample_rate=None):
+        self.set_AI_channel(channel)
+        if range is not None:
+            self.set_AI_range(channel, range)
+        if sample_rate is not None:
+            self.set_AI_sample_rate(channel, sample_rate)
+
+    def set_AO_channel(self, channel):
+        if channel not in self.ao_channel:
+            raise ValueError(f"AO channel {channel} is invalid; valid channels are {self.ao_channel}")
+        self._selected_ao_channel = channel
+
+    def set_AO_range(self, channel, range):
+        self.set_ao_range(channel, range)
+
+    def set_AO_sample_rate(self, channel, sample_rate):
+        self.set_AO_channel(channel)
+        if not 1 <= sample_rate <= 5_000:
+            raise ValueError("sample_rate must be between 1 and 5,000 S/s")
+        self._ao_sample_rates[channel] = sample_rate
+
+    def configure_AO_channel(self, channel, range=None, sample_rate=None):
+        self.set_AO_channel(channel)
+        if range is not None:
+            self.set_AO_range(channel, range)
+        if sample_rate is not None:
+            self.set_AO_sample_rate(channel, sample_rate)
+
+    def set_DIO_channel(self, channel):
+        if channel not in self.dio_channel:
+            raise ValueError(f"DIO channel {channel} is invalid; valid channels are {self.dio_channel}")
+        self._selected_dio_channel = channel
+
+    def set_DIO_mode(self, channel, mode):
+        self.set_dio_direction(channel, mode)
+
+    def configure_DIO_channel(self, channel, mode, sample_rate=None):
+        self.set_DIO_channel(channel)
+        self.set_DIO_mode(channel, mode)
+        if sample_rate is not None:
+            self.set_DIO_sample_rate(channel, sample_rate)
+
+    def set_DI_channel(self, channel):
+        self.set_DIO_channel(channel)
+
+    def configure_DI_channel(self, channel, sample_rate=None):
+        self.set_DI_channel(channel)
+        self.set_DIO_mode(channel, "I")
+        if sample_rate is not None:
+            self.set_DI_sample_rate(channel, sample_rate)
+
+    def set_DO_channel(self, channel):
+        self.set_DIO_channel(channel)
+
+    def configure_DO_channel(self, channel, sample_rate=None):
+        self.set_DO_channel(channel)
+        self.set_DIO_mode(channel, "O")
+        if sample_rate is not None:
+            self.set_DO_sample_rate(channel, sample_rate)
+
+    def quick_read(self):
+        return self.read_AI(self._selected_ai_channel)
+
+    def read_data(self, channel):
+        return self.read_AI(channel)

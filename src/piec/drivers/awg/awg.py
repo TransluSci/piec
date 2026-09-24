@@ -4,10 +4,15 @@ An awg (arbitrary waveform generator) is defined as an instrument that has the t
 from ..instrument import Instrument, optional
 
 class Awg(Instrument):
+    """
+    All awgs must be able to generate an arbitrary waveform and output it to the selected channel
+
+    Instrument-management methods follow the shared contract in Instrument.
+    """
     # Class attributes for parameter restrictions
     channel = [1]
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    frequency = {'func': {'SIN': (None, None), 'SQU': (None, None), 'RAMP': (None, None), 'PULS': (None, None), 'NOIS': None, 'DC': None, 'USER': (None, None)}}
+    frequency = {'waveform': {'SIN': (None, None), 'SQU': (None, None), 'RAMP': (None, None), 'PULS': (None, None), 'NOIS': None, 'DC': None, 'USER': (None, None)}}
     amplitude = (None, None)
     offset = amplitude #typically same as amplitude
     load_impedance = None #substandard
@@ -16,122 +21,26 @@ class Awg(Instrument):
     duty_cycle = (0.0, 100.0)
     symmetry = (0.0, 100.0)
     pulse_width = (None, None)
-    pulse_delay = pulse_width #typically the same
     rise_time = None
     fall_time = rise_time #typically the same
-    trigger_source = ['IMM', "INT", "EXT", "MAN"] #[IMM (immediate), INT2 (internal), EXT (external), MAN (software trigger)]
-    trigger_slope = ['POS', 'NEG', 'EITH'] #[POS (positive), NEG (negative), EITH (either)]
+    # Required sources: internal, external, and manual/software triggering.
+    # Models may additionally expose IMM; it is not a universal source option.
+    trigger_source = ["INT", "EXT", "MAN"]
+    # Required trigger slopes: positive and negative edges.
+    # Models may additionally expose EITH (either edge); it is not a universal option.
+    trigger_slope = ['POS', 'NEG'] #[POS (positive), NEG (negative)]
     trigger_mode = ["EDGE", "LEV"] #[EDGE (edge), LEV (level)]
     slew_rate = None #useful information about the instrument, but need not be implemented
     arb_data_range = (None, None) #range of data points for arbitrary waveform generation
+    arb_name = ["VOLATILE"] # Default arbitrary waveform name, to be used if an instrument doesn't support named waveforms.
 
     # --- Optional feature class attributes ---
+    pulse_delay = pulse_width #typically the same
     burst_mode = ['TRIG', 'GAT', 'INF']
     burst_count = (None, None)
     phase = (0, 360)
     sweep_mode = ['LIN', 'LOG']
     modulation_type = ['AM', 'FM', 'PM', 'FSK', 'PWM']
-
-
-    """
-    All awgs must be able to generate an arbitrary waveform and output it to the selected channel
-    """
-
-    # --- Default SCPI Command Skeletons ---
-    # These provide the standard IEEE 488.2 / SCPI-99 command interface.
-    # SCPI-compliant instruments will inherit real implementations from Scpi.
-    # Non-SCPI instruments should override these with their own protocol.
-
-    def idn(self):
-        """
-        Returns the identification string of the instrument.
-
-        For SCPI instruments this sends the ``*IDN?`` query.
-        Non-SCPI drivers should override this to return an equivalent
-        identification string from their native protocol.
-
-        Returns:
-            str: Instrument identification string.
-        """
-
-    def reset(self):
-        """
-        Resets the instrument to its default / factory state with all
-        outputs **OFF**.
-
-        After reset the instrument should be in a safe, idle state with no
-        signal being generated.
-
-        For SCPI instruments this sends the ``*RST`` command and re-initialises
-        the internal state tracker.  Non-SCPI drivers should override this to
-        perform an equivalent reset via their native protocol, ensuring all
-        outputs are disabled if the native reset does not do so.
-        """
-
-    def clear(self):
-        """
-        Clears the instrument's status registers and error queue.
-
-        For SCPI instruments this sends the ``*CLS`` command.
-        Non-SCPI drivers should override this to perform an equivalent
-        status-clear operation.
-        """
-
-    def error(self):
-        """
-        Queries the instrument's error / event status register.
-
-        For SCPI instruments this sends the ``*ESR?`` query.
-        Non-SCPI drivers should override this to return error information
-        from their native protocol.
-
-        Returns:
-            str: The error status or message from the instrument.
-        """
-
-    def wait(self):
-        """
-        Blocks until all pending instrument operations have completed.
-
-        For SCPI instruments this sends the ``*WAI`` command.
-        Non-SCPI drivers should override this with an equivalent
-        synchronisation mechanism.
-        """
-
-    def self_test(self):
-        """
-        Runs the instrument's built-in self-test routine.
-
-        For SCPI instruments this sends the ``*TST?`` query.
-        The call may take tens of seconds; implementations should handle
-        extended timeouts appropriately.
-
-        Returns:
-            str: Self-test result (typically ``'0'`` for pass).
-        """
-
-    def operation_complete(self):
-        """
-        Queries whether the last operation has finished.
-
-        For SCPI instruments this sends the ``*OPC?`` query.
-        Non-SCPI drivers should override this with their native
-        polling/synchronisation command.
-
-        Returns:
-            str: ``'1'`` when the operation is complete.
-        """
-
-    def initialize(self):
-        """
-        Convenience method that resets and clears the instrument to bring it
-        to a known good starting state.
-
-        The default implementation simply calls :meth:`reset` followed by
-        :meth:`clear`.  Override if additional initialisation steps are needed.
-        """
-        self.reset()
-        self.clear()
 
     # --- AWG-Specific Methods ---
 
@@ -195,6 +104,9 @@ class Awg(Instrument):
     def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None):
         """
         Configures the waveform to be generated on the selected channel. Calls the set_waveform, set_frequency, set_amplitude, set_offset, set_load_impedance, and set_polarity functions to configure the waveform
+        For USER waveforms, select the stored waveform separately with
+        set_arb_waveform before calling this method. Upload waveform data with
+        create_arb_waveform first when needed.
         args:
             channel (int): The channel to configure the waveform on
             waveform (str): The waveform to be generated
@@ -272,22 +184,13 @@ class Awg(Instrument):
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
         """
 
-    def set_pulse_delay(self, channel, pulse_delay):
-        """
-        Set the pulse delay on the configured channel in units of seconds. Delay is the time between the start of the 
-        pulse period and the start of the leading edge of the pulse.
-        args:
-            channel (int): The channel to set the delay on
-            pulse_delay (float): The delay of the waveform in seconds
-        """
-
     def configure_pulse(self, channel, pulse_width=None, pulse_delay=None, rise_time=None, fall_time=None, duty_cycle=None):
         """
         Configures the pulse waveform on the selected channel. Calls the set_pulse_width, set_pulse_delay, set_pulse_rise_time, set_pulse_duty_cycle and set_pulse_fall_time functions to configure the pulse waveform
         args:
             channel (int): The channel to configure the pulse waveform on
             pulse_width (float): The pulse width of the waveform in seconds
-            pulse_delay (float): The delay of the pulse waveform in seconds
+            pulse_delay (float): Optional pulse delay in seconds; skipped when unsupported
             rise_time (float): The rise time of the waveform in seconds
             fall_time (float): The fall time of the waveform in seconds
             duty_cycle (float): The duty cycle of the pulse as a percentage (0-100)
@@ -319,6 +222,9 @@ class Awg(Instrument):
     def set_arb_waveform(self, channel, name):
         """
         Sets the arbitrary waveform to be generated on the selected channel
+        Model drivers translate the common VOLATILE name to a device-specific
+        slot when necessary. Devices without named storage may ignore name.
+        Selecting a name does not create or upload waveform data.
         args:
             channel (int): The channel to set the arbitrary waveform on
             name (str): The name of the arbitrary waveform to be set
@@ -333,9 +239,11 @@ class Awg(Instrument):
             trigger_source (str): The trigger source, e.g., 'internal', 'external', 'manual'
         """
 
+    @optional
     def set_trigger_level(self, channel, trigger_level):
         """
-        Sets the trigger level for the selected channel
+        Sets the trigger level for the selected channel when adjustable.
+        Drivers with a fixed trigger level inherit the optional skip behavior.
         args:
             channel (int): The channel to set the trigger level on
             trigger_level (float): The trigger level in volts
@@ -354,9 +262,9 @@ class Awg(Instrument):
         Sets the trigger mode for the selected channel (aka trigger type)
         args:
             channel (int): The channel to set the trigger mode on
-            trigger_mode (str): The trigger mode, e.g., 'EDGE' 
+            trigger_mode (str): The trigger mode, e.g., 'EDGE'
         """
-        
+
     def configure_trigger(self, channel, trigger_source=None, trigger_level=None, trigger_slope=None, trigger_mode=None):
         """
         Configures the trigger for the selected channel. Calls the set_trigger_source, set_trigger_level, set_trigger_slope, and set_trigger_mode functions to configure the trigger
@@ -367,23 +275,34 @@ class Awg(Instrument):
             trigger_slope (str): The trigger slope
             trigger_mode (str): The trigger mode
         """
-        if trigger_source is None:
+        if trigger_source is not None:
             self.set_trigger_source(channel, trigger_source)
         if trigger_level is not None:
             self.set_trigger_level(channel, trigger_level)
         if trigger_slope is not None:
             self.set_trigger_slope(channel, trigger_slope)
         if trigger_mode is not None:
-            self.set_trigger_mode(channel, trigger_mode) 
+            self.set_trigger_mode(channel, trigger_mode)
 
-        def output_trigger(self):
-            """
-            Outputs the trigger signal for the awg. This is typically used to synchronize the output of the awg with other instruments or systems. Typically the same as manually triggering the awg from the front panel.
-            """
+    def output_trigger(self):
+        """
+        Outputs the trigger signal for the awg. This is typically used to synchronize the output of the awg with other instruments or systems. Typically the same as manually triggering the awg from the front panel.
+        """
+        pass
 
     # --- Optional Features ---
     # These are features that not all AWGs support.
     # If a driver does not override these, they will gracefully skip.
+
+    @optional
+    def set_pulse_delay(self, channel, pulse_delay):
+        """
+        Set the pulse delay on the configured channel in units of seconds. Delay is the time between the start of the
+        pulse period and the start of the leading edge of the pulse.
+        args:
+            channel (int): The channel to set the delay on
+            pulse_delay (float): The delay of the waveform in seconds
+        """
 
     @optional
     def set_burst_mode(self, channel, burst_mode):

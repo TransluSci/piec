@@ -33,6 +33,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to output. Default is 1.
             on (bool): True to enable the output, False to disable it.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         state = "ON" if on else "OFF"
         self.instrument.write(f":OUTP {state}")
 
@@ -43,6 +45,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to source. Default is 1.
             source_func (str): The source function, e.g., 'VOLT' or 'CURR'.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if source_func is None:
              raise ValueError("source_func must be provided")
         self.instrument.write(f":SOUR:FUNC {source_func.upper()}")
@@ -54,6 +58,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to sense. Default is 1.
             sense_func (str): The measurement function, e.g., 'VOLT', 'CURR', or 'RES'.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if sense_func is None:
              raise ValueError("sense_func must be provided")
         func_map = {
@@ -73,6 +79,8 @@ class Keithley2400(Scpi, Sourcemeter):
         
         4W means remote sensing set to ON, 2W means OFF
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if sense_mode is None:
              raise ValueError("sense_mode must be provided")
         state = "ON" if sense_mode.upper() == '4W' else "OFF"
@@ -87,6 +95,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to source. Default is 1.
             voltage (float): The desired output voltage in Volts.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage is None:
              raise ValueError("voltage must be provided")
         self.instrument.write(f":SOUR:VOLT:LEV {voltage}")
@@ -98,6 +108,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to source. Default is 1.
             current (float): The desired output current in Amps.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current is None:
              raise ValueError("current must be provided")
         self.instrument.write(f":SOUR:CURR:LEV {current}")
@@ -109,6 +121,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to source limit. Default is 1.
             voltage_compliance (float): The maximum voltage allowed in Volts.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage_compliance is None:
              raise ValueError("voltage_compliance must be provided")
         self.instrument.write(f":SENS:VOLT:PROT {voltage_compliance}")
@@ -120,6 +134,8 @@ class Keithley2400(Scpi, Sourcemeter):
             channel (int): The channel to source limit. Default is 1.
             current_compliance (float): The maximum current allowed in Amps.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current_compliance is None:
              raise ValueError("current_compliance must be provided")
         self.instrument.write(f":SENS:CURR:PROT {current_compliance}")
@@ -135,6 +151,8 @@ class Keithley2400(Scpi, Sourcemeter):
             voltage (float): The voltage to source in Volts.
             current_compliance (float): The current compliance limit in Amps.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.set_source_function(channel=channel, source_func='VOLT')
         self.set_source_voltage(channel=channel, voltage=voltage)
         self.set_current_compliance(channel=channel, current_compliance=current_compliance)
@@ -147,6 +165,8 @@ class Keithley2400(Scpi, Sourcemeter):
             current (float): The current to source in Amps.
             voltage_compliance (float): The voltage compliance limit in Volts.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.set_source_function(channel=channel, source_func='CURR')
         self.set_source_current(channel=channel, current=current)
         self.set_voltage_compliance(channel=channel, voltage_compliance=voltage_compliance)
@@ -161,6 +181,8 @@ class Keithley2400(Scpi, Sourcemeter):
         returns:
             (float): The measured value (Volts, Amps, or Ohms).
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         response = self.instrument.query(":READ?")
         # response returns "voltage,current,resistance,time,status"
         values = response.split(',')
@@ -174,6 +196,8 @@ class Keithley2400(Scpi, Sourcemeter):
         returns:
             (float): The measured voltage in Volts.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.instrument.write(':SENS:FUNC "VOLT"')
         response = self.instrument.query(":READ?")
         values = response.split(',')
@@ -187,11 +211,14 @@ class Keithley2400(Scpi, Sourcemeter):
         returns:
             (float): The measured current in Amps.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.instrument.write(':SENS:FUNC "CURR"')
         response = self.instrument.query(":READ?")
         # Current is the second returned element
         values = response.split(',')
         return float(values[1])
+
     def get_resistance(self, channel=1):
         """
         Convenience function to measure and return resistance.        
@@ -200,6 +227,8 @@ class Keithley2400(Scpi, Sourcemeter):
         Returns:
             float: The measured resistance in Ohms.
         """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.instrument.write(':SENS:FUNC "RES"')
         response = self.instrument.query(":READ?")
         # Resistance is the third element
