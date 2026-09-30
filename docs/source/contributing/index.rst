@@ -45,10 +45,9 @@ All tests are in the ``tests/`` directory at the repository root:
 
 **Running tests locally**
 
-Install the package in editable mode with its development dependencies, then run
-pytest from the repository root::
+Install the package in editable mode, then run pytest from the repository root::
 
-   pip install -e ".[dev]"
+   pip install -e .
    pytest tests/ -v
 
 Run a single file or test class::
