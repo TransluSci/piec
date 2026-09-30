@@ -27,10 +27,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ElPsyKurisu/piec"
-"Bug Tracker" = "https://github.com/ElPsyKurisu/piec/issues"
+Homepage = "https://github.com/TransluSci/piec"
+"Bug Tracker" = "https://github.com/TransluSci/piec/issues"
 Documentation = "https://piec.readthedocs.io"
-Repository = "https://github.com/ElPsyKurisu/piec"
+Repository = "https://github.com/TransluSci/piec"
 
 [tool.setuptools.dynamic]
 version = { attr = "piec._version.__version__" }
