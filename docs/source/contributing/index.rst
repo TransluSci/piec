@@ -45,14 +45,21 @@ All tests are in the ``tests/`` directory at the repository root:
 
 **Running tests locally**
 
-Install the package in editable mode, then run pytest from the repository root::
+Install the package in editable mode, then run all tests from the repository root::
 
    pip install -e .
    pytest tests/ -v
 
-Run a single file or test class::
+Or run specific test suites, files, or individual test classes::
 
+   # Run all driver tests
+   pytest tests/driver/ -v
+
+   # Run a specific test file
+   pytest tests/driver/test_driver_physical.py -v
    pytest tests/test_measurement_pipeline.py -v
+
+   # Run a single test class
    pytest tests/test_measurement_pipeline.py::TestHysteresisFullPipeline -v
 
 **Testing without physical hardware**
