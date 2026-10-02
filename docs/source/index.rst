@@ -16,6 +16,7 @@ that enables scientists to quickly test and build new experimental setups.
    getting_started/what_is_piec
    getting_started/installation
    getting_started/quickstart
+   notebook_examples
 
 .. toctree::
    :maxdepth: 2

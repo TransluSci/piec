@@ -20,13 +20,24 @@
 
 ## Installation
 
+**Try PIEC in your browser:** apply sine, square, or ramp waves to a
+virtual ferroelectric sample and capture its response with a virtual scope. No hardware or local
+installation needed—open Binder and run one cell at a time with **Shift+Enter**.
+
+[![Launch Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb)
+
+[View the quick-start notebook](Measurements/Quickstart/quick_start.ipynb).
+Binder sessions are temporary; download your results before leaving. Physical
+instruments require running Jupyter locally: use the
+[local notebook with virtual and physical sections](Measurements/Quickstart/quick_start_local.ipynb).
+
 `PIEC` requires python 3.9 or higher. To install `PIEC`, run the following command in the terminal:
 
 ```bash
 pip install piec
 ```
 
-After this, decide whether you would like to run a specific measurment with a GUI or notebook (in which case you'll need to download the appropriate files from the `Measurements` folder). Otherwise, see below for information on how to start scripting. Depending on your instruments, you may also need:
+After this, decide whether you would like to run a specific measurement with a GUI or notebook (in which case you'll need to download the appropriate files from the `Measurements` folder). Otherwise, see below for information on how to start scripting. Depending on your instruments, you may also need:
 
 | Requirement | When needed | Download |
 |---|---|---|
@@ -53,6 +64,21 @@ On top of this driver layer, **Measurement classes** coordinate multiple instrum
 ---
 
 ## Quick Start
+
+Start with the [AWG-to-scope notebook](Measurements/Quickstart/quick_start.ipynb)
+for a short introduction using ordinary Python calls. To run it locally from a
+checkout of this repository:
+
+```bash
+python -m pip install -e . jupyterlab
+python -m jupyter lab Measurements/Quickstart/quick_start.ipynb
+```
+
+Then try a complete measurement below.
+
+Prefer a GUI? Run `python Measurements/Quickstart/awg_scope_GUI.py` from the
+checkout. Start in Virtual mode, then try Physical mode with the Keysight setup
+described in the [quick-start guide](Measurements/Quickstart/README.md).
 
 **Virtual hysteresis loop** — no hardware required:
 

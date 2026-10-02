@@ -62,7 +62,6 @@ exclude_patterns = [
     'getting_started.rst',
     'installation_guide.rst',
     'gui_guide.rst',
-    'notebook_examples.rst',
     'measurements_overview.rst',
     'source_code_overview.rst',
     'authors.rst',

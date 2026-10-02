@@ -1,8 +1,45 @@
 Quickstart
 ==========
 
-This page walks you through a minimal example using PIEC's **virtual instrument mode** — no
-real hardware required. You can run this example immediately after installing PIEC.
+Your first signal: AWG to oscilloscope
+----------------------------------------
+
+Start with the `AWG-to-scope notebook
+<https://github.com/TransluSci/piec/blob/master/Measurements/Quickstart/quick_start.ipynb>`_.
+Apply a sine, square, or ramp wave to the shared virtual ferroelectric sample,
+plot the scope response, and save a CSV. No hardware or Measurement subclass needed.
+
+.. image:: https://mybinder.org/badge_logo.svg
+   :target: https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb
+   :alt: Launch the AWG-to-scope notebook on Binder
+
+When JupyterLab opens, run one cell at a time with **Shift+Enter**, from top
+to bottom. Start with the sine wave, then try the square wave and ramp. The first Binder build can take several minutes. Download
+your results before leaving: the session's files are temporary.
+
+To run locally, clone the repository and run these commands from its root::
+
+   python -m pip install -e . jupyterlab
+   python -m jupyter lab Measurements/Quickstart/quick_start.ipynb
+
+For physical instruments, open the separate `local testing notebook
+<https://github.com/TransluSci/piec/blob/master/Measurements/Quickstart/quick_start_local.ipynb>`_.
+Run its imports cell, then skip to either the virtual or physical section.
+See the :doc:`../user_guide/connecting_to_instrument` guide for VISA setup.
+Binder runs remotely and cannot access your local USB/GPIB instruments.
+See :doc:`../notebook_examples` for more examples.
+
+Prefer a GUI? From the repository root, run::
+
+   python Measurements/Quickstart/awg_scope_GUI.py
+
+Choose Virtual mode and capture a sine wave, then try Square and Ramp. The GUI
+uses PIEC's shared settings, plot, run button, and message-panel layout. Physical
+mode supports the Keysight 81150A and DSOX3024A setup from the local notebook.
+Use **Export CSV** to save a capture. This desktop GUI runs locally, not on Binder.
+
+For a complete measurement workflow, try the hysteresis example below using
+PIEC's **virtual instrument mode**. You can run it after installing PIEC.
 
 .. note::
    Virtual mode is provided by dedicated virtual driver classes. The base driver does not

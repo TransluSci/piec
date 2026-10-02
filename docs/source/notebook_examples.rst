@@ -1,24 +1,37 @@
 Jupyter Notebook Examples
 =========================
 
+Start here
+----------
 
-``piec`` includes a collection of Jupyter notebooks designed to help you get started with the library, explore its features, and customize experiments. These notebooks offer more flexibility and customization options compared to the pre-built GUIs.
+`AWG to oscilloscope <https://github.com/TransluSci/piec/blob/master/Measurements/Quickstart/quick_start.ipynb>`_
+introduces instrument control with sine, square, and ramp waves applied to
+the existing virtual ferroelectric sample. It runs
+entirely with virtual instruments and needs no Measurement subclass.
 
-Accessing Notebooks
--------------------
-The Jupyter notebooks are typically located in the ``notebooks/`` or ``src/piec/notebooks/`` directory of the ``piec`` repository. To run them:
-1.  Ensure you have Jupyter Lab or Jupyter Notebook installed (`pip install jupyterlab`).
-2.  Navigate to the directory containing the notebooks in your terminal.
-3.  Launch Jupyter Lab: `jupyter lab`
-4.  Open the desired ``.ipynb`` file from the Jupyter interface.
+.. image:: https://mybinder.org/badge_logo.svg
+   :target: https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb
+   :alt: Launch Binder
 
-Available Notebooks
--------------------
-(You might want to list a few key notebooks here with brief descriptions if they are central to the user experience, e.g., based on files like `TransluSci/piec/notebooks/FE_testing.ipynb`, `TransluSci/piec/notebooks/amr.ipynb` etc.)
+On Binder, run one cell at a time with **Shift+Enter**, from top to bottom.
+Download your files before leaving.
+For local setup, see :doc:`getting_started/quickstart`.
 
-* **Ferroelectric Testing (FE_testing.ipynb)**: Demonstrates hysteresis and PUND measurements.
-* **Anisotropic Magnetoresistance (amr.ipynb)**: Example of setting up and running an AMR experiment.
-* **Arduino Stepper Control (Arduino_Stepper_Example.ipynb)**: Shows how to interface with an Arduino for motor control.
-* ... (add others as appropriate)
+`Local AWG-to-scope testing <https://github.com/TransluSci/piec/blob/master/Measurements/Quickstart/quick_start_local.ipynb>`_
+contains independent virtual and physical sections. Run the shared imports at
+the top, then skip to the section you want. The physical example uses a
+Keysight 81150A and DSOX3024A with channel 1 connected directly to channel 1.
 
-These notebooks provide practical examples of how to initialize instruments, configure measurements, run experiments, and analyze data using ``piec``.
+More experiments
+----------------
+
+Notebooks live in the repository's ``Measurements/`` directory:
+
+* `AMR <https://github.com/TransluSci/piec/blob/master/Measurements/AMR/AMR_testing.ipynb>`_:
+  anisotropic magnetoresistance measurements.
+* `Ferroelectric testing <https://github.com/TransluSci/piec/blob/master/Measurements/Ferroelectric%20Testing/FE_testing.ipynb>`_:
+  hysteresis and PUND measurements.
+* `IV sweeps <https://github.com/TransluSci/piec/blob/master/Measurements/DCIV/IV_sweep_testing.ipynb>`_:
+  current-voltage measurements.
+
+Review each notebook's instrument addresses and settings before running.
