@@ -258,6 +258,7 @@ class Keithley2400(Scpi, Sourcemeter):
         response = self.instrument.query(":READ?")
         self.instrument.write(":OUTP OFF")
         self.instrument.write(":SOUR:VOLT:MODE FIX")  # Reset to fixed mode
+        self.instrument.write(":TRIG:COUN 1")
         
         # Parse response: voltage,current,resistance,time,status repeated per point
         values = [float(v) for v in response.split(',')]
@@ -287,6 +288,7 @@ class Keithley2400(Scpi, Sourcemeter):
         response = self.instrument.query(":READ?")
         self.instrument.write(":OUTP OFF")
         self.instrument.write(":SOUR:CURR:MODE FIX")  # Reset to fixed mode
+        self.instrument.write(":TRIG:COUN 1")
         
         values = [float(v) for v in response.split(',')]
         voltages = values[0::5]
