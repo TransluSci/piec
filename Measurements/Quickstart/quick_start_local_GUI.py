@@ -1,202 +1,281 @@
-"""Launch locally: python Measurements/Quickstart/awg_scope_GUI.py."""
-import queue
+"""Quickstart GUI for PIEC: Test virtual or physical AWG and Oscilloscope measurements.
+
+Launch locally from repository root:
+    python Measurements/Quickstart/quick_start_local_GUI.py
+"""
+import os
 import sys
-import threading
+import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import ttk, messagebox
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# DPI awareness on Windows if available
+try:
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    pass
 
 from piec.measurement.gui_utils import MeasurementApp
-from quickstart_capture import Settings, capture
+from piec.drivers.autodetect import autodetect, _safe_close
+from piec.drivers.awg.awg import Awg
+from piec.drivers.oscilloscope.oscilloscope import Oscilloscope
+from piec.drivers.awg.virtual_awg import VirtualAwg
+from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 
-
-class QueueConsole:
-    """Keep driver output off Tk's worker-unsafe widget interface."""
-    def __init__(self, events):
-        self.events = events
-
-    def write(self, text):
-        self.events.put(("log", text))
-
-    def flush(self):
-        pass
+DEFAULTS = {
+    "awg_address": "VIRTUAL",
+    "osc_address": "VIRTUAL",
+    "save_dir": r"your\default\save\directory",
+    "waveform": "SIN",
+    "frequency": 1000.0,
+    "amplitude": 1.0,
+    "offset": 0.0,
+}
 
 
 class QuickstartApp(MeasurementApp):
+    """Quickstart GUI application inheriting from PIEC's standard MeasurementApp."""
+
     def __init__(self, root):
-        self.events = queue.Queue()
-        self.busy = False
-        self.closing = False
-        self.result = None
-        super().__init__(root, title="PIEC — Your first measurement", geometry="1450x900")
-        # Preserve the familiar PIEC layout, but make worker logging thread-safe.
-        sys.stdout = sys.stderr = QueueConsole(self.events)
-        self.root.minsize(1150, 800)
-        for widget in self.static_frame.winfo_children():
-            widget.destroy()
-        self.static_frame.configure(text="1. CHOOSE INSTRUMENTS")
-        self.dynamic_frame.configure(text="2. CHOOSE A SIGNAL")
-        self.plot_config_frame.configure(text="GETTING STARTED")
-        self.controls = []
+        super().__init__(root, title="PIEC — Quickstart Measurement GUI", geometry="1300x750")
 
-        self.mode = self._field(self.static_frame, 0, "Mode", "Virtual", ("Virtual", "Physical"))
-        self.awg_address = self._field(self.static_frame, 1, "AWG VISA address", "")
-        self.scope_address = self._field(self.static_frame, 2, "Scope VISA address", "")
-        self.mode.bind("<<ComboboxSelected>>", self._mode_changed)
-        self.mode_hint = ttk.Label(self.static_frame, wraplength=440, justify="left")
-        self.mode_hint.grid(row=3, column=0, columnspan=2, sticky="w", pady=8)
+        print("Welcome to the PIEC Quickstart GUI!")
+        print("Ctrl+Enter: Capture Waveform")
+        print("Select 'VIRTUAL' or choose a connected instrument from the dropdowns.")
 
-        self.waveform = self._field(self.dynamic_frame, 0, "Waveform", "Sine", ("Sine", "Square", "Ramp"))
-        self.frequency = self._field(self.dynamic_frame, 1, "Frequency (Hz)", "1000")
-        self.amplitude = self._field(self.dynamic_frame, 2, "Amplitude (Vpp)", "2")
-        ttk.Label(self.dynamic_frame, text="2 Vpp spans −1 V to +1 V. Offset is zero.\nQuick-start range: 1–100,000 Hz; up to 2 Vpp.",
-                  wraplength=440).grid(row=3, column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Label(self.plot_config_frame, wraplength=440, justify="left", text=(
-            "Start in Virtual mode and click Capture.\n"
-            "Then select Square and capture again, followed by Ramp.\n\n"
-            "The top plot previews the virtual AWG signal. The lower plot shows "
-            "the ferroelectric sample response. On hardware, the plot shows "
-            "the direct scope capture.\n\n"
-            "Export CSV saves the last successful scope capture."
-        )).pack(anchor="w")
-        self.export_button = ttk.Button(self.plot_config_frame, text="Export CSV…", command=self.export_csv, state="disabled")
-        self.export_button.pack(anchor="w", pady=10)
-        self.run_button.configure(text="3. CAPTURE WAVEFORM")
-        self._mode_changed()
-        self.ax.set(title="Choose a signal and click Capture", xlabel="Time (ms)", ylabel="Voltage (V)")
-        self.canvas.draw_idle()
-        print("Welcome! Start with a virtual sine wave. Ctrl+Enter also captures.")
-        self.poll_id = self.root.after(100, self._poll)
+        visa_resources = self.get_visa_resources()
 
-    def _field(self, parent, row, label, default, choices=None):
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
-        widget = ttk.Combobox(parent, values=choices, state="readonly", width=23) if choices else ttk.Entry(parent, width=25)
-        widget.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
-        if choices:
-            widget.set(default)
-        else:
-            widget.insert(0, default)
-        self.controls.append((widget, "readonly" if choices else "normal"))
-        return widget
+        # 1. Static Inputs (Save Directory is row 0 in base MeasurementApp)
+        self.save_dir_entry.insert(0, DEFAULTS["save_dir"])
 
-    def _mode_changed(self, event=None):
-        physical = self.mode.get() == "Physical"
-        for widget in (self.awg_address, self.scope_address):
-            widget.configure(state="normal" if physical and not self.busy else "disabled")
-        self.mode_hint.configure(text=(
-            "Keysight 81150A + DSOX3024A. Connect AWG CH1 → scope CH1. "
-            "Set the AWG to continuous output (burst off), Vpp units. "
-            "The GUI configures 50 Ω and a CH1 rising-edge trigger; no trigger cable needed."
-            if physical else "No hardware or VISA connection needed. Uses the existing virtual sample."
-        ))
+        ttk.Label(self.static_frame, text="AWG Address:").grid(row=1, column=0, sticky="w")
+        self.awg_address_entry = ttk.Combobox(
+            self.static_frame,
+            values=["VIRTUAL"] + list(visa_resources),
+            state="readonly",
+        )
+        self.awg_address_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.awg_address_entry.set(DEFAULTS["awg_address"])
 
-    def load_settings(self):
-        # Always start in Virtual mode rather than restore a previous bench setup.
-        pass
+        ttk.Button(
+            self.static_frame,
+            text="Refresh",
+            command=self.refresh_instruments,
+            style="TButton",
+        ).grid(row=1, column=2, padx=5)
+
+        ttk.Label(self.static_frame, text="Oscilloscope Address:").grid(row=2, column=0, sticky="w")
+        self.osc_address_entry = ttk.Combobox(
+            self.static_frame,
+            values=["VIRTUAL"] + list(visa_resources),
+            state="readonly",
+        )
+        self.osc_address_entry.grid(row=2, column=1, padx=5, pady=5)
+        self.osc_address_entry.set(DEFAULTS["osc_address"])
+
+        ttk.Button(
+            self.static_frame,
+            text="Autodetect",
+            command=self.autodetect_instruments,
+            style="TButton",
+        ).grid(row=2, column=2, padx=5)
+
+        # 2. Dynamic Inputs — Signal configuration
+        self.dynamic_frame.config(text="SIGNAL CONFIGURATION")
+        self.dynamic_inputs = {}
+
+        ttk.Label(self.dynamic_frame, text="Waveform:").grid(row=0, column=0, sticky="w")
+        self.waveform_entry = ttk.Combobox(
+            self.dynamic_frame,
+            values=["SIN", "SQU", "RAMP"],
+            state="readonly",
+            width=20,
+        )
+        self.waveform_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.waveform_entry.set(DEFAULTS["waveform"])
+        self.dynamic_inputs["waveform"] = self.waveform_entry
+
+        ttk.Label(self.dynamic_frame, text="Frequency (Hz):").grid(row=1, column=0, sticky="w")
+        self.frequency_entry = ttk.Entry(self.dynamic_frame, width=20)
+        self.frequency_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.frequency_entry.insert(0, str(DEFAULTS["frequency"]))
+        self.dynamic_inputs["frequency"] = self.frequency_entry
+
+        ttk.Label(self.dynamic_frame, text="Amplitude (V):").grid(row=2, column=0, sticky="w")
+        self.amplitude_entry = ttk.Entry(self.dynamic_frame, width=20)
+        self.amplitude_entry.grid(row=2, column=1, padx=5, pady=5)
+        self.amplitude_entry.insert(0, str(DEFAULTS["amplitude"]))
+        self.dynamic_inputs["amplitude"] = self.amplitude_entry
+
+        ttk.Label(self.dynamic_frame, text="Offset (V):").grid(row=3, column=0, sticky="w")
+        self.offset_entry = ttk.Entry(self.dynamic_frame, width=20)
+        self.offset_entry.grid(row=3, column=1, padx=5, pady=5)
+        self.offset_entry.insert(0, str(DEFAULTS["offset"]))
+        self.dynamic_inputs["offset"] = self.offset_entry
+
+        # 3. Plot & Export Configuration
+        self.plot_config_frame.config(text="PLOT & EXPORT")
+        self.auto_save_entry = tk.BooleanVar(value=True)
+        self.save_csv_checkbox = ttk.Checkbutton(
+            self.plot_config_frame,
+            text="Save CSV on capture?",
+            variable=self.auto_save_entry,
+            onvalue=True,
+            offvalue=False,
+        )
+        self.save_csv_checkbox.grid(row=0, column=0, columnspan=2, pady=5, sticky="w")
+
+        ttk.Label(
+            self.plot_config_frame,
+            text=(
+                "• VIRTUAL mode simulates AWG output & ferroelectric sample response.\n"
+                "• Physical mode captures oscilloscope CH1 (AWG CH1 → Scope CH1).\n"
+                "• Click 'Autodetect' to automatically identify connected instruments."
+            ),
+            wraplength=350,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, pady=5, sticky="w")
+
+        # Configure action button text
+        self.run_button.configure(text="CAPTURE WAVEFORM")
+
+        # Initial plot styling
+        self.ax.set_title("Choose signal parameters and click Capture")
+        self.ax.set_xlabel("Time (ms)")
+        self.ax.set_ylabel("Voltage (V)")
+        self.canvas.draw()
+
+    def refresh_instruments(self):
+        """Scans and updates available VISA resources in the dropdowns."""
+        print("Refreshing VISA instruments...")
+        visa_resources = self.get_visa_resources()
+        self.awg_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
+        self.osc_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
+        print(f"Found {len(visa_resources)} VISA resource(s).")
+
+    def autodetect_instruments(self):
+        """Discovers connected AWG and Oscilloscope instruments automatically."""
+        print("Autodetecting instruments... this may take a moment.")
+
+        # Probe AWG
+        try:
+            inst = autodetect(address="awg", verbose=True, required_type=Awg)
+            if inst:
+                addr = inst.instrument.resource_name if hasattr(inst, "instrument") else "VIRTUAL"
+                self.awg_address_entry.set(addr)
+                _safe_close(inst)
+                print(f"Detected AWG at {addr}")
+        except Exception as e:
+            print(f"AWG autodetection note: {e}")
+
+        # Probe Oscilloscope
+        try:
+            inst = autodetect(address="scope", verbose=True, required_type=Oscilloscope)
+            if inst:
+                addr = inst.instrument.resource_name if hasattr(inst, "instrument") else "VIRTUAL"
+                self.osc_address_entry.set(addr)
+                _safe_close(inst)
+                print(f"Detected Oscilloscope at {addr}")
+        except Exception as e:
+            print(f"Scope autodetection note: {e}")
+
+        print("Autodetect complete.")
 
     def run_measurement(self):
-        if self.busy or self.closing:
-            return
-        try:
-            settings = Settings(
-                mode=self.mode.get(), waveform={"Sine": "SIN", "Square": "SQU", "Ramp": "RAMP"}[self.waveform.get()],
-                frequency=float(self.frequency.get()), amplitude_vpp=float(self.amplitude.get()),
-                awg_address=self.awg_address.get(), scope_address=self.scope_address.get(),
-            )
-            settings.validate()
-        except (ValueError, KeyError) as exc:
-            messagebox.showerror("Check the settings", str(exc), parent=self.root)
-            return
-        self.busy = True
-        for widget, _ in self.controls:
-            widget.configure(state="disabled")
-        self.run_button.configure(state="disabled", text="Capturing…")
-        self.export_button.configure(state="disabled")
-        print(f"{settings.mode}: {settings.waveform}, {settings.frequency:g} Hz, {settings.amplitude_vpp:g} Vpp")
-        threading.Thread(target=self._capture, args=(settings,), daemon=False).start()
+        """Executes waveform generation and capture."""
+        awg_address = self.awg_address_entry.get().strip()
+        osc_address = self.osc_address_entry.get().strip()
+        save_dir = self.save_dir_entry.get().strip()
+        waveform = self.waveform_entry.get().strip().upper()
 
-    def _capture(self, settings):
         try:
-            self.events.put(("result", capture(settings)))
-        except Exception as exc:
-            self.events.put(("error", str(exc)))
+            frequency = float(self.frequency_entry.get())
+            amplitude = float(self.amplitude_entry.get())
+            offset = float(self.offset_entry.get())
+        except ValueError:
+            print("ERROR: Frequency, Amplitude, and Offset must be valid numbers.")
+            return
 
-    def _poll(self):
-        while True:
-            try:
-                kind, value = self.events.get_nowait()
-            except queue.Empty:
-                break
-            if kind == "log":
-                self.console.write(value)
-                continue
-            self.busy = False
-            if kind == "result":
-                self.result = value
-                self._plot_capture()
-                print(f"Captured {len(value.data)} samples. AWG output off. Export CSV when ready.")
+        print(f"Capturing {waveform} waveform ({frequency:g} Hz, {amplitude:g} V)...")
+
+        # Instantiate AWG
+        try:
+            if awg_address == "VIRTUAL":
+                awg = VirtualAwg("VIRTUAL", simulation_points=1000)
             else:
-                print(f"Capture failed: {value}\nIf this is a VISA timeout, check wiring and trigger settings. "
-                      "If communication was lost, verify the AWG output is off at the instrument.")
-                if not self.closing:
-                    messagebox.showerror("Capture failed", value, parent=self.root)
-            for widget, state in self.controls:
-                widget.configure(state=state)
-            self._mode_changed()
-            self.run_button.configure(state="normal", text="3. CAPTURE WAVEFORM")
-            self.export_button.configure(state="normal" if self.result is not None else "disabled")
-        if self.closing and not self.busy:
-            self._destroy()
+                awg = autodetect(awg_address, required_type=Awg)
+        except Exception as e:
+            print(f"ERROR connecting to AWG at '{awg_address}': {e}")
             return
-        self.poll_id = self.root.after(100, self._poll)
 
-    def _plot_capture(self):
-        result = self.result
-        self.fig.clear()
-        axes = self.fig.subplots(2 if result.applied is not None else 1, 1, squeeze=False).ravel()
-        if result.applied is not None:
-            axes[0].plot(result.applied.Time * 1000, result.applied.Voltage)
-            axes[0].set(title="Applied waveform", xlabel="Time (ms)", ylabel="Voltage (V)")
-        axes[-1].plot(result.data.Time * 1000, result.data.Voltage)
-        axes[-1].set(title="Virtual sample response" if result.applied is not None else "Physical scope capture",
-                     xlabel="Time (ms)", ylabel="Voltage (V)")
-        for ax in axes:
-            ax.grid(True, alpha=0.3)
-        self.fig.suptitle(f"{result.settings.mode} · {result.settings.waveform} · {result.settings.frequency:g} Hz · {result.settings.amplitude_vpp:g} Vpp", fontsize=12)
-        self.fig.tight_layout()
-        self.toolbar.update()
-        self.canvas.draw_idle()
-
-    def export_csv(self):
-        if self.result is None or self.busy:
+        # Instantiate Oscilloscope
+        try:
+            if osc_address == "VIRTUAL":
+                scope = VirtualScope("VIRTUAL")
+            else:
+                scope = autodetect(osc_address, required_type=Oscilloscope)
+        except Exception as e:
+            print(f"ERROR connecting to Oscilloscope at '{osc_address}': {e}")
             return
-        settings = self.result.settings
-        path = filedialog.asksaveasfilename(
-            parent=self.root, defaultextension=".csv", filetypes=[("CSV data", "*.csv")],
-            initialfile=f"{settings.mode.lower()}_{settings.waveform.lower()}_{settings.frequency:g}Hz.csv",
-        )
-        if path:
+
+        # Execute measurement
+        try:
+            awg.configure_waveform(1, waveform, frequency=frequency, amplitude=amplitude, offset=offset)
+            awg.output(1, on=True)
+
+            if awg_address == "VIRTUAL" and osc_address == "VIRTUAL":
+                scope.arm()
+                awg.send_software_trigger()
+                data = scope.get_data()
+            else:
+                scope.autoscale()
+                data = scope.get_data()
+        except Exception as e:
+            print(f"ERROR during capture: {e}")
+            return
+        finally:
             try:
-                self.result.data.to_csv(path, index=False)
-                print(f"Saved {path}")
-            except OSError as exc:
-                messagebox.showerror("Could not save CSV", str(exc), parent=self.root)
+                awg.output(1, on=False)
+            except Exception:
+                pass
+            if awg_address != "VIRTUAL" and hasattr(awg, "instrument"):
+                _safe_close(awg)
+            if osc_address != "VIRTUAL" and hasattr(scope, "instrument"):
+                _safe_close(scope)
 
-    def on_closing(self):
-        if self.busy:
-            self.closing = True
-            self.run_button.configure(text="Closing after capture cleanup…")
-            print("Waiting for capture and output-off cleanup before closing.")
-        else:
-            self._destroy()
+        # Plot result
+        self.ax.clear()
+        time_ms = data["Time"] * 1000.0
+        voltage_v = data["Voltage"]
 
-    def _destroy(self):
-        self.root.after_cancel(self.poll_id)
-        self.root.after_cancel(self._load_settings_id)
-        sys.stdout, sys.stderr = self.original_stdout, self.original_stderr
-        self.root.destroy()
+        self.ax.plot(time_ms, voltage_v, color="C0", linewidth=1.8, label=f"{waveform} ({frequency:g} Hz)")
+        self.ax.set_xlabel("Time (ms)")
+        self.ax.set_ylabel("Voltage (V)")
+        mode_label = "Virtual Response" if (awg_address == "VIRTUAL") else "Physical Scope Capture"
+        self.ax.set_title(f"{waveform} Waveform — {mode_label}")
+        self.ax.grid(True, alpha=0.3)
+        self.canvas.draw()
+
+        # Save to CSV if enabled
+        if self.auto_save_entry.get() and save_dir:
+            try:
+                os.makedirs(save_dir, exist_ok=True)
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"quickstart_{waveform.lower()}_{timestamp}.csv"
+                filepath = os.path.join(save_dir, filename)
+                data.to_csv(filepath, index=False)
+                print(f"Saved data to {filepath}")
+            except Exception as e:
+                print(f"WARNING: Could not save CSV: {e}")
+
+        print("Capture complete.")
 
 
 if __name__ == "__main__":
     root = tk.Tk()
-    QuickstartApp(root)
+    app = QuickstartApp(root)
     root.mainloop()

@@ -76,9 +76,9 @@ python -m jupyter lab Measurements/Quickstart/quick_start.ipynb
 
 Then try a complete measurement below.
 
-Prefer a GUI? Run `python Measurements/Quickstart/awg_scope_GUI.py` from the
-checkout. Start in Virtual mode, then try Physical mode with the Keysight setup
-described in the [quick-start guide](Measurements/Quickstart/README.md).
+Prefer a GUI? Run `python Measurements/Quickstart/quick_start_local_GUI.py` from the
+checkout. Start in Virtual mode, or select connected hardware using the instrument
+dropdowns or the Autodetect button.
 
 **Virtual hysteresis loop** — no hardware required:
 

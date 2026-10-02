@@ -31,12 +31,11 @@ See :doc:`../notebook_examples` for more examples.
 
 Prefer a GUI? From the repository root, run::
 
-   python Measurements/Quickstart/awg_scope_GUI.py
+   python Measurements/Quickstart/quick_start_local_GUI.py
 
-Choose Virtual mode and capture a sine wave, then try Square and Ramp. The GUI
-uses PIEC's shared settings, plot, run button, and message-panel layout. Physical
-mode supports the Keysight 81150A and DSOX3024A setup from the local notebook.
-Use **Export CSV** to save a capture. This desktop GUI runs locally, not on Binder.
+Choose Virtual mode or connect physical instruments with the dropdowns or Autodetect.
+Capture sine, square, or ramp waveforms, inspect them directly in the plot window,
+and optionally save captures to CSV. This desktop GUI runs locally, not on Binder.
 
 For a complete measurement workflow, try the hysteresis example below using
 PIEC's **virtual instrument mode**. You can run it after installing PIEC.

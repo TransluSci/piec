@@ -10,26 +10,12 @@ From the repository root:
 
 ```bash
 python -m pip install -e .
-python Measurements/Quickstart/awg_scope_GUI.py
+python Measurements/Quickstart/quick_start_local_GUI.py
 ```
 
-The GUI requires a local desktop with Tkinter (included with standard Windows
-Python; some Linux installations need their distribution's Python Tk package).
-Start in **Virtual** mode, click **Capture**, then choose Square and Ramp.
-**Export CSV** saves the last successful scope capture. The amplitude control
-uses Vpp in both modes; 2 Vpp corresponds to the notebook's 1 V virtual peak.
+The GUI requires a local desktop with Tkinter (included with standard Windows Python; some Linux installations need their distribution's Python Tk package).
 
-**Physical** mode uses a Keysight 81150A and DSOX3024A. Enter both VISA addresses
-and connect AWG CH1 directly to scope CH1. Set the AWG to continuous output
-(burst off), with Vpp units. The GUI configures 50 Ω source/load/input settings,
-DC coupling, and a CH1 rising-edge trigger at zero volts. No external trigger
-cable is needed. Hardware operation has not been bench-validated.
-
-Each capture turns output off and closes the hardware sessions. Closing the GUI
-during a capture waits for its cleanup. Compare a physical capture with the
-virtual **applied waveform**; the virtual scope response includes a ferroelectric
-sample, unlike the direct hardware connection.
-
-The quick-start GUI deliberately covers only these two physical models and a
-small parameter range. For broader experiments, see the AMR and ferroelectric
-GUIs under `Measurements/`.
+- **Instrument Selection**: Dropdowns allow choosing `VIRTUAL` or connected VISA instruments. Click **Refresh** to rescan VISA ports, or **Autodetect** to automatically discover connected AWG and Oscilloscope hardware.
+- **Signal Configuration**: Select **Sine**, **Square**, or **Ramp** waveform, and set frequency and amplitude.
+- **Capture**: Click **Capture Waveform** (or press `Ctrl+Enter`) to run the acquisition.
+- **Export**: Check **Save CSV on capture?** to automatically save data to your chosen directory.
