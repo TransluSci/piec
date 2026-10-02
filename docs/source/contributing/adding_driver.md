@@ -49,7 +49,10 @@ In the copy:
    model-specific details to the docstrings where useful; do not replace the
    shared API documentation with a shorter generated description.
 3. Fill in the copied capability attributes with the model's actual limits and
-   supported values, and add its `AUTODETECT_ID`. If the parent declares an
+   supported values, and add its `AUTODETECT_ID`. Declare driver metadata at
+   class level: `AI_STATUS` (`"generated"`, `"assisted"`, or omit/`None` if
+   human-written) and `HARDWARE_TESTED` (always `False` for new contributions
+   until bench-verified). If the parent declares an
    attribute as `None` because its representation varies by instrument, use a
    tuple for a continuous range or a list for discrete choices as appropriate.
    A parent value of `(None, None)` fixes the type as a tuple; it is not the same
@@ -185,7 +188,9 @@ unsupported or the identification substring cannot be verified, substituting
 the actual unique driver class name. Document that users must instantiate the
 class directly with an explicit address. This marker is not a real ID response
 or proof that physical autodetection works; do not make idn() return it.
-Declare model capabilities at class level and keep simulation out of the
+Declare model capabilities and metadata at class level: set
+AI_STATUS = "generated" and HARDWARE_TESTED = False (never claim physical
+hardware verification from virtual or mocked tests). Keep simulation out of the
 physical model. No manual registration changes are needed.
 For a capability declared as None in the parent, choose a tuple for continuous
 limits or a list for discrete choices according to the manual. For a non-None
@@ -226,8 +231,9 @@ src/piec/drivers/<category>/<model_name>.py
 Create it by copying src/piec/drivers/<category>/<category>.py. Rename the
 copied class and inherit from the original category. Preserve its method
 docstrings and signatures, fill in the implementation, and append relevant
-model-specific documentation. Follow the implementation prompt's rules for
-delegating inherited methods and handling optional methods.
+model-specific documentation. Set AI_STATUS = "generated" (or "assisted")
+and HARDWARE_TESTED = False at the class level. Follow the implementation prompt's
+rules for delegating inherited methods and handling optional methods.
 
 DO NOT MODIFY, DELETE, RENAME, or overwrite any existing files. In particular,
 instrument.py, autodetect.py, virtual_dispatch.py, virtual_instrument.py,
@@ -244,7 +250,8 @@ report the blocker without editing that file.
 Before finishing, inspect git status --short, git diff, and git diff --cached.
 Report every file created or changed, test results, and unresolved manual or
 hardware verification questions. Do not claim physical hardware verification
-from virtual or mocked tests.
+from virtual or mocked tests, and do not set HARDWARE_TESTED = True without
+physical bench test evidence.
 ```
 
 This permits only the specific instrument file, never changes higher up the
@@ -290,8 +297,11 @@ Before submitting:
 - Cross-check commands, limits, units, and response parsing against the manual,
   including inherited protocol methods.
 - Verify the physical driver on the real instrument. Existing category notebooks
-  may be used interactively where applicable; do not copy, add, or commit changes
-  to test notebooks. Record hardware verification results in the pull request.
+  (`src/piec/drivers/<category>/<category>_test.ipynb`) may be used interactively
+  where applicable; do not copy, add, or commit changes to test notebooks. When all
+  cells pass on physical hardware, update `HARDWARE_TESTED = True` with an inline
+  comment, e.g. `HARDWARE_TESTED = True  # Tested 10/2/2026 on piec=1.0.1 with awg_test.ipynb`.
+  Record hardware verification results in the pull request.
 - Confirm a real `AUTODETECT_ID` matches the identification response. For a
   `MANUAL_ONLY:<ClassName>` marker, verify direct construction with an explicit
   address and document that physical autodetection is unsupported or unverified.
@@ -300,8 +310,7 @@ Before submitting:
   contribution contains only the allowed new files and no edits to existing
   files higher up the chain, unrelated files, or tests.
 - State which tests and hardware checks passed, any unresolved limitations, and
-  any significant AI assistance in the pull request. Physical hardware
-  verification is required before a driver is ready for contribution.
+  confirm that `AI_STATUS` accurately reflects the development method in the pull request.
 
 (driver-code-rules-reference)=
 ## Code Rules Reference

@@ -236,6 +236,8 @@ class Instrument(metaclass=AutoCheckMeta):
     """
 
     AUTODETECT_ID = ""
+    AI_STATUS = None          # None (human-authored), "generated", or "assisted"
+    HARDWARE_TESTED = False   # True only after physical bench verification
 
     def _initialize_state(self):
         """
