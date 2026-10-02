@@ -8,6 +8,7 @@
   <a href="https://piec.readthedocs.io/en/latest/?badge=latest"><img src="https://readthedocs.org/projects/piec/badge/?version=latest" alt="Documentation Status"/></a>
   <a href="https://pypi.org/project/piec/"><img src="https://badge.fury.io/py/piec.svg" alt="PyPI version"/></a>
   <a href="https://pypi.org/project/piec/"><img src="https://img.shields.io/pypi/l/piec.svg" alt="PyPI license"/></a>
+  <a href="https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Launch Binder"/></a>
 </p>
 
 <p align="center">
@@ -18,46 +19,9 @@
 
 ---
 
-## Installation
-
-**Try PIEC in your browser:** apply sine, square, or ramp waves to a
-virtual ferroelectric sample and capture its response with a virtual scope. No hardware or local
-installation needed—open Binder and run one cell at a time with **Shift+Enter**.
-
-[![Launch Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb)
-
-[View the quick-start notebook](Measurements/Quickstart/quick_start.ipynb).
-Binder sessions are temporary; download your results before leaving. Physical
-instruments require running Jupyter locally: use the
-[local notebook with virtual and physical sections](Measurements/Quickstart/quick_start_local.ipynb).
-
-`PIEC` requires python 3.9 or higher. To install `PIEC`, run the following command in the terminal:
-
-```bash
-pip install piec
-```
-
-After this, decide whether you would like to run a specific measurement with a GUI or notebook (in which case you'll need to download the appropriate files from the `Measurements` folder). Otherwise, see below for information on how to start scripting. Depending on your instruments, you may also need:
-
-| Requirement | When needed | Download |
-|---|---|---|
-| **NI-488.2** | GPIB instruments | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
-| **NI-VISA** | USB-TMC / Ethernet / GPIB via NI-VISA | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
-| **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards | [mccdaq.com](http://www.mccdaq.com/swdownload) |
-
----
-
 ## Overview
 
-Instrument drivers in `PIEC` follow a **type-first** architecture with three layers of abstraction:
-
-| Layer | Role | Examples |
-|---|---|---|
-| **Level 1 — Instrument** | Base connection management and parameter validation (wraps PyVISA) | `Instrument`, `Scpi` |
-| **Level 2 — Category** | Defines required methods and parameter standards for each instrument type | `Awg`, `Oscilloscope`, `Lockin`, `Sourcemeter` |
-| **Level 3 — Model** | Implements hardware-specific logic for a particular instrument | `Keysight81150a`, `RigolDS1000Z`, `Keithley2400` |
-
-Measurement code targets the **Level 2 interface**, so instruments are interchangeable without code changes. Each category also provides a **Virtual Instrument** that returns simulated responses, enabling development and testing without physical hardware.
+Instrument drivers in `PIEC` follow a standardized, object-oriented design so that instruments within each category are interchangeable without code changes. Each category also provides a **Virtual Instrument** that returns simulated responses, enabling development and testing without physical hardware.
 
 On top of this driver layer, **Measurement classes** coordinate multiple instruments to execute complete experiment protocols — configuring waveforms, triggering acquisition, processing data, and saving results — in a single method call. Pre-built **GUIs** and **Jupyter notebooks** are also provided for routine tasks.
 
@@ -65,22 +29,22 @@ On top of this driver layer, **Measurement classes** coordinate multiple instrum
 
 ## Quick Start
 
-Start with the [AWG-to-scope notebook](Measurements/Quickstart/quick_start.ipynb)
-for a short introduction using ordinary Python calls. To run it locally from a
-checkout of this repository:
+### Try in your browser
+
+Launch the interactive AWG-to-scope notebook on Binder with no local installation required:
+
+[![Launch Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb)
+
+To run it locally from a checkout of this repository:
 
 ```bash
 python -m pip install -e . jupyterlab
 python -m jupyter lab Measurements/Quickstart/quick_start.ipynb
 ```
 
-Then try a complete measurement below.
+Prefer a GUI? Run `python Measurements/Quickstart/quick_start_local_GUI.py` from the checkout to test virtual or physical instruments with interactive controls and live plotting.
 
-Prefer a GUI? Run `python Measurements/Quickstart/quick_start_local_GUI.py` from the
-checkout. Start in Virtual mode, or select connected hardware using the instrument
-dropdowns or the Autodetect button.
-
-**Virtual hysteresis loop** — no hardware required:
+### Virtual hysteresis loop
 
 ```python
 from piec.drivers.awg.k_81150a import Keysight81150a
@@ -110,17 +74,35 @@ For a complete walkthrough, see the [User Guide](https://piec.readthedocs.io/en/
 
 ---
 
+## Installation
+
+`PIEC` requires Python 3.9 or higher. To install `PIEC`, run the following command in the terminal:
+
+```bash
+pip install piec
+```
+
+After installing, you can run simulations and analysis immediately. When connecting to physical hardware, your system may also require vendor-specific drivers:
+
+| Requirement | When needed | Download |
+|---|---|---|
+| **NI-488.2** | GPIB instruments | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
+| **NI-VISA** | USB-TMC / Ethernet / GPIB via NI-VISA | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
+| **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards | [mccdaq.com](http://www.mccdaq.com/swdownload) |
+
+---
+
 ## Supported Instruments
 
 | Category | Models |
 |---|---|
-| Arbitrary Waveform Generator | Keysight 81150A, Agilent 33220A, Agilent 33500, Rigol DG1000, Rigol DG4000, Siglent SDG2000X |
+| Arbitrary Waveform Generator | Keysight 81150A, Agilent 33220A, Agilent 33500, Siglent SDG2000X |
 | Oscilloscope | Keysight DSOX3024A, Agilent DSOX5000, Rigol DS1000Z, Tektronix TDS2000, Tektronix TDS6604, LeCroy SDA6020 |
 | Source Meter | Keithley 2400 |
 | Lock-in Amplifier | Stanford Research SR830 |
 | Digital Multimeter | Agilent 34410A, Keithley 2000, Keithley 193A |
 | Pulser | Berkeley Nucleonics BNC 765 |
-| DAQ | MCC USB-231 |
+| DAQ | MCC USB-231, MCC USB-1208HS |
 | DC Calibrator | EDC 522 |
 | Stepper Motor | Arduino Stepper (custom serial) |
 
@@ -150,6 +132,6 @@ Please cite this software following the [CITATION.cff](https://github.com/Transl
 
 ```
 Fratian, G., Qualls, A., Phan, J., Pankaj, R., & Caretta, L. (2026).
-PIEC: A Python Library for Integrated Experimental Control [Software].
+PIEC: A Python library for Integrated Experimental Control [Software].
 https://github.com/TransluSci/piec
 ```
