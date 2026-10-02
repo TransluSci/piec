@@ -44,7 +44,7 @@ A typical, no-coding required PIEC workflow looks like this:
 A typical, code-based PIEC workflow looks like this:
 
 1. Connect to your instruments using a driver from ``piec.drivers``.
-2. Create a measurement object from ``piec.measurements`` with your desired experimental parameters.
+2. Create a measurement object from ``piec.measurement`` with your desired experimental parameters.
 3. Call ``run_experiment()`` — piec handles instrument configuration, waveform output, data
    capture, and saving.
 4. Inspect and analyze the output data, script automated workflows, etc.
