@@ -9,6 +9,8 @@ class TDS6604(Scpi, Oscilloscope):
     """
     
     AUTODETECT_ID = "TDS6604"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     channel = [1, 2, 3, 4]
     
     vdiv = (0.001, 10.0)

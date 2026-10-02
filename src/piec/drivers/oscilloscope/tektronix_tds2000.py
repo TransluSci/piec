@@ -12,6 +12,8 @@ class TektronixTDS2000(Scpi, Oscilloscope):
     
     # "TEKTRONIX,TDS 2012,..."
     AUTODETECT_ID = "TDS 2"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     
     channel = [1, 2, 3, 4]
     

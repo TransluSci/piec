@@ -18,6 +18,8 @@ class SRS830(Scpi, Lockin):
     """
 
     AUTODETECT_ID = "SR830"
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
     channel = [1]
     input_coupling = ["AC", "DC"]
     reference_source = ["internal", "external"]

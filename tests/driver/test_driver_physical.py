@@ -989,3 +989,41 @@ class TestPhysicalDriverDataReturnFormats:
         assert function_returns_dataframe(fn), (
             f"{driver_cls.__name__}.get_data() does not return a pandas DataFrame"
         )
+
+
+def _all_physical_driver_params() -> List[Any]:
+    cases = []
+    for cat_name, drvs in sorted(discover_physical_driver_classes().items()):
+        for drv_cls in drvs:
+            cases.append(pytest.param(drv_cls, id=drv_cls.__name__))
+    return cases
+
+
+class TestPhysicalDriverProvenanceAndValidation:
+    """
+    Validates driver metadata declarations (AI_STATUS, HARDWARE_TESTED)
+    and reports hardware bench testing status.
+    """
+
+    @pytest.mark.parametrize("driver_cls", _all_physical_driver_params())
+    def test_metadata_declaration(self, driver_cls):
+        """Verify that AI_STATUS and HARDWARE_TESTED are declared with valid types."""
+        ai_status = getattr(driver_cls, "AI_STATUS", None)
+        assert ai_status in (None, "generated", "assisted"), (
+            f"{driver_cls.__name__}.AI_STATUS must be None, 'generated', or 'assisted', got {ai_status!r}"
+        )
+        hw_tested = getattr(driver_cls, "HARDWARE_TESTED", False)
+        assert isinstance(hw_tested, bool), (
+            f"{driver_cls.__name__}.HARDWARE_TESTED must be a boolean, got {hw_tested!r}"
+        )
+
+    @pytest.mark.parametrize("driver_cls", _all_physical_driver_params())
+    def test_hardware_tested(self, driver_cls):
+        """
+        Optional/informational test: passes if physically bench tested.
+        If untested, marks xfail so the test run passes while clearly formatting testing status.
+        """
+        is_tested = getattr(driver_cls, "HARDWARE_TESTED", False)
+        if not is_tested:
+            pytest.xfail(f"{driver_cls.__name__} has not yet been physically validated on bench hardware")
+        assert is_tested is True

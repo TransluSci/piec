@@ -15,6 +15,8 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
 
     # Class attributes for parameter restrictions, named after function arguments.
     AUTODETECT_ID = "DSO-X 3024A"  # Identifier string for the instrument
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
 
     channel = [1, 2, 3, 4]
     vdiv = (0.001, 5.0)

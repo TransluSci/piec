@@ -14,6 +14,8 @@ class Agilent33220A(Scpi, Awg):
 
     # --- Autodetect Identifier ---
     AUTODETECT_ID = "33220A"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
 
     # --- Class Attributes from Awg ---
     channel = [1]

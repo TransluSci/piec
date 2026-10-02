@@ -12,6 +12,8 @@ class Geos_Stepper(Stepper):
     Connect directly with an explicit address; autodetection is unsupported.
     """
     AUTODETECT_ID = "MANUAL_ONLY:Geos_Stepper"
+    AI_STATUS = None
+    HARDWARE_TESTED = True  # Tested on physical hardware
     num_steps = (0, 600) #typical step sizes (arduino code as limit of -300 to 300)
     direction = [0,1] #0 is CW 1 is CCW
 

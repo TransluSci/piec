@@ -19,6 +19,8 @@ class Agilent33500(Scpi, Awg):
 
     # Model identification
     AUTODETECT_ID = "335"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
 
     # Channels: 33521A has 1 channel, 33522A has 2 channels
     channel = [1, 2]

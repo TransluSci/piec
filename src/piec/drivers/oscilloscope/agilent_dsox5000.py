@@ -11,6 +11,8 @@ class AgilentDSOX5000(Scpi, Oscilloscope):
     """
     
     AUTODETECT_ID = "DSO-X 5"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     
     channel = [1, 2, 3, 4]
     

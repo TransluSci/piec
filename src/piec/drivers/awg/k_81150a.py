@@ -16,6 +16,8 @@ class Keysight81150a(Scpi, Awg):
     # Class attributes for parameter restrictions, named after function arguments.
     # Values based on Keysight 81150A User Guide
     AUTODETECT_ID = "81150A"  # Identifier string for the instrument
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
     
     channel = [1, 2]
     waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']

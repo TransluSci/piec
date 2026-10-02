@@ -12,6 +12,8 @@ class RigolDS1000Z(Scpi, Oscilloscope):
     
     # "RIGOL TECHNOLOGIES,DS1054Z,..."
     AUTODETECT_ID = "DS1"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     
     channel = [1, 2, 3, 4]
     

@@ -17,6 +17,8 @@ class SDG2000X(Scpi, Awg):
     # Derived from *IDN? response examples in the manual.
     # The manual explicitly lists responses for these models in the examples.
     AUTODETECT_ID = ["SDG2042X", "SDG2122X", "SDG2102X"]
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
 
     # --- INSTRUMENT PARAMETERS ---
     

@@ -34,6 +34,8 @@ class USB231(Digilent, Daq):
     # --- Class Attributes ---
     
     AUTODETECT_ID = "USB-231"
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
 
     # Default to the safer Differential mode (4 channels) per user request.
     # This will be updated dynamically by set_input_mode().

@@ -46,6 +46,8 @@ class USB1208HS(Digilent, Daq):
         "USB-1208HS-2AO",
         "USB-1208HS-4AO",
     ]
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = True  # Tested on physical hardware
 
     ai_channel = list(range(8))
     ai_range = [

@@ -8,6 +8,8 @@ class Keithley2000(Scpi, DMM):
     """
 
     AUTODETECT_ID = "MODEL 2000"
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
 
     channel = [1]
     sense_func = ['VOLT', 'CURR', 'RES', 'FRES', 'FREQ', 'PER', 'TEMP']

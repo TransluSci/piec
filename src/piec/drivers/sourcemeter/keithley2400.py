@@ -13,6 +13,8 @@ class Keithley2400(Scpi, Sourcemeter):
     """
     # Class attributes defining the "contract" for any implementing class.
     AUTODETECT_ID = "MODEL 2400"  # Identifier string for the instrument
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
     # All sourcemeters must support these basic functions and modes.
     channel = [1]
     source_func = ['VOLT', 'CURR']

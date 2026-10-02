@@ -14,6 +14,8 @@ class Keithley193a(DMM):
     This instrument uses a non-SCPI command set (Device Dependent Commands).
     """
     AUTODETECT_ID = ["Keithley 193A", "NDCV"]
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
     probe_type = ['RTD']
     # Keithley 193A DDC overflow prefixes and overflow float threshold (Manual 193A_901_01A)
     DDC_OVERLOAD_PREFIXES = ("OVOL", "OCUR", "OOHM", "OVERFLOW", "OVERLOAD")

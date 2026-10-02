@@ -8,6 +8,8 @@ class Agilent34410A(Scpi, DMM):
     """
     
     AUTODETECT_ID = "34410A"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     
     channel = [1]
     
