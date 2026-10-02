@@ -35,23 +35,6 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         acquisition_points (tuple): Number of points range (min, max)
     """
 
-    channel = [1, 2, 3, 4]
-    vdiv = (0.001, 5.0)
-    y_range = (0.008, 40.0)
-    y_position = (-40.0, 40.0)
-    input_coupling = ["AC", "DC"]
-    probe_attenuation = (0.001, 10000.0)
-    tdiv = (0.000000002, 50.0)
-    x_range = (0.00000002, 500.0)
-    x_position = (-500.0, 500.0)
-    trigger_source = [1, 2, 3, 4, "EXT", "LINE", "WGEN"]
-    trigger_level = (-6.0, 6.0)
-    trigger_slope = ["POS", "NEG", "EITH", "ALT"]
-    trigger_mode = ["EDGE"]
-    trigger_sweep = ["AUTO", "NORM"]
-    acquisition_mode = ["NORM", "AVER", "HRES", "PEAK"]
-    acquisition_points = (100, 1000)
-
     def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize virtual oscilloscope with default settings.
@@ -71,6 +54,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
             'y_range': {ch: 8.0 for ch in self.channel},
             'y_position': {ch: 0.0 for ch in self.channel},
             'input_coupling': {ch: 'DC' for ch in self.channel},
+            'channel_impedance': {ch: '1M' for ch in self.channel},
             'probe_attenuation': {ch: 1.0 for ch in self.channel},
             'tdiv': 1e-3,
             'x_range': 8e-3,
@@ -118,8 +102,8 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         self.__init__(simulation_points=self._simulation_points)
 
     def clear(self):
-        """Clear status (no-op in virtual mode)."""
-        return None
+        """Clear status and errors in virtual mode."""
+        self._last_error = "0"
 
     def initialize(self):
         """Initialize virtual scope to a known state without external I/O."""
@@ -176,6 +160,16 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
             input_coupling (str): Coupling mode ("AC" or "DC")
         """
         self.state['input_coupling'][channel] = input_coupling
+
+    def set_channel_impedance(self, channel, channel_impedance):
+        """
+        Set the input impedance for a channel.
+
+        Args:
+            channel (int): Channel number (1-4)
+            channel_impedance (str or float): Channel impedance (e.g. '50' or '1M')
+        """
+        self.state['channel_impedance'][channel] = channel_impedance
 
     def set_probe_attenuation(self, channel, probe_attenuation):
         """
@@ -319,8 +313,8 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         self.state['armed'] = True
 
     def set_acquisition(self):
-        """Configure basic acquisition parameters (no-op for virtual scope)."""
-        pass
+        """Configure basic acquisition parameters for virtual scope."""
+        self.state['armed'] = True
 
     def set_acquisition_channel(self, channel):
         """

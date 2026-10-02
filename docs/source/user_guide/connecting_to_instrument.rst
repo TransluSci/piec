@@ -73,7 +73,7 @@ recursively, so no import or manual registry entry is required. See
 Finding Your Instrument's Address Manually
 ------------------------------------------
 
-If you prefer to bypass autodetection or are debugging, you need the instrument's **VISA resource string** (also called its address). This is a string like ``'GPIB0::7::INSTR'`` or ``'USB0::0x0958::0x17A7::MY62080068::0::INSTR'`` that uniquely identifies the instrument on your computer.
+If you prefer to bypass autodetection, its not implemented, or you are debugging, you need the instrument's **VISA resource string** (also called its address). This is a string like ``'GPIB0::7::INSTR'`` or ``'USB0::0x0958::0x17A7::MY62080068::0::INSTR'`` that uniquely identifies the instrument on your computer.
 
 Listing available instruments
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

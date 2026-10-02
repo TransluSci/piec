@@ -11,6 +11,8 @@ class EDC522(DCCalibrator):
     Driver for the EDC Model 522 DC Calibrator. Supporting voltage and current sourcing.
     """
     AUTODETECT_ID = ["522", "KROHN-HITE", "NOT PROGRAMMED", "NOTHING WRONG"]
+    AI_STATUS = "assisted"
+    HARDWARE_TESTED = True  # Tested on physical hardware
     
     voltage_range = (-100, 100) # volts (without opt)
     current_range = (-0.1, 0.1) # amps

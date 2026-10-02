@@ -11,15 +11,6 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
     Measurements are produced by the shared external virtual sample.
     """
 
-    channel = [1]
-    source_func = ['VOLT', 'CURR']
-    sense_func = ['VOLT', 'CURR', 'RES']
-    sense_mode = ['2W', '4W']
-    voltage = (-210, 210)
-    current = (-1.05, 1.05)
-    voltage_compliance = (-210, 210)
-    current_compliance = (-1.05, 1.05)
-
     def __init__(self, address='VIRTUAL', **kwargs):
         super().__init__(address=address, **kwargs)
         self.state = {
@@ -113,24 +104,36 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
 
     @staticmethod
     def _clamp(value, lo, hi):
-        return max(lo, min(hi, value))
+        if lo is not None:
+            value = max(lo, value)
+        if hi is not None:
+            value = min(hi, value)
+        return value
 
     # Core Instrument State Control
 
     def output(self, channel=1, on=True):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['output_on'] = on
 
     def set_source_function(self, channel=1, source_func=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if source_func is None:
             raise ValueError("source_func must be provided")
         self.state['source_func'] = source_func.upper()
 
     def set_sense_function(self, channel=1, sense_func=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if sense_func is None:
             raise ValueError("sense_func must be provided")
         self.state['sense_func'] = sense_func.upper()
 
     def set_sense_mode(self, channel=1, sense_mode=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if sense_mode is None:
             raise ValueError("sense_mode must be provided")
         self.state['sense_mode'] = sense_mode.upper()
@@ -138,21 +141,29 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
     # Source Configuration
 
     def set_source_voltage(self, channel=1, voltage=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage is None:
             raise ValueError("voltage must be provided")
         self.state['source_voltage'] = self._clamp(voltage, *self.voltage)
 
     def set_source_current(self, channel=1, current=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current is None:
             raise ValueError("current must be provided")
         self.state['source_current'] = self._clamp(current, *self.current)
 
     def set_voltage_compliance(self, channel=1, voltage_compliance=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if voltage_compliance is None:
             raise ValueError("voltage_compliance must be provided")
         self.state['voltage_compliance'] = voltage_compliance
 
     def set_current_compliance(self, channel=1, current_compliance=None):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         if current_compliance is None:
             raise ValueError("current_compliance must be provided")
         self.state['current_compliance'] = current_compliance
@@ -160,6 +171,8 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
     # Convenience Configuration
 
     def configure_voltage_source(self, channel=1, voltage=0.0, current_compliance=1.05):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.set_source_function(channel=channel, source_func='VOLT')
         self.set_source_voltage(channel=channel, voltage=voltage)
         self.set_current_compliance(
@@ -168,6 +181,8 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
         )
 
     def configure_current_source(self, channel=1, current=0.0, voltage_compliance=210):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.set_source_function(channel=channel, source_func='CURR')
         self.set_source_current(channel=channel, current=current)
         self.set_voltage_compliance(
@@ -212,6 +227,8 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
         return voltage, current
 
     def quick_read(self, channel=1):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         sense = self.state['sense_func']
         voltage, current = self._measured_voltage_current()
         if sense == 'VOLT':
@@ -223,25 +240,28 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
         return voltage
 
     def get_voltage(self, channel=1):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['sense_func'] = 'VOLT'
         voltage, _ = self._measured_voltage_current()
         return voltage
 
     def get_current(self, channel=1):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['sense_func'] = 'CURR'
         _, current = self._measured_voltage_current()
         return current
 
     def get_resistance(self, channel=1):
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['sense_func'] = 'RES'
         v, i = self._measured_voltage_current()
         return v / i if i != 0 else float('inf')
 
     def reset(self):
         self.__init__(address='VIRTUAL')
-
-    def clear(self):
-        pass
 
     def get_state(self):
         return self.state.copy()
