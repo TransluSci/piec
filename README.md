@@ -19,49 +19,52 @@
 
 ---
 
-## Overview
+## Installation
 
-Instrument drivers in `PIEC` follow a standardized, object-oriented design so that instruments within each category are interchangeable without code changes. Each category also provides a **Virtual Instrument** that returns simulated responses, enabling development and testing without physical hardware.
+`PIEC` requires Python 3.9 or higher:
 
-On top of this driver layer, **Measurement classes** coordinate multiple instruments to execute complete experiment protocols — configuring waveforms, triggering acquisition, processing data, and saving results — in a single method call. Pre-built **GUIs** and **Jupyter notebooks** are also provided for routine tasks.
+```bash
+pip install piec
+```
 
 ---
 
-## Quick Start
+## Quickstart GUI (No Coding Required)
 
-### Try in your browser
-
-Launch the interactive AWG-to-scope notebook on Binder with no local installation required:
-
-[![Launch Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb)
-
-To run it locally from a checkout of this repository:
+Run the desktop quickstart app to generate and capture waveforms with an interactive graphical interface:
 
 ```bash
-python -m pip install -e . jupyterlab
-python -m jupyter lab Measurements/Quickstart/quick_start.ipynb
+python Measurements/Quickstart/quick_start_local_GUI.py
 ```
 
-Prefer a GUI? Run `python Measurements/Quickstart/quick_start_local_GUI.py` from the checkout to test virtual or physical instruments with interactive controls and live plotting.
+* Works out of the box in **Virtual** simulation mode (no hardware required).
+* Connect physical instruments with dropdown selection or **Autodetect**.
+* Configure sine, square, or ramp waveforms and view live scope captures.
+* Optionally save captured traces directly to CSV.
 
-### Virtual hysteresis loop
+Prefer running in your browser? Launch the [interactive notebook on Binder](https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb).
+
+---
+
+## Quickstart in Python
+
+Run a complete ferroelectric hysteresis measurement using virtual instruments:
 
 ```python
 from piec.drivers.awg.k_81150a import Keysight81150a
 from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 from piec.measurement.discrete_waveform import HysteresisLoop
 
+# Connect in virtual simulation mode
 awg = Keysight81150a("VIRTUAL")
 osc = KeysightDSOX3024a("VIRTUAL")
-experiment = HysteresisLoop(awg, osc, save_dir='.')
-experiment.run_experiment()  # configures, captures, saves, and analyzes
+
+# Configure, capture, analyze, and display plots
+experiment = HysteresisLoop(awg, osc, save_dir=".", show_plots=True)
+experiment.run_experiment()
 ```
 
-The exact `"VIRTUAL"` address selects the category's virtual implementation while
-preserving each model's capability attributes. You can also instantiate
-`VirtualAwg` and `VirtualScope` directly for generic category capabilities.
-
-Pass physical addresses instead (or use `autodetect`) and the same code runs on hardware:
+To run on hardware, pass your instrument's VISA address instead of `"VIRTUAL"`, or use autodetection:
 
 ```python
 from piec.drivers.autodetect import autodetect
@@ -70,25 +73,7 @@ awg   = autodetect('awg')
 scope = autodetect('scope')
 ```
 
-For a complete walkthrough, see the [User Guide](https://piec.readthedocs.io/en/latest/user_guide/the_driver.html).
-
----
-
-## Installation
-
-`PIEC` requires Python 3.9 or higher. To install `PIEC`, run the following command in the terminal:
-
-```bash
-pip install piec
-```
-
-After installing, you can run simulations and analysis immediately. When connecting to physical hardware, your system may also require vendor-specific drivers:
-
-| Requirement | When needed | Download |
-|---|---|---|
-| **NI-488.2** | GPIB instruments | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
-| **NI-VISA** | USB-TMC / Ethernet / GPIB via NI-VISA | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
-| **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards | [mccdaq.com](http://www.mccdaq.com/swdownload) |
+For complete driver documentation and advanced measurement workflows, see the **[User Guide](https://piec.readthedocs.io/en/latest/user_guide/the_driver.html)**.
 
 ---
 

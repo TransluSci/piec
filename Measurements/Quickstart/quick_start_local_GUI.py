@@ -19,12 +19,14 @@ try:
 except Exception:
     pass
 
+import time
 from piec.measurement.gui_utils import MeasurementApp
 from piec.drivers.autodetect import autodetect, _safe_close
 from piec.drivers.awg.awg import Awg
 from piec.drivers.oscilloscope.oscilloscope import Oscilloscope
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.simulation.fe_material import Resistor
 
 DEFAULTS = {
     "awg_address": "VIRTUAL",
@@ -216,6 +218,7 @@ class QuickstartApp(MeasurementApp):
         try:
             if osc_address == "VIRTUAL":
                 scope = VirtualScope("VIRTUAL")
+                scope.sample = Resistor(50.0)
             else:
                 scope = autodetect(osc_address, required_type=Oscilloscope)
         except Exception as e:
@@ -232,8 +235,13 @@ class QuickstartApp(MeasurementApp):
                 awg.send_software_trigger()
                 data = scope.get_data()
             else:
-                scope.autoscale()
+                scope.toggle_channel(1, on=True)
+                scope.configure_trigger(trigger_source=1, trigger_level=0.0, trigger_slope="POS", trigger_mode="EDGE")
+                scope.set_trigger_sweep("AUTO")
+                time.sleep(0.5)
+                scope.toggle_acquisition(run=False)
                 data = scope.get_data()
+                scope.toggle_acquisition(run=True)
         except Exception as e:
             print(f"ERROR during capture: {e}")
             return
