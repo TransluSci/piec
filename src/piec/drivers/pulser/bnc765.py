@@ -8,6 +8,8 @@ class BNC765(Scpi, Pulser):
     """
 
     AUTODETECT_ID = "BNC765"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     channel = [1, 2, 3, 4]
 
     period = (1.25e-9, 8.0)

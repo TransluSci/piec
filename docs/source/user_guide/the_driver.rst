@@ -21,14 +21,14 @@ Each level inherits from the one above it, adding specificity:
        devices (e.g., *IDN?, *RST, *CLS).
 
    Level 2 — Instrument-type interface
-       Examples: Oscilloscope, Awg, Lockin, SourceMeter, Dmm
+       Examples: Oscilloscope, Awg, Lockin, Sourcemeter, DMM
        Defines the required methods and parameter standards that all
        drivers of that category must implement. Measurement code talks
        to this interface, making drivers interchangeable.
 
    Level 3 — Specific instrument model
        Examples: KeysightDSOX3024a, Agilent33220a, SR830, Keithley2400
-       Inherits from a Level 2 class and a Level 1 base (usually Scpi)
+       Inherits from a Level 2 class, optionally with Scpi or Digilent,
        and implements the hardware-specific logic using that instrument's
        exact command set.
 
@@ -73,7 +73,7 @@ What each level provides
    Level 3 driver must override that method.
 
 **Level 2 — Instrument-type interface classes**
-   Each category (``Oscilloscope``, ``Awg``, ``Dmm``, ``Lockin``, ``SourceMeter``, etc.)
+   Each category (``Oscilloscope``, ``Awg``, ``DMM``, ``Lockin``, ``Sourcemeter``, etc.)
    defines the set of methods and class attributes that a measurement class can rely on.
    For example, an ``Oscilloscope`` is expected to have methods for setting the timebase,
    configuring channels, and capturing a waveform. These files contain no specific SCPI
@@ -84,7 +84,7 @@ What each level provides
 
 **Level 3 — Specific model drivers**
    These are the classes you instantiate in your code. They inherit from a Level 2
-   category class **and** a Level 1 base (usually ``Scpi``), then translate the generic
+   category class, optionally with a convenience class such as ``Scpi``, then translate the generic
    interface into the exact SCPI strings (or vendor API calls) that the hardware
    understands:
 
@@ -101,7 +101,9 @@ What each level provides
    its defined methods take priority.
 
    .. note::
-      To see a complete implementation template, refer to the ``src/piec/drivers/example/`` directory. It contains the ``Example`` Level 2 interface and the ``SpecificExample`` Level 3 driver. Please read the :doc:`adding a driver <../contributing/adding_driver>` guide before writing custom drivers.
+      Start by copying the category interface into a new model file, preserving
+      its docstrings and signatures. Follow :doc:`adding a driver <../contributing/adding_driver>`
+      for inheritance, implementation, and validation steps.
 
    For the full list of available drivers, see :doc:`../supported_instruments`.
 
@@ -221,11 +223,16 @@ overridden at Level 3 with the specific model's real values. The parent Level 2 
 defines the *vocabulary* (attribute names that must exist); the Level 3 driver fills in
 the actual numbers from the instrument manual.
 
+If a capability can be a tuple on one model and a list on another, the parent
+declares it as ``None``. A parent value of ``(None, None)`` fixes the type as a
+tuple; ``[]`` fixes it as a list. Models supply their actual limits or options.
+
 State tracking
 --------------
 
-Whenever a ``set_`` method completes successfully, piec automatically records the
-value that was set as an instance attribute ``self._current_<name>``. For example,
+After a wrapped public method succeeds, piec records non-``None`` arguments whose
+names match capability attributes as ``self._current_<name>``. This includes
+argument defaults and applies even with ``check_params=False``. For example,
 after calling ``awg.set_waveform(1, 'sin')``, the driver stores
 ``awg._current_waveform = 'sin'``.
 

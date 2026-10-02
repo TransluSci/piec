@@ -10,7 +10,7 @@ class Stepper(Instrument):
     All steppers must be able to step!
     """
 
-    def step(self, steps, dir):
+    def step(self, steps, direction):
         """
         Sends a command to the stepper to step in a certain direction
         """

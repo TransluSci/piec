@@ -11,14 +11,16 @@ class AgilentDSOX5000(Scpi, Oscilloscope):
     """
     
     AUTODETECT_ID = "DSO-X 5"
+    AI_STATUS = "generated"
+    HARDWARE_TESTED = False  # Untested on physical hardware
     
     channel = [1, 2, 3, 4]
     
     # Vertical Scale: 1mV/div to 5V/div (1M Ohm), 1mV to 1V (50 Ohm)
     vdiv = (1e-3, 5.0)
     
-    # Offset Range depends on scale, typically +/- 5V to +/- 20V
-    y_range = None # Complex dependency
+    # Vertical Range: 8 divisions * 1mV/div to 5V/div
+    y_range = (0.008, 40.0)
     y_position = (-20.0, 20.0) # Simplified
     
     input_coupling = ["AC", "DC"]

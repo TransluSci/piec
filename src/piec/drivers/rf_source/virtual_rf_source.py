@@ -13,13 +13,6 @@ class VirtualRFSource(VirtualInstrument, RFSource):
     Stores state internally but produces no physical output.
     """
 
-    # --- Class Attributes ---
-    # These would normally define the hardware's capabilities. We define some sensible defaults.
-    channel = [1]
-    frequency = (1e3, 6e9)      # 1 kHz to 6 GHz
-    power = (-130.0, 20.0)      # -130 dBm to +20 dBm
-    modulation = ['AM', 'FM', 'PM', 'PULSE']
-
     def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize virtual RF source with default settings.
@@ -63,14 +56,8 @@ class VirtualRFSource(VirtualInstrument, RFSource):
     def reset(self):
         self.__init__()
 
-    def clear(self):
-        pass
-
     def error(self):
         return "No errors."
-
-    def wait(self):
-        pass
 
     def self_test(self):
         return "0"
