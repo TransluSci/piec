@@ -8,6 +8,7 @@
   <a href="https://piec.readthedocs.io/en/latest/?badge=latest"><img src="https://readthedocs.org/projects/piec/badge/?version=latest" alt="Documentation Status"/></a>
   <a href="https://pypi.org/project/piec/"><img src="https://badge.fury.io/py/piec.svg" alt="PyPI version"/></a>
   <a href="https://pypi.org/project/piec/"><img src="https://img.shields.io/pypi/l/piec.svg" alt="PyPI license"/></a>
+  <a href="https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Launch Binder"/></a>
 </p>
 
 <p align="center">
@@ -20,58 +21,50 @@
 
 ## Installation
 
-`PIEC` requires python 3.9 or higher. To install `PIEC`, run the following command in the terminal:
+`PIEC` requires Python 3.9 or higher:
 
 ```bash
 pip install piec
 ```
 
-After this, decide whether you would like to run a specific measurment with a GUI or notebook (in which case you'll need to download the appropriate files from the `Measurements` folder). Otherwise, see below for information on how to start scripting. Depending on your instruments, you may also need:
+---
 
-| Requirement | When needed | Download |
-|---|---|---|
-| **NI-488.2** | GPIB instruments | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html) |
-| **NI-VISA** | USB-TMC / Ethernet / GPIB via NI-VISA | [ni.com](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) |
-| **MCC Universal Library + `mcculw`** | Digilent/MCC DAQ boards | [mccdaq.com](http://www.mccdaq.com/swdownload) |
+## Quickstart GUI (No Coding Required)
+
+Run the desktop quickstart app to generate and capture waveforms with an interactive graphical interface:
+
+```bash
+python Measurements/Quickstart/quick_start_local_GUI.py
+```
+
+* Works out of the box in **Virtual** simulation mode (no hardware required).
+* Connect physical instruments with dropdown selection or **Autodetect**.
+* Configure sine, square, or ramp waveforms and view live scope captures.
+* Optionally save captured traces directly to CSV.
+
+Prefer running in your browser? Launch the [interactive notebook on Binder](https://mybinder.org/v2/gh/TransluSci/piec/master?urlpath=lab/tree/Measurements/Quickstart/quick_start.ipynb).
 
 ---
 
-## Overview
+## Quickstart in Python
 
-Instrument drivers in `PIEC` follow a **type-first** architecture with three layers of abstraction:
-
-| Layer | Role | Examples |
-|---|---|---|
-| **Level 1 — Instrument** | Base connection management and parameter validation (wraps PyVISA) | `Instrument`, `Scpi` |
-| **Level 2 — Category** | Defines required methods and parameter standards for each instrument type | `Awg`, `Oscilloscope`, `Lockin`, `Sourcemeter` |
-| **Level 3 — Model** | Implements hardware-specific logic for a particular instrument | `Keysight81150a`, `RigolDS1000Z`, `Keithley2400` |
-
-Measurement code targets the **Level 2 interface**, so instruments are interchangeable without code changes. Each category also provides a **Virtual Instrument** that returns simulated responses, enabling development and testing without physical hardware.
-
-On top of this driver layer, **Measurement classes** coordinate multiple instruments to execute complete experiment protocols — configuring waveforms, triggering acquisition, processing data, and saving results — in a single method call. Pre-built **GUIs** and **Jupyter notebooks** are also provided for routine tasks.
-
----
-
-## Quick Start
-
-**Virtual hysteresis loop** — no hardware required:
+Run a complete ferroelectric hysteresis measurement using virtual instruments:
 
 ```python
 from piec.drivers.awg.k_81150a import Keysight81150a
 from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
 from piec.measurement.discrete_waveform import HysteresisLoop
 
+# Connect in virtual simulation mode
 awg = Keysight81150a("VIRTUAL")
 osc = KeysightDSOX3024a("VIRTUAL")
-experiment = HysteresisLoop(awg, osc, save_dir='.')
-experiment.run_experiment()  # configures, captures, saves, and analyzes
+
+# Configure, capture, analyze, and display plots
+experiment = HysteresisLoop(awg, osc, save_dir=".", show_plots=True)
+experiment.run_experiment()
 ```
 
-The exact `"VIRTUAL"` address selects the category's virtual implementation while
-preserving each model's capability attributes. You can also instantiate
-`VirtualAwg` and `VirtualScope` directly for generic category capabilities.
-
-Pass physical addresses instead (or use `autodetect`) and the same code runs on hardware:
+To run on hardware, pass your instrument's VISA address instead of `"VIRTUAL"`, or use autodetection:
 
 ```python
 from piec.drivers.autodetect import autodetect
@@ -80,7 +73,7 @@ awg   = autodetect('awg')
 scope = autodetect('scope')
 ```
 
-For a complete walkthrough, see the [User Guide](https://piec.readthedocs.io/en/latest/user_guide/the_driver.html).
+For complete driver documentation and advanced measurement workflows, see the **[User Guide](https://piec.readthedocs.io/en/latest/user_guide/the_driver.html)**.
 
 ---
 
@@ -88,13 +81,13 @@ For a complete walkthrough, see the [User Guide](https://piec.readthedocs.io/en/
 
 | Category | Models |
 |---|---|
-| Arbitrary Waveform Generator | Keysight 81150A, Agilent 33220A, Agilent 33500, Rigol DG1000, Rigol DG4000, Siglent SDG2000X |
+| Arbitrary Waveform Generator | Keysight 81150A, Agilent 33220A, Agilent 33500, Siglent SDG2000X |
 | Oscilloscope | Keysight DSOX3024A, Agilent DSOX5000, Rigol DS1000Z, Tektronix TDS2000, Tektronix TDS6604, LeCroy SDA6020 |
 | Source Meter | Keithley 2400 |
 | Lock-in Amplifier | Stanford Research SR830 |
 | Digital Multimeter | Agilent 34410A, Keithley 2000, Keithley 193A |
 | Pulser | Berkeley Nucleonics BNC 765 |
-| DAQ | MCC USB-231 |
+| DAQ | MCC USB-231, MCC USB-1208HS |
 | DC Calibrator | EDC 522 |
 | Stepper Motor | Arduino Stepper (custom serial) |
 
@@ -124,6 +117,6 @@ Please cite this software following the [CITATION.cff](https://github.com/Transl
 
 ```
 Fratian, G., Qualls, A., Phan, J., Pankaj, R., & Caretta, L. (2026).
-PIEC: A Python Library for Integrated Experimental Control [Software].
+PIEC: A Python library for Integrated Experimental Control [Software].
 https://github.com/TransluSci/piec
 ```
