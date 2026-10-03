@@ -36,12 +36,6 @@ class Oscilloscope(Instrument):
 
     # --- Oscilloscope-Specific Methods ---
 
-    def quick_read(self):
-        """
-        All oscilloscopes must be able to read something, so therefore we need a method to read the data. It would be very beneficial to
-        ensure that all Measurers have a utility command that quickly reads out the data that is displayed (or the current value etc)
-        """
-
     #These functions make the signal visible and are used on a per channel basis (aka channel dependant)
     def autoscale(self):
         """

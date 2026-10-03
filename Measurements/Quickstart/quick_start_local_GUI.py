@@ -225,36 +225,50 @@ class QuickstartApp(MeasurementApp):
             print(f"ERROR connecting to Oscilloscope at '{osc_address}': {e}")
             return
 
-        # Execute measurement
+                # Execute measurement
         try:
-            awg.configure_waveform(1, waveform, frequency=frequency, amplitude=amplitude, offset=offset)
-            awg.output(1, on=True)
-
             if awg_address == "VIRTUAL" and osc_address == "VIRTUAL":
+                # Keep existing virtual behavior unchanged
+                awg.configure_waveform(
+                    1, waveform,
+                    frequency=frequency,
+                    amplitude=amplitude,
+                    offset=offset,
+                )
+                awg.output(1, on=True)
+
                 scope.arm()
                 awg.send_software_trigger()
                 data = scope.get_data()
+
             else:
-                scope.toggle_channel(1, on=True)
-                scope.configure_trigger(trigger_source=1, trigger_level=0.0, trigger_slope="POS", trigger_mode="EDGE")
-                scope.set_trigger_sweep("AUTO")
-                time.sleep(0.5)
-                scope.toggle_acquisition(run=False)
+                # Physical instruments — use known-working driver commands
+                awg.initialize()
+                awg.configure_waveform(
+                    1, waveform,
+                    frequency=frequency,
+                    amplitude=amplitude,
+                    offset=offset,
+                )
+                awg.output(1, on=True)
+
+                scope.initialize()
+                scope.autoscale()
+                scope.operation_complete()
+                scope.set_acquisition_channel(1)
                 data = scope.get_data()
-                scope.toggle_acquisition(run=True)
+
         except Exception as e:
             print(f"ERROR during capture: {e}")
             return
+
         finally:
-            try:
-                awg.output(1, on=False)
-            except Exception:
-                pass
+
             if awg_address != "VIRTUAL" and hasattr(awg, "instrument"):
                 _safe_close(awg)
+
             if osc_address != "VIRTUAL" and hasattr(scope, "instrument"):
                 _safe_close(scope)
-
         # Plot result
         self.ax.clear()
         time_ms = data["Time"] * 1000.0
