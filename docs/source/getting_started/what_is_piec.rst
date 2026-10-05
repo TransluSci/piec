@@ -37,14 +37,14 @@ How PIEC fits into your workflow
 A typical, no-coding required PIEC workflow looks like this:
 
 1. Run ``pip install piec`` on a computer with Python installed.
-2. Download the desired experiment GUI program form the ``Measurements`` module.
+2. Download the desired experiment GUI program from the ``Measurements`` module.
 3. Make sure you have the supported instruments of the correct type connected to your computer.
 4. Run ``python <experiment_script>_gui.py`` to execute the experiment.
 
 A typical, code-based PIEC workflow looks like this:
 
 1. Connect to your instruments using a driver from ``piec.drivers``.
-2. Create a measurement object from ``piec.measurements`` with your desired experimental parameters.
+2. Create a measurement object from ``piec.measurement`` with your desired experimental parameters.
 3. Call ``run_experiment()`` — piec handles instrument configuration, waveform output, data
    capture, and saving.
 4. Inspect and analyze the output data, script automated workflows, etc.

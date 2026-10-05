@@ -1,0 +1,4 @@
+# Install the checked-out PIEC code, including its declared dependencies.
+-e .
+jupyterlab>=4,<5
+ipykernel>=6,<7

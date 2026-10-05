@@ -228,7 +228,6 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
         Tells the scope to get ready to capture the data for the single shot etc
         """
         self.instrument.write(":SINGle")
-        self.instrument.write(":WAVeform:UNSigned {}".format("OFF"))
 
     def set_acquisition(self):
         """
@@ -291,58 +290,78 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
 
     def get_data(self):
         """
-        Returns the data depending on how it was configured with the configure_acquisition command. Requires set_acquisition to be called first. 
-        Returns the data in a structured format, typically in a Pandas DataFrame that dispalys the time and voltage values in a structured way across all captured channels.
-        args:
-            None
-        Returns:
-            data (Dataframe): Returns the data in a Pandas Dataframe ideally complete with.
+        Returns the data depending on how it was configured with configure_acquisition.
+        If a specific channel was set, returns that channel ('Time', 'Voltage').
+        If no channel was explicitly set, acquires all channels currently displayed/active
+        on the scope ('Time', 'Channel 1', 'Channel 2', ...).
         """
-        byte_order = 'msbf'  # Default byte order
-        unsigned = 'off'  # Default unsigned setting
-        preamble = self.instrument.query(":WAVeform:PREamble?")
-        preamble1 = preamble.split()
-        preamble_list = preamble1[0].split(',')
-        preamble_dict = {
-        'format': np.int16(preamble_list[0]),
-        'type': np.int16(preamble_list[1]),
-        'points': np.int32(preamble_list[2]),
-        'count': np.int32(preamble_list[3]),
-        'x_increment': np.float64(preamble_list[4]),
-        'x_origin': np.float64(preamble_list[5]),
-        'x_reference': np.int32(preamble_list[6]),
-        'y_increment': np.float32(preamble_list[7]),
-        'y_origin': np.float32(preamble_list[8]),
-        'y_reference': np.int32(preamble_list[9]),
-        }
-        if byte_order == 'msbf':
-            is_big_endian = True
-        if byte_order == 'lsbf':
-            is_big_endian = False
-        if unsigned == 'off':
-            is_unsigned = False
-        if unsigned == 'on':
-            is_unsigned = True
+        # 1. Determine which channel(s) to fetch
+        target_ch = getattr(self, "_current_channel", None)
+        if target_ch is not None:
+            active_channels = [target_ch]
         else:
-            if preamble_dict["format"] == 0 and not is_unsigned:
-                data = self.instrument.query_binary_values("WAVeform:DATA?", datatype='b', is_big_endian=is_big_endian)
-            if preamble_dict["format"] == 0 and is_unsigned:
-                data = self.instrument.query_binary_values("WAVeform:DATA?", datatype='B', is_big_endian=is_big_endian)
-            if preamble_dict["format"] == 1 and not is_unsigned:
-                data = self.instrument.query_binary_values("WAVeform:DATA?", datatype='h', is_big_endian=is_big_endian)
-            if preamble_dict["format"] == 1 and is_unsigned:
-                data = self.instrument.query_binary_values("WAVeform:DATA?", datatype='H', is_big_endian=is_big_endian)
-            if preamble_dict["format"] == 4:
-                data = self.instrument.query_ascii_values("WAVeform:DATA?")
-            time = []
-            wfm = []
-            for t in range(preamble_dict["points"]):
-                time.append((t* preamble_dict["x_increment"]) + preamble_dict["x_origin"])
-            for d in data:
-                wfm.append((d * preamble_dict["y_increment"]) + preamble_dict["y_origin"])
-        
-        return pd.DataFrame({'Time': time, 'Voltage': wfm})
+            # Query the scope for all visibly enabled channels
+            active_channels = [
+                ch for ch in self.channel
+                if self.instrument.query(f":CHANnel{ch}:DISPlay?").strip() == "1"
+            ]
+            # Safety fallback: if all front panel traces are turned off, default to 1
+            if not active_channels:
+                active_channels = [1]
 
+        # 2. Inspect active byte order and signedness from scope registers
+        is_big_endian = self.instrument.query(":WAVeform:BYTeorder?").strip().startswith("MSBF")
+        is_unsigned = self.instrument.query(":WAVeform:UNSigned?").strip() == "1"
+
+        data_dict = {}
+        time_array = None
+
+        # 3. Retrieve each target channel's data
+        for ch in active_channels:
+            # Point the scope's waveform source to this channel
+            self.instrument.write(f":WAVeform:SOURce CHANnel{ch}")
+
+            # Query preamble for conversion factors
+            pre_raw = self.instrument.query(":WAVeform:PREamble?").strip()
+            pre = [float(v) for v in pre_raw.split(',')]
+            fmt = int(pre[0])           # 0: BYTE, 1: WORD, 2: ASCii
+            points = int(pre[2])
+            x_inc, x_org, x_ref = pre[4], pre[5], pre[6]
+            y_inc, y_org, y_ref = pre[7], pre[8], pre[9]
+
+            if points == 0:
+                continue
+
+            # Read binary/ascii buffer
+            if fmt == 0:    # 8-bit BYTE
+                dtype = 'B' if is_unsigned else 'b'
+                raw = np.array(self.instrument.query_binary_values(
+                    ":WAVeform:DATA?", datatype=dtype, is_big_endian=is_big_endian, container=np.array
+                ))
+                voltage = (raw - y_ref) * y_inc + y_org
+            elif fmt == 1:  # 16-bit WORD
+                dtype = 'H' if is_unsigned else 'h'
+                raw = np.array(self.instrument.query_binary_values(
+                    ":WAVeform:DATA?", datatype=dtype, is_big_endian=is_big_endian, container=np.array
+                ))
+                voltage = (raw - y_ref) * y_inc + y_org
+            elif fmt == 2:  # ASCII floats
+                voltage = np.array(self.instrument.query_ascii_values(":WAVeform:DATA?", container=np.array))
+            else:
+                raise ValueError(f"Unsupported waveform format: {fmt}")
+
+            if time_array is None or len(time_array) != len(voltage):
+                time_array = (np.arange(len(voltage)) - x_ref) * x_inc + x_org
+
+            col_name = "Voltage" if len(active_channels) == 1 else f"Channel {ch}"
+            data_dict[col_name] = voltage
+
+        if time_array is None:
+            return pd.DataFrame()
+
+        df_dict = {"Time": time_array}
+        df_dict.update(data_dict)
+        return pd.DataFrame(df_dict)
     def get_measurement(self, channel, measurement_type):
         """
         Uses the scope's built-in measurement engine.
