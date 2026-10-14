@@ -1,21 +1,50 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
+message: "If you use PIEC in your research, please cite this software."
+title: "PIEC: A Modular Python Package for Easy and Scalable Laboratory Automation"
+type: software
 authors:
   - family-names: "Fratian"
-    given-names: "George"
-    alias: "Geo"
-    email: "geo_fratian@brown.edu"
+    given-names: "Geo"
     affiliation: "Brown University"
     orcid: "https://orcid.org/0009-0008-2687-671X"
-title: "piec"
-type: software
-version: 1.0.0
-date-released: "2026-05-14"
+  - family-names: "Qualls"
+    given-names: "Alexander"
+    affiliation: "Brown University"
+    orcid: "https://orcid.org/0000-0001-9070-026X"
+  - family-names: "Phan"
+    given-names: "Jesalina"
+    affiliation: "Brown University"
+    orcid: "https://orcid.org/0009-0007-7216-8506"
+  - family-names: "Pankaj"
+    given-names: "Rohan"
+    affiliation: "Brown University"
+    orcid: "https://orcid.org/0009-0005-0445-9323"
+  - family-names: "Caretta"
+    given-names: "Lucas"
+    affiliation: "Brown University"
+    orcid: "https://orcid.org/0000-0001-7229-7980"
+version: "1.0.3"
+date-released: "2026-10-14"
 repository-code: "https://github.com/TransluSci/piec"
-abstract: "PIEC (Python Integrated Experimental Control) is an open-source, modular Python library designed for scalable laboratory automation. Built on a hierarchical, 'type-first' architecture, PIEC standardizes hardware-agnostic instrument drivers, enabling researchers to rapidly prototype and deploy complex multi-instrument workflows. By minimizing setup overhead and providing a machine-readable structure, the package natively supports integration with AI/ML pipelines for closed-loop, autonomous experimentation across diverse scientific domains."
+url: "https://piec.readthedocs.io/"
+repository-artifact: "https://pypi.org/project/piec/"
+abstract: >-
+  PIEC (Python Integrated Experimental Control) is an open-source,
+  modular Python library for scalable laboratory automation.
+  Built on a hierarchical, type-first architecture, PIEC
+  standardizes hardware-agnostic instrument drivers and provides
+  reusable measurement classes for coordinating laboratory
+  instruments, acquiring data, and performing analysis.
+  Its modular design supports rapid experimental prototyping,
+  multi-instrument workflows, virtual instrumentation, and
+  integration with AI/ML-driven systems for closed-loop and
+  autonomous experimentation.
 keywords:
   - python
+  - laboratory automation
+  - instrument control
+  - measurement automation
+  - materials characterization
   - ferroelectrics
-  - piezoresponse-force-microscopy
-  - materials-science
+  - scientific software
 license: "MIT"
