@@ -230,8 +230,8 @@ class Oscilloscope(Instrument):
             None
         Returns:
             data (Dataframe): Returns the data in a Pandas Dataframe with the following convention:
-                If only one channel is displayed/configured, the dataframe will have two columns: 'time' and 'voltage'.
-                Otherwise, the dataframe will have one column for time and one column for each channel with the convention 'CH1', 'CH2', etc.
+                If only one channel is displayed/configured, the dataframe will have two columns: 'Time' and 'Voltage'.
+                Otherwise, the dataframe will have 'Time' first and one column for each channel with the convention 'CH1', 'CH2', etc.
         """
 
     # --- Optional Features ---

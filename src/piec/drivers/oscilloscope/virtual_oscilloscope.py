@@ -2,14 +2,10 @@
 Virtual Oscilloscope class that mimics the Keysight DSOX3024a interface for testing and simulation purposes.
 This module provides a software simulation of an oscilloscope for development and testing without physical hardware.
 """
-import numpy as np
 import pandas as pd
 
 from .oscilloscope import Oscilloscope
-from ..virtual_instrument import (
-    VirtualInstrument,
-    warn_for_large_simulation_points,
-)
+from ..virtual_instrument import VirtualInstrument
 
 class VirtualScope(VirtualInstrument, Oscilloscope):
     """
@@ -353,24 +349,6 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
             self.set_acquisition_mode(acquisition_mode)
         if acquisition_points is not None:
             self.set_acquisition_points(acquisition_points)
-
-    def quick_read(self):
-        """
-        Generate a synthetic waveform for testing.
-
-        Returns:
-            numpy.ndarray: Synthetic waveform data as 8-bit unsigned integers
-        """
-        requested_points = self._requested_acquisition_points
-        points = self._simulation_points if requested_points is None else min(
-            requested_points,
-            self._simulation_points,
-        )
-        warn_for_large_simulation_points(points, label="virtual oscilloscope waveform")
-        t = np.linspace(0, self.state['x_range'], points)
-        freq = 1.0 / (self.state['x_range'] if self.state['x_range'] else 1e-3)
-        v = np.sin(2 * np.pi * freq * t) * self.state['vdiv'][self.state['acquisition_channel']] * 2
-        return v.astype(np.uint8)
 
     def get_data(self):
         """
