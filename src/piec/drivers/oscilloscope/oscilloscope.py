@@ -3,6 +3,8 @@ This is an outline for what the osc.py file should be like.
 
 A osc (oscilloscope) is defined as an instrument that has the typical features on expects an oscilloscope to have
 """
+from typing import Union
+
 from ..instrument import Instrument, optional
 class Oscilloscope(Instrument):
     """
@@ -207,11 +209,13 @@ class Oscilloscope(Instrument):
             points (int): The number of data points to capture
         """
 
-    def configure_acquisition(self, channel, acquisition_mode, acquisition_points):
+    def configure_acquisition(self, channel: Union[int, list[int]], acquisition_mode, acquisition_points):
         """
         Configures the scope (ideally in binary) to specific parameters such as length, mode and what channels to acquire.
         args:
-            channel (int): The desired channel to acquire
+            channel (int or list[int]): One channel or a nonempty list of channels
+                to acquire. Every channel must be in the model's channel capability
+                list. A one-element list selects the same data as a single integer.
             acquisition_mode (str): The desired acquisition mode (e.g. normal or averaging) 
             acquisition_points (int): The number of data points to capture
         """
@@ -219,7 +223,9 @@ class Oscilloscope(Instrument):
 
     def get_data(self):
         """
-        Returns the data depending on how it was configured with the configure_acquisition command. If the configure_acquisition command was not called, the scope will return all dispayed channels with the default parameters.
+        Returns data for the channel or channels selected by configure_acquisition.
+        If configure_acquisition was not called, returns all displayed channels
+        with the default parameters.
         args:
             None
         Returns:

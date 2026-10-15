@@ -411,20 +411,20 @@ class Keysight81150a(Scpi, Awg):
             self.instrument.write(":TRIG")
 
     #additional methods
-    def configure_output_amplifier(self, channel: str='1', amplifier_type: str='HIV'):
+    def configure_output_amplifier(self, channel, amplifier_type):
         """
         This program configures the output amplifier for either maximum bandwith or amplitude. Taken from EKPY.
         NOTE: If in HIV mode max frequnecy is 50MHz, otherwise you get the full 120MHz
         NOTE: if sending a sin wave above 120MHz max voltage is 3V_pp
         args:
             self (pyvisa.resources.gpib.GPIBInstrument): Keysight 81150A
-            channel (str): Desired Channel to configure accepted params are [1,2]
-            amplifier_type (str): Amplifier Type args = [HIV (MAximum Amplitude), HIB (Maximum Bandwith)]
+            channel (int): Desired Channel to configure accepted params are [1,2]
+            amplifier_type (str): Amplifier Type args = [HIV (Maximum Amplitude), HIB (Maximum Bandwith)]
         """
-        if amplifier_type == 'HIV' or amplifier_type == 'hiv':
+        if amplifier_type == 'hiv':
             self.amplitude = (0, 10)
             self.frequency = {'waveform': {'SIN': (1e-6, 5e6), 'SQU': (1e-6, 50e6), 'RAMP': (1e-6, 5e6), 'PULS': (1e-6, 50e6), 'NOIS': None, 'DC': None, 'PATTERN': (1e-6, 50e6), 'USER': (1e-6, 50e6)}}
-        if amplifier_type == 'HIB' or amplifier_type == 'hib':
+        elif amplifier_type == 'hib':
             self.amplitude = (0, 5)
             self.frequency = {'waveform': {'SIN': (1e-6, 240e6), 'SQU': (1e-6, 120e6), 'RAMP': (1e-6, 5e6), 'PULS': (1e-6, 120e6), 'NOIS': None, 'DC': None, 'PATTERN': (1e-6, 120e6), 'USER': (1e-6, 120e6)}}
         self.instrument.write("OUTP{}:ROUT {}".format(channel, amplifier_type))
@@ -444,13 +444,14 @@ class Keysight81150a(Scpi, Awg):
         self.configure_output_amplifier(channel=2, amplifier_type='HIB')
 
     #Helper Functions
-def scale_waveform_data(data: np.array, preserve_vertical_resolution: bool=False) -> np.array:
+def scale_waveform_data(data, preserve_vertical_resolution: bool=False) -> np.array:
         """
         Helper function that scales values to a max of 8191 in such a way that the abs(max) is 8191
         and the rest is uniformly scaled. All VALUES SHOULD BE INTEGERS
         NOTE YOU LOSE RESOLUTION WITH THIS METHOD if preserve_vertical_resoltuion is false, but it preserves the wf shape!
         shuld print estimated lost in  PP VOLTAGE from resolution
         """
+        data = np.asarray(data)
         max_abs = np.max(abs(data))
         max_inst = 8191
         scale_factor = None

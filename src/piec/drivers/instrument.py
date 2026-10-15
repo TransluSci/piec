@@ -8,6 +8,8 @@ automatic parameter validation and state tracking.
 import functools
 import inspect
 import re
+import types
+from typing import Any, Union, get_args, get_origin, get_type_hints
 import numpy as np
 import pandas as pd
 from .utilities import PiecManager
@@ -17,7 +19,7 @@ from .utilities import PiecManager
 
 def auto_check_params(func):
     """
-    Decorator to automatically call self._check_params on a method
+    Decorator to validate annotated types and call self._check_params
     if the instance's `check_params` flag is True.
     Also converts all string arguments to lowercase.
     
@@ -35,7 +37,7 @@ def auto_check_params(func):
         
         # 1. Perform validation checks first
         if getattr(self, 'check_params', False):
-            self._check_params(self, lower_params)
+            _check_method_params(self, func, lower_params)
         
         # 3. Update bound_args with the lowercase values for the function call
         for key, value in lower_params.items():
@@ -59,6 +61,83 @@ def auto_check_params(func):
         return result
     
     return wrapper
+
+
+@functools.lru_cache(maxsize=128)
+def _method_parameter_types(cls, func):
+    """Resolve annotations, including those omitted by model overrides."""
+    annotations = {}
+    for base in reversed(cls.__mro__):
+        method = base.__dict__.get(func.__name__)
+        if inspect.isfunction(method):
+            annotations.update(get_type_hints(method))
+    annotations.update(get_type_hints(func))
+    return annotations
+
+
+def _matches_parameter_type(value, annotation):
+    """Check scalar, union and list annotations without numeric coercion."""
+    origin = get_origin(annotation)
+    if annotation is Any:
+        return True
+    if origin in (Union, getattr(types, 'UnionType', Union)):
+        return any(_matches_parameter_type(value, option) for option in get_args(annotation))
+    if origin is list:
+        return type(value) is list and all(
+            _matches_parameter_type(item, get_args(annotation)[0]) for item in value
+        )
+    if isinstance(annotation, type):
+        return type(value) is annotation
+    raise TypeError(f"Unsupported parameter annotation: {annotation!r}")
+
+
+def _check_method_params(instance, func, params):
+    """Apply strict annotated types, then the existing capability checks."""
+    annotations = _method_parameter_types(type(instance), func)
+    capabilities = get_class_attributes_from_instance(instance)
+    scalar_params = dict(params)
+    selections = {}
+    for name, value in params.items():
+        if name not in annotations:
+            continue
+        annotation = annotations[name]
+        # Preserve None defaults used by existing model configure methods.
+        if value is None and inspect.signature(func).parameters[name].default is None:
+            continue
+        if not _matches_parameter_type(value, annotation):
+            raise TypeError(f"Argument {name!r} must match {annotation!r}; got {value!r}")
+        if value is None:
+            continue
+
+        # Only explicitly annotated lists represent elementwise selections.
+        is_selection = type(value) is list and (
+            get_origin(annotation) is list or any(
+                get_origin(option) is list for option in get_args(annotation)
+            )
+        )
+        values = value if is_selection else [value]
+        capability = capabilities.get(name)
+        if capability is not None:
+            capability = getattr(instance, name)
+            if capability is not None and is_selection and not values:
+                raise ValueError(f"Argument {name!r} must be a nonempty list")
+            if isinstance(capability, list):
+                # Legacy membership also coerces strings/numbers. Annotated
+                # arguments must match an option's type as well as its value.
+                for item in values:
+                    if not any(type(item) is type(option) and
+                               recursive_lower(item) == recursive_lower(option)
+                               for option in capability):
+                        raise ValueError(f"Argument {name!r}: {item!r} is not in list {capability!r}")
+        if is_selection:
+            selections[name] = value
+            del scalar_params[name]
+
+    instance._check_params(instance, scalar_params)
+    for name, values in selections.items():
+        for value in values:
+            instance._check_params(instance, {**scalar_params, name: value})
+
 
 def optional(func):
     """
