@@ -209,32 +209,23 @@ class Oscilloscope(Instrument):
 
     def configure_acquisition(self, channel, acquisition_mode, acquisition_points):
         """
-        Configures the scope (ideally in binary) to specific parameters such as length (how much data to capture), etc
+        Configures the scope (ideally in binary) to specific parameters such as length, mode and what channels to acquire.
         args:
             channel (int): The desired channel to acquire
             acquisition_mode (str): The desired acquisition mode (e.g. normal or averaging) 
             acquisition_points (int): The number of data points to capture
         """
     
-    #Time to get the data out
-    def quick_read(self):
-        """
-        Quick read function that returns the default data in a numpy array. Typically this should be used to get a snapshot of the current waveform (e.g. the current display).
-        
-        args:
-            None
-        Returns:
-            data (ndarray): Returns the data in a quick way.
-        """
 
     def get_data(self):
         """
-        Returns the data depending on how it was configured with the configure_acquisition command.
-        Returns the data in a structured format, typically in a Pandas DataFrame that displays the time and voltage values in a structured way across all captured channels.
+        Returns the data depending on how it was configured with the configure_acquisition command. If the configure_acquisition command was not called, the scope will return all dispayed channels with the default parameters.
         args:
             None
         Returns:
-            data (Dataframe): Returns the data in a Pandas Dataframe ideally complete with.
+            data (Dataframe): Returns the data in a Pandas Dataframe with the following convention:
+                If only one channel is displayed/configured, the dataframe will have two columns: 'time' and 'voltage'.
+                Otherwise, the dataframe will have one column for time and one column for each channel with the convention 'CH1', 'CH2', etc.
         """
 
     # --- Optional Features ---
