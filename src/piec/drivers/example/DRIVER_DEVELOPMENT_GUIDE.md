@@ -319,6 +319,8 @@ The class attributes must follow a specific syntax based on what kind of paramet
 > `frequency` limits directly on the class.
 
 ## 5. Method Conventions: `set_`, `configure_`, and `run_`
+Category-specific methods and return formats are defined by the parent interface;
+its contracts take precedence over these general naming conventions.
 Function naming strictly determines scope:
 * **`set_<property>` Methods:** Must perform a **SINGLE** action. For instance, `set_frequency` only changes the frequency. They correspond directly to SCPI writes assigning one explicit hardware parameter. 
 * **`get_<property>` Methods:** Must **RETURN** a single, unformatted value (e.g., a status bit, a scalar measurement).
@@ -328,11 +330,10 @@ Function naming strictly determines scope:
   - Preserve the parent signature. When designing a new interface, use `None`
     for optional settings and call their `set_` methods only when supplied.
     Existing parent-defined convenience defaults remain part of the contract.
-* **`quick_read` Method:** A specialized **convenience function** (common in Oscilloscopes) used to return whatever data is currently ready or displayed on the hardware (e.g., a cursor value or mean measurement). It is used for fast, unformatted polling.
 * **`run_<routine>` Methods:** Used for **hardware-executed routines** where the instrument performs a complete operation internally (at hardware speed) and then returns the results. The key distinction is that a `run_` method triggers autonomous instrument behavior — unlike `set_` (which only writes a parameter) or `configure_` (which just calls multiple `set_` methods). Examples:
   - `run_voltage_sweep(...)` — the sourcemeter executes the full I-V sweep internally and returns all data points at once.
   - `run_current_sweep(...)` — same for current sweep.
-  - This is fundamentally different from manually looping `set_source_voltage` + `quick_read` in Python.
+  - A Python loop that changes a setting and reads a measurement is not a hardware-executed routine.
 
 ## 6. Method Signatures and Default Parameters
 * Method signatures must perfectly mirror the parent interface.

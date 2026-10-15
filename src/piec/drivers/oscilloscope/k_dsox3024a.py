@@ -274,26 +274,12 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
         if acquisition_points:
             self.set_acquisition_points(acquisition_points)
 
-    def quick_read(self):
-        """
-        Quick read function that returns the default data in a numpy array. Typically this should be used to get a snapshot of the current waveform (e.g. the current display).
-        
-        args:
-            None
-        Returns:
-            data (ndarray): Returns the data in a quick way.
-        """
-        self.instrument.write(":WAVeform:FORMat BYTE")
-        self.instrument.write(":WAVeform:POINts:MODE NORMal")
-        data = self.instrument.query_binary_values(":WAVeform:DATA?", datatype='B')
-        return np.array(data)
-
     def get_data(self):
         """
         Returns the data depending on how it was configured with configure_acquisition.
         If a specific channel was set, returns that channel ('Time', 'Voltage').
         If no channel was explicitly set, acquires all channels currently displayed/active
-        on the scope ('Time', 'Channel 1', 'Channel 2', ...).
+        on the scope ('Time', 'CH1', 'CH2', ...).
         """
         # 1. Determine which channel(s) to fetch
         target_ch = getattr(self, "_current_channel", None)
@@ -353,7 +339,7 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
             if time_array is None or len(time_array) != len(voltage):
                 time_array = (np.arange(len(voltage)) - x_ref) * x_inc + x_org
 
-            col_name = "Voltage" if len(active_channels) == 1 else f"Channel {ch}"
+            col_name = "Voltage" if len(active_channels) == 1 else f"CH{ch}"
             data_dict[col_name] = voltage
 
         if time_array is None:

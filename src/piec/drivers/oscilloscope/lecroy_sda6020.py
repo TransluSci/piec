@@ -311,17 +311,6 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         if acquisition_points is not None:
             self.set_acquisition_points(acquisition_points=acquisition_points)
 
-    def quick_read(self):
-        """
-        Quick read function that returns the default data in a numpy array.
-        """
-        channel = getattr(self, "_current_acquisition_channel", None) or 1
-        self.set_acquisition()
-        self.instrument.write("COMM_HEADER OFF")
-        self.instrument.write("COMM_FORMAT DEF9,WORD,BIN")
-        raw_data = self.instrument.query_binary_values(f"C{channel}:WF? DAT1", datatype='h', is_big_endian=False)
-        return np.array(raw_data)
-
     def get_data(self):
         """
         Returns the data in a Pandas Dataframe.
