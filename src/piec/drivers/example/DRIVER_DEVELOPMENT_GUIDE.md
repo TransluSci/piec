@@ -353,6 +353,52 @@ Function naming strictly determines scope:
   - Boolean flag toggles like `on=True`, `ac=False`, or `four_wire=False`.
   - **Convenience `configure_` Methods:** These are allowed to retain sensible default values if those defaults are established in the parent interface. 
 
+### Annotation-Guided Parameter Validation
+
+With `check_params=True`, public method parameter annotations define accepted
+types and input structure; capability attributes still define allowed values
+and ranges. These checks run before the method body or state tracking. Parameters
+without annotations retain the existing capability-only validation behavior.
+
+For example, the category can declare:
+
+```python
+from typing import Union
+
+channel = [1, 2, 3, 4]  # Physical channels available on this model
+
+def configure_acquisition(self, channel: Union[int, list[int]], acquisition_mode, acquisition_points):
+    ...
+```
+
+Here `1` and `[1, 2, 3]` pass validation. Every list element must have the
+declared type and satisfy the channel capability. `[1, 9]` fails if channel 9 is
+unavailable. Capability selections must be nonempty. Validation passes the
+original scalar or list structure to the driver; it does not loop over hardware
+operations or implement multiple-channel acquisition automatically.
+
+* Supported annotations are scalar classes, `Any`, unions, and typed lists
+  (`list[int]` or `typing.List[int]`). Use `typing.Union` for Python 3.9
+  compatibility; `int | list[int]` also works on Python 3.10 and newer.
+  Other annotation forms are not supported by this validator and raise
+  `TypeError` when checked.
+* Types are strict: an `int` annotation rejects `"1"`, `1.0`, and `True`.
+  A `float` annotation requires a float; declare `Union[int, float]` if both
+  are accepted. Annotated discrete choices must match the capability option's
+  type as well as its value. String comparisons remain case-insensitive.
+* Model overrides inherit omitted parameter annotations from their category
+  and other bases. Explicit override annotations take precedence; preserve the
+  category's accepted input contract when implementing a model.
+* `None` remains an allowed omission for parameters with a default of `None`.
+  Otherwise, explicitly include `None` in the annotation if accepted.
+  A capability of `None` disables capability checks, not annotated type checks.
+* Wrong types raise `TypeError`; invalid capability values and empty selections
+  raise `ValueError`. `check_params=False` bypasses both validation layers.
+* Annotations affect validation only. Drivers must still implement the accepted
+  scalar/list behavior, and state tracking still records the supplied argument
+  as `_current_<name>`. Keep acquisition selections separate from a scalar
+  waveform transfer source when implementing multiple-channel retrieval.
+
 ## 7. Communication & Protocol Convenience
 * For VISA-based drivers, read variables using `self.instrument.query("SCPI?")`
   and write variables using `self.instrument.write("SCPI")`, with commands from
