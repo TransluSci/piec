@@ -2,9 +2,10 @@ import numpy as np
 import time
 import pandas as pd
 from piec.analysis.utilities import metadata_and_data_to_csv, create_measurement_filename
+from piec.measurement.experiment import Experiment
 
 
-class IVSweep:
+class IVSweep(Experiment):
     """
     IV sweep measurement using a sourcemeter.
     Attributes:
@@ -22,6 +23,7 @@ class IVSweep:
     """
 
     mtype = "iv_sweep"
+    _metadata_instruments = ('sourcemeter',)
 
     def __init__(self, sourcemeter, v_start=0.0, v_stop=1.0, num_steps=50,
                  current_compliance=0.1, dwell_time=0.1, sense_mode='2W',
@@ -36,26 +38,9 @@ class IVSweep:
         self.current_compliance = current_compliance
         self.dwell_time = dwell_time
         self.sense_mode = sense_mode
-        self.save_dir = save_dir
         self.data = None
         self.filename = None
-        self._update_metadata()
-
-    def _update_metadata(self):
-        """
-        Update metadata with current measurement parameters.
-        Captures instrument ID, sweep parameters, and timestamp.
-        """
-        params = {key: value for key, value in self.__dict__.items()
-                  if not key.startswith('_') and
-                  not callable(value) and
-                  key not in ['sourcemeter', 'data', 'metadata']}
-
-        self.metadata = pd.DataFrame(params, index=[0])
-        self.metadata['sourcemeter'] = self.sourcemeter.idn()
-        self.metadata['mtype'] = self.mtype
-        self.metadata['timestamp'] = time.time()
-        self.metadata['processed'] = False
+        super().__init__(save_dir=save_dir)
 
     def configure_sourcemeter(self):
         """
@@ -123,4 +108,5 @@ class IVSweep:
         self.sourcemeter.output(on=False)
         print("Output off.")
         self.save_data()
+        self._update_history()
         print("Experiment complete.")

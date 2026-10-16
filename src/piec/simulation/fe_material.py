@@ -10,13 +10,14 @@ Classes:
 
 import numpy as np
 from scipy.optimize import fsolve
+from piec.simulation.sample import Sample
 
 EPSILON_0 = 8.854e-12  # F/m
 
 
-class Material:
-    def __init__(self):
-        self.name = "pass_through"
+class Material(Sample):
+    def __init__(self, parameter_dict=None, name="pass_through"):
+        super().__init__(parameter_dict=parameter_dict, name=name)
 
     def voltage_response(self, v, t):
         """Return the response to an applied voltage and its time coordinate."""
@@ -56,9 +57,10 @@ class Resistor(Material):
 
 
 class Dielectric(Material):
-    def __init__(self, permittivity=8.85e-12):
-        self.permittivity = permittivity
-        self.name = "dielectric"
+    def __init__(self, permittivity=8.85e-12, *, parameter_dict=None, name="dielectric"):
+        """Initialize permittivity; dictionary values override scalar arguments."""
+        super().__init__(parameter_dict=parameter_dict, name=name)
+        self.permittivity = self.parameter_dict.setdefault('permittivity', permittivity)
 
 
 class Ferroelectric(Material):
@@ -67,7 +69,7 @@ class Ferroelectric(Material):
 
     The hysteresis loop is traced by quasi-statically following the stable
     branches of the Landau free energy surface (fsolve branch-tracking). If
-    `kinetic_damping` is present in the material dictionary, a frequency-
+    `kinetic_damping` is present in the parameter dictionary, a frequency-
     dependent RK4 simulation is used instead, and dP/dt is stored directly
     from the integrator so that no secondary np.gradient is needed.
 
@@ -81,9 +83,8 @@ class Ferroelectric(Material):
         c_tilde = c
     """
 
-    def __init__(self, material_dict, temperature=300):
-        self.name = None
-        self.material_dict = material_dict
+    def __init__(self, parameter_dict, temperature=300, *, name=None):
+        super().__init__(parameter_dict=parameter_dict, name=name)
         self.temperature = temperature
         self.output_voltage = None
         self.t = None
@@ -100,9 +101,9 @@ class Ferroelectric(Material):
         """
         if temperature is None:
             temperature = self.temperature
-        fe  = self.material_dict['ferroelectric']
-        sub = self.material_dict['substrate']
-        elec = self.material_dict['electrode']
+        fe  = self.parameter_dict['ferroelectric']
+        sub = self.parameter_dict['substrate']
+        elec = self.parameter_dict['electrode']
         d = fe['film_thickness']
 
         eta_m = (sub['lattice_a'] - fe['lattice_a']) / fe['lattice_a']
@@ -216,7 +217,7 @@ class Ferroelectric(Material):
         a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s = \
             self._compute_renormalized_coefficients()
 
-        fe    = self.material_dict['ferroelectric']
+        fe    = self.parameter_dict['ferroelectric']
         gamma = fe['kinetic_damping']
         dt    = t[1] - t[0]  # assumes uniform timestep
         P_max = 2 * P_s      # physical clamp bound
@@ -261,8 +262,8 @@ class Ferroelectric(Material):
         Returns:
             tuple: (P_total, P_without_leakage) both in C/m².
         """
-        fe   = self.material_dict['ferroelectric']
-        elec = self.material_dict['electrode']
+        fe   = self.parameter_dict['ferroelectric']
+        elec = self.parameter_dict['electrode']
         d        = fe['film_thickness']
         epsilon_r = fe['epsilon_r']
         area     = elec['area']
@@ -297,8 +298,8 @@ class Ferroelectric(Material):
         branch-tracking path is used.
         """
         self.t = t
-        fe   = self.material_dict['ferroelectric']
-        elec = self.material_dict['electrode']
+        fe   = self.parameter_dict['ferroelectric']
+        elec = self.parameter_dict['electrode']
         area = elec['area']
         d    = fe['film_thickness']
         epsilon_r = fe['epsilon_r']
