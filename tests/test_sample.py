@@ -47,6 +47,24 @@ def test_resistor_dictionary_controls_response_and_preserves_scalar_api():
     np.testing.assert_allclose(resistor.voltage_response(voltage, time)[0], [0, 0.001, 0.002])
 
 
+@pytest.mark.parametrize('prep_points', [0, 2])
+def test_configured_resistor_preserves_waveform_capture(prep_points):
+    sample = Resistor(parameter_dict={'resistance': 50.0}, name='load')
+    voltage = np.array([0.0, 1.0, 2.0, -1.0])
+    time = np.array([1.0, 1.5, 2.0, 2.5])
+    assert all(values.size == 0 for values in sample.get_voltage_response())
+    assert sample.prep_points == 0
+    sample.prep_points = prep_points
+
+    sample.apply_waveform(voltage, time)
+
+    response, response_time = sample.get_voltage_response()
+    np.testing.assert_array_equal(response, voltage[prep_points:])
+    np.testing.assert_array_equal(response_time, time[prep_points:] - time[prep_points])
+    assert sample.name == 'load'
+    assert sample.resistance == 50.0
+
+
 def test_dielectric_configuration_preserves_pass_through_response():
     sample = Dielectric(parameter_dict={'permittivity': 1e-10})
     assert sample.permittivity == 1e-10

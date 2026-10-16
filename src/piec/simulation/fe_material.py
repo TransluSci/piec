@@ -29,10 +29,10 @@ class Material(Sample):
 
 
 class Resistor(Material):
-    def __init__(self, resistance=50.0):
-        super().__init__()
-        self.resistance = resistance
-        self.name = "resistor"
+    def __init__(self, resistance=1e3, *, parameter_dict=None, name="resistor"):
+        """Initialize resistance; dictionary values override scalar arguments."""
+        super().__init__(parameter_dict=parameter_dict, name=name)
+        self.resistance = self.parameter_dict.setdefault('resistance', resistance)
         self.output_voltage = np.array([])
         self.t = np.array([])
         self.prep_points = 0
