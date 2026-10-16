@@ -21,8 +21,10 @@ class SpecificExample(Scpi, Example):
     It represents a hypothetical "Generic Instrument Model X".
     """
 
-    # --- 3. AUTODETECT IDENTIFIER ---
+    # --- 3. AUTODETECT IDENTIFIER & METADATA ---
     AUTODETECT_ID = "GENERIC_MODEL_X"
+    AI_STATUS = "generated"   # "generated" if AI-written, "assisted" if human-written with AI help, or None/omit if human
+    HARDWARE_TESTED = False   # Set to True only after physical bench verification (e.g. # Tested 10/2/2026 on piec=1.0.1 with example_test.ipynb)
 
 
     # --- 4. INSTRUMENT CAPABILITIES & LIMITS ---

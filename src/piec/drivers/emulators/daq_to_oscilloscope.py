@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from ..oscilloscope.oscilloscope import Oscilloscope
 from ..daq.daq import Daq
+from ._daq_capabilities import rate_bounds, select_voltage_range
 
 class DaqAsOscilloscope(Oscilloscope):
     """
@@ -97,6 +98,29 @@ class DaqAsOscilloscope(Oscilloscope):
         return self._scope_state['channels'][channel]
         
     # --- Helper to calculate DAQ parameters ---
+
+    def _acquisition_parameters(self):
+        """Calculate points, rate, and duration from DAQ capabilities."""
+        total_time = self._scope_state['tdiv'] * 10
+        num_points = self._scope_state['points']
+        sample_rate = 1000.0 if total_time <= 0 else num_points / total_time
+        minimum_rate, maximum_rate = rate_bounds(
+            self.daq, "ai_sample_rate", fallback_max=50_000
+        )
+
+        if sample_rate > maximum_rate:
+            requested_rate = sample_rate
+            num_points = max(1, int(total_time * maximum_rate))
+            sample_rate = maximum_rate
+            if self.verbose:
+                print(
+                    f"Requested AI rate {requested_rate:g} S/s exceeds the DAQ "
+                    f"limit of {maximum_rate:g} S/s; using {num_points} points"
+                )
+        elif sample_rate < minimum_rate:
+            sample_rate = minimum_rate
+
+        return num_points, sample_rate, total_time
     
     def _apply_settings_to_daq(self, channel):
         """
@@ -105,22 +129,24 @@ class DaqAsOscilloscope(Oscilloscope):
         """
         daq_channel = channel - 1 # Convert to 0-based for hardware
         
-        # Time Base
-        total_time = self._scope_state['tdiv'] * 10
-        num_points = self._scope_state['points']
-        
-        if total_time <= 0:
-             sample_rate = 1000
-        else:
-             sample_rate = num_points / total_time
+        _, sample_rate, _ = self._acquisition_parameters()
         
         ch_state = self._get_ch_state(channel)
         
-        v_range_scope_display = ch_state['vdiv'] * 8
-        v_range_daq_input = v_range_scope_display / ch_state['attenuation']
+        display_span = ch_state['vdiv'] * 8 / ch_state['attenuation']
+        voltage_range = select_voltage_range(
+            self.daq,
+            "ai_range",
+            required_low=-display_span / 2,
+            required_high=display_span / 2,
+        )
         
         try:
-            self.daq.configure_AI_channel(daq_channel, range=v_range_daq_input, sample_rate=sample_rate)
+            self.daq.configure_AI_channel(
+                daq_channel,
+                range=voltage_range,
+                sample_rate=sample_rate,
+            )
         except Exception as e:
             print(f"Warning: DAQ configuration failed for channel {channel} (DAQ: {daq_channel}): {e}")
 
@@ -249,30 +275,18 @@ class DaqAsOscilloscope(Oscilloscope):
         
         daq_channel = channel - 1 # Convert to 0-based for hardware
         
-        num_points = self._scope_state['points']
-        total_time_target = self._scope_state['tdiv'] * 10
+        num_points, sample_rate, total_time_target = self._acquisition_parameters()
         
         # 1. Try Hardware Scan
-        if hasattr(self.daq, 'read_AI_scan'):
+        scan_implementation = getattr(type(self.daq), "read_AI_scan", None)
+        if scan_implementation is not None and scan_implementation is not Daq.read_AI_scan:
             try:
-                sample_rate = num_points / total_time_target
-                
-                # Check for Max Rate Limit (USB-231 limit is 50kHz)
-                MAX_RATE = 50000.0
-                if sample_rate > MAX_RATE:
-                    new_points = int(total_time_target * MAX_RATE)
-                    # Don't let it drop below minimum
-                    if new_points < 10: new_points = 10
-                    
-                    print(f"Warning: Requested rate {sample_rate/1000:.1f} kHz exceeds limit ({MAX_RATE/1000:.1f} kHz). Reducing points from {num_points} to {new_points} to maintain timebase.")
-                    
-                    num_points = new_points
-                    sample_rate = MAX_RATE
-                
-                # Hardware scan assumes perfect timing
-                # NOTE: data might be shorter now, but duration is same
-                data = np.array(self.daq.read_AI_scan(daq_channel, num_points, sample_rate))
-                return data, total_time_target
+                data = np.array(
+                    self.daq.read_AI_scan(daq_channel, num_points, sample_rate)
+                )
+                actual_rate = getattr(self.daq, "_last_ai_scan_rate", sample_rate)
+                actual_duration = len(data) / actual_rate if actual_rate else total_time_target
+                return data, actual_duration
             except Exception as e:
                 print(f"Hardware scan failed, falling back to software: {e}")
                 pass # Fallback

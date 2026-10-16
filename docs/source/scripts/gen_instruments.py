@@ -120,7 +120,8 @@ def extract_metadata_from_ast(file_path, valid_bases):
                     'class_name': node.name,
                     'model': clean_model_name(raw_model),
                     'protocol': protocol,
-                    'binary': binary_req
+                    'binary': binary_req,
+                    'manual_only': isinstance(autodetect_id, str) and autodetect_id.startswith('MANUAL_ONLY:')
                 })
                 
     return drivers
@@ -194,7 +195,7 @@ def generate_rst(categories):
     output.append("Verified Versions")
     output.append("-----------------")
     output.append("")
-    output.append("* **Python**: 3.8+")
+    output.append("* **Python**: 3.9+")
     output.append("* **NI-VISA**: 2024+")
     output.append("* **OS**: Windows (Primary support)")
     output.append("")
@@ -245,7 +246,10 @@ def generate_rst(categories):
         for d in sorted(drivers, key=lambda x: x['model']):
             output.append(f"      * - {d['model']}")
             output.append(f"        - :py:class:`~{d['module']}.{d['class_name']}`")
-            output.append(f"        - {d['protocol']}")
+            protocol = d['protocol']
+            if d.get('manual_only'):
+                protocol += " (manual connection; no autodetection)"
+            output.append(f"        - {protocol}")
             output.append(f"        - {d['binary']}")
         output.append("")
         

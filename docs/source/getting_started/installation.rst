@@ -23,8 +23,10 @@ specific hardware will fail if the required driver is missing.
 
    * - Dependency
      - When you need it
-   * - `NI 488.2 (GPIB) <https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html#544048>`_
+   * - `NI 488.2 (GPIB) <https://www.ni.com/en/support/downloads/drivers/download.ni-488-2.html>`_
      - Communicating with any instrument over a GPIB interface
+   * - `NI-VISA <https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html>`_
+     - USB-TMC, Ethernet, or GPIB communication via NI-VISA
    * - `MCC Universal Library (UL) <http://www.mccdaq.com/swdownload>`_
      - Using Digilent / MCC DAQ devices (e.g., ``MCCDig``)
 

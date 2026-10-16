@@ -37,22 +37,6 @@ class VirtualAwg(VirtualInstrument, Awg):
         arb_data_length (tuple): Number of points range for arbitrary waveforms (min, max)
     """
 
-    channel = [1, 2]
-    waveform = ['SIN', 'SQU', 'RAMP', 'PULS', 'NOIS', 'DC', 'USER']
-    amplitude = (0, 50)
-    offset = (-50, 50)
-    polarity = ['NORM', 'INV']
-    duty_cycle = (0.0, 100.0)
-    symmetry = (0.0, 100.0)
-    pulse_width = (4.1e-9, 950000)
-    pulse_delay = pulse_width
-    trigger_source = ['IMM', 'INT', 'EXT', 'MAN']
-    trigger_slope = ['POS', 'NEG', 'EITH']
-    trigger_mode = ['EDGE', 'LEV']
-
-    arb_dac_value = (0, 16383) # Range for individual DAC points in arb_data_range data list
-    arb_data_range = (2, 4000)  # Points, for arbitrary waveform data len
-
     def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize the virtual AWG with default settings.
@@ -79,6 +63,8 @@ class VirtualAwg(VirtualInstrument, Awg):
             'symmetry': {ch: 50.0 for ch in self.channel},
             'pulse_width': {ch: 1e-6 for ch in self.channel},
             'pulse_delay': {ch: 0.0 for ch in self.channel},
+            'rise_time': {ch: 8.4e-9 for ch in self.channel},
+            'fall_time': {ch: 8.4e-9 for ch in self.channel},
             'trigger_source': {ch: 'IMM' for ch in self.channel},
             'trigger_level': {ch: 0.0 for ch in self.channel},
             'trigger_slope': {ch: 'POS' for ch in self.channel},
@@ -215,7 +201,7 @@ class VirtualAwg(VirtualInstrument, Awg):
         """
         self.state['polarity'][channel] = polarity
 
-    def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None, user_func=None):
+    def configure_waveform(self, channel, waveform, frequency=None, amplitude=None, offset=None, load_impedance=None, polarity=None):
         """
         Configure the waveform settings for a channel.
 
@@ -227,7 +213,9 @@ class VirtualAwg(VirtualInstrument, Awg):
             offset (float, optional): DC offset in volts
             load_impedance (float, optional): Load impedance in ohms
             polarity (str, optional): Polarity mode ('NORM' or 'INV')
-            user_func (callable, optional): User-defined function for 'USER' waveform
+
+        This simulation stores one arbitrary waveform per channel and ignores
+        its name. Upload data with create_arb_waveform before using USER.
         """
         self.set_waveform(channel, waveform)
         if frequency is not None:
@@ -240,12 +228,6 @@ class VirtualAwg(VirtualInstrument, Awg):
             self.set_load_impedance(channel, load_impedance)
         if polarity is not None:
             self.set_polarity(channel, polarity)
-        if waveform == 'USER' and user_func is not None:
-            warn_for_large_simulation_input(
-                user_func,
-                label="virtual AWG user waveform",
-            )
-            self.state['arb_waveform'][channel] = np.array(user_func)
 
     def set_square_duty_cycle(self, channel, duty_cycle):
         """
@@ -278,12 +260,12 @@ class VirtualAwg(VirtualInstrument, Awg):
         self.state['pulse_width'][channel] = pulse_width
 
     def set_pulse_rise_time(self, channel, rise_time):
-        # Not simulated
-        pass
+        """Set the rise time for pulse waveform."""
+        self.state['rise_time'][channel] = rise_time
 
     def set_pulse_fall_time(self, channel, fall_time):
-        # Not simulated
-        pass
+        """Set the fall time for pulse waveform."""
+        self.state['fall_time'][channel] = fall_time
 
     def set_pulse_duty_cycle(self, channel, duty_cycle):
         """

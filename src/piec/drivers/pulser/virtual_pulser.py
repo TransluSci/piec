@@ -13,22 +13,6 @@ class VirtualPulser(VirtualInstrument, Pulser):
     Stores state internally but produces no physical output.
     """
 
-    # --- Class Attributes ---
-    channel = [1, 2]
-    period = (1e-9, 1000.0)
-    frequency = (1e-3, 1e9)
-    width = (1e-9, 1000.0)
-    delay = (0.0, 1000.0)
-    rise_time = (1e-9, 1.0)
-    fall_time = (1e-9, 1.0)
-    high_level = (-5.0, 5.0)
-    low_level = (-5.0, 5.0)
-    offset = (-5.0, 5.0)
-    trigger_source = ['INT', 'EXT', 'MAN']
-    trigger_mode = ['CONT', 'BURS']
-    burst_count = (1, 1000000)
-    polarity = ['NORM', 'INV']
-
     def __init__(self, address='VIRTUAL', **kwargs):
         """
         Initialize virtual pulser with default settings.
@@ -64,14 +48,8 @@ class VirtualPulser(VirtualInstrument, Pulser):
     def reset(self):
         self.__init__()
 
-    def clear(self):
-        pass
-
     def error(self):
         return "No errors."
-
-    def wait(self):
-        pass
 
     def self_test(self):
         return "0"

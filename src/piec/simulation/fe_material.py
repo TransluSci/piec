@@ -29,10 +29,13 @@ class Material(Sample):
 
 
 class Resistor(Material):
-    def __init__(self, resistance=1e3, *, parameter_dict=None, name="resistor"):
-        """Initialize resistance; dictionary values override scalar arguments."""
-        super().__init__(parameter_dict=parameter_dict, name=name)
-        self.resistance = self.parameter_dict.setdefault('resistance', resistance)
+    def __init__(self, resistance=50.0):
+        super().__init__()
+        self.resistance = resistance
+        self.name = "resistor"
+        self.output_voltage = np.array([])
+        self.t = np.array([])
+        self.prep_points = 0
 
     def voltage_response(self, v, t):
         """Return current produced by an applied voltage."""
@@ -41,6 +44,16 @@ class Resistor(Material):
     def current_response(self, i, t):
         """Return voltage produced by an applied current."""
         return i * self.resistance, t
+
+    def apply_waveform(self, v, t):
+        """Apply voltage waveform and record the voltage response across the resistor."""
+        p = getattr(self, 'prep_points', 0)
+        self.output_voltage = np.array(v[p:])
+        self.t = np.array(t[p:]) - (t[p] if len(t) > p else 0.0)
+
+    def get_voltage_response(self):
+        """Return (output_voltage, time) as measured across the resistor."""
+        return self.output_voltage, self.t
 
 
 class Dielectric(Material):
