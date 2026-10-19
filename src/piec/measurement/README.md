@@ -15,7 +15,9 @@ This directory contains classes for managing discrete waveform generation, measu
 `Experiment` provides save-directory initialization, metadata collection, and
 independent history snapshots. `DiscreteWaveform`, `IVSweep`, and
 `MagnetoTransport` initialize this shared state after setting their measurement
-parameters and declare their instrument attributes in `_metadata_instruments`.
+parameters and declare all required instrument attributes in `_instruments`.
+Call `experiment.safe_close()` to reset each declared instrument using its
+`initialize()` method.
 The collector stores instrument IDs and current public parameters, including
 dictionary-valued settings such as plot configuration. Each measurement refreshes
 metadata before saving and records a history snapshot at the end of its run.

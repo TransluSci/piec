@@ -27,7 +27,7 @@ class MagnetoTransport(Experiment):
         :metadata (pd.DataFrame): Measurement parameters and metadata
     """
 
-    _metadata_instruments = ('dmm', 'calibrator', 'arduino', 'lockin')
+    _instruments = ('dmm', 'calibrator', 'arduino', 'lockin')
 
     def __init__(self, dmm, calibrator, arduino, lockin,  field, save_dir=r'\\scratch', voltage_callibration=10000,
                  live_plot=True, plot_config=None):

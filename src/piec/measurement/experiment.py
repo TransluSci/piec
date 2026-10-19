@@ -10,19 +10,25 @@ class Experiment:
 
     Subclasses should initialize their measurement parameters before calling
     ``super().__init__`` so those parameters appear in the initial metadata.
-    Instrument attribute names listed in ``_metadata_instruments`` are stored
-    as instrument IDs. ``_metadata_attributes`` also includes class attributes
-    in the metadata, when present.
+    Subclasses declare all required instrument attribute names in ``_instruments``.
+    These instruments are stored as IDs in metadata and initialized by
+    ``safe_close``. ``_metadata_attributes`` also includes class attributes in
+    the metadata, when present.
     """
 
     mtype = None
-    _metadata_instruments = ()
+    _instruments = ()
     _metadata_attributes = ()
 
     def __init__(self, save_dir=r'\\scratch'):
         self.save_dir = save_dir
         self.history = []
         self._update_metadata()
+
+    def safe_close(self):
+        """Reset every declared instrument by calling its ``initialize`` method."""
+        for name in self._instruments:
+            getattr(self, name).initialize()
 
     def _update_metadata(self):
         """Refresh measurement parameters, instrument IDs, and timestamp."""
@@ -31,11 +37,11 @@ class Experiment:
             if not key.startswith('_')
             and not callable(value)
             and key not in ('data', 'metadata', 'history')
-            and key not in self._metadata_instruments
+            and key not in self._instruments
         }
         self.metadata = pd.DataFrame([params])
         self.metadata['mtype'] = self.mtype
-        for name in self._metadata_instruments:
+        for name in self._instruments:
             self.metadata[name] = getattr(self, name).idn()
         for name in self._metadata_attributes:
             if hasattr(self, name):

@@ -23,7 +23,7 @@ class IVSweep(Experiment):
     """
 
     mtype = "iv_sweep"
-    _metadata_instruments = ('sourcemeter',)
+    _instruments = ('sourcemeter',)
 
     def __init__(self, sourcemeter, v_start=0.0, v_stop=1.0, num_steps=50,
                  current_compliance=0.1, dwell_time=0.1, sense_mode='2W',

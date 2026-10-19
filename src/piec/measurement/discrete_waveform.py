@@ -26,7 +26,7 @@ class DiscreteWaveform(Experiment):
         :data (pd.DataFrame): Captured waveform data (time and voltage)
         :metadata (pd.DataFrame): Measurement parameters and metadata
     """
-    _metadata_instruments = ('awg', 'osc')
+    _instruments = ('awg', 'osc')
     _metadata_attributes = ('length',)
     length = None
     filename = None
