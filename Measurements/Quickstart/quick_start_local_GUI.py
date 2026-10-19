@@ -31,7 +31,7 @@ from piec.simulation.fe_material import Resistor
 DEFAULTS = {
     "awg_address": "VIRTUAL",
     "osc_address": "VIRTUAL",
-    "save_dir": r"your\default\save\directory",
+    "save_dir": r"scratch",
     "waveform": "SIN",
     "frequency": 1000.0,
     "amplitude": 1.0,

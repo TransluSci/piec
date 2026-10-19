@@ -13,7 +13,7 @@ from piec.measurement.gui_utils import MeasurementApp
 
 DEFAULTS = {"awg_address":"VIRTUAL",
             "osc_address":"VIRTUAL",
-            "save_dir":r"your\default\save\directory",
+            "save_dir":r"scratch",
             "vdiv":0.01,
             "area":'1.0e-5**2',
             "time_offset":100,
@@ -92,7 +92,6 @@ class FEMeasurementApp(MeasurementApp):
         
         # Placeholder for dynamic inputs
         self.dynamic_inputs = {}
-        self._saved_dynamic = {}  # Cache for saved dynamic values per measurement type
 
         # Plot configuration section (Uses inherited self.plot_config_frame)
         ttk.Label(self.plot_config_frame, text="X-axis:").grid(row=0, column=0, sticky="w")
@@ -127,122 +126,6 @@ class FEMeasurementApp(MeasurementApp):
         })
         self.setup_shortcuts()
 
-    def save_settings(self):
-        """Override to save all cached dynamic input sets, not just the currently visible one."""
-        import json
-        
-        # Snapshot current dynamic values into cache before saving
-        dynamic_title = self.dynamic_frame.cget("text").strip()
-        if dynamic_title and self.dynamic_inputs:
-            current_vals = {}
-            children = self.dynamic_frame.winfo_children()
-            for i, widget in enumerate(children):
-                if isinstance(widget, ttk.Label) and i + 1 < len(children):
-                    next_widget = children[i + 1]
-                    if isinstance(next_widget, ttk.Entry):
-                        current_vals[widget.cget("text").rstrip(":")] = next_widget.get()
-            if current_vals:
-                self._saved_dynamic[dynamic_title] = current_vals
-
-        # Now call the parent save, which will write the current dynamic frame
-        # But we need to override the dynamic section with our full cache
-        super().save_settings()
-
-        # Re-read the file and replace the dynamic section with our full cache
-        filepath = self.get_settings_file_path()
-        if filepath and os.path.exists(filepath) and self._saved_dynamic:
-            try:
-                with open(filepath, 'r') as f:
-                    settings = json.load(f)
-                settings["dynamic"] = self._saved_dynamic
-                with open(filepath, 'w') as f:
-                    json.dump(settings, f, indent=4)
-            except Exception:
-                pass
-
-    def load_settings(self):
-        """Override to explicitly trigger measurement type selection before restoring dynamic values."""
-        import json, os
-        filepath = self.get_settings_file_path()
-        if not filepath or not os.path.exists(filepath):
-            return
-        try:
-            with open(filepath, 'r') as f:
-                settings = json.load(f)
-        except Exception as e:
-            print(f"Failed to load settings: {e}")
-            return
-
-        # Apply static settings manually (skip the Measurement Type combobox event)
-        if "static" in settings:
-            static_data = settings["static"]
-            for widget_pair in [(self.save_dir_entry, "Save Directory"),
-                                (self.awg_address_entry, "AWG Address"),
-                                (self.osc_address_entry, "Oscilloscope Address"),
-                                (self.vdiv_entry, "Oscilloscope V/div"),
-                                (self.area_entry, "Sample Area (m^2)"),
-                                (self.timeshift_entry, "Time Offset (ns)")]:
-                widget, key = widget_pair
-                if key in static_data:
-                    if isinstance(widget, ttk.Combobox):
-                        widget.set(static_data[key])
-                    else:
-                        widget.delete(0, tk.END)
-                        widget.insert(0, static_data[key])
-
-            # Now explicitly trigger measurement type selection so dynamic inputs are created
-            meas_type = static_data.get("Measurement Type", "")
-            if meas_type:
-                self.select_measurement(meas_type)
-
-        # Cache all saved dynamic settings for use when switching measurement types
-        if "dynamic" in settings:
-            saved_dynamic = settings["dynamic"]
-            # Store in new format (keyed by title)
-            if saved_dynamic and isinstance(next(iter(saved_dynamic.values()), None), dict):
-                self._saved_dynamic = saved_dynamic
-            else:
-                # Old flat format - no title key available
-                self._saved_dynamic = saved_dynamic
-
-        # Apply dynamic settings to the now-created fields
-        self._apply_saved_dynamic()
-
-        # Apply plot settings
-        if "plot" in settings:
-            plot_data = settings["plot"]
-            if "X-axis" in plot_data:
-                self.x_axis.set(plot_data["X-axis"])
-            if "Y-axis" in plot_data:
-                self.y_axis.set(plot_data["Y-axis"])
-
-        print(f"Settings loaded from {filepath}")
-
-    def _apply_saved_dynamic(self):
-        """Apply saved dynamic values to the current dynamic frame, if available."""
-        if not self._saved_dynamic:
-            return
-        dynamic_title = self.dynamic_frame.cget("text").strip()
-        
-        dynamic_data = None
-        if dynamic_title and dynamic_title in self._saved_dynamic:
-            dynamic_data = self._saved_dynamic[dynamic_title]
-        elif not isinstance(next(iter(self._saved_dynamic.values()), None), dict):
-            dynamic_data = self._saved_dynamic  # backward compat
-
-        if dynamic_data:
-            children = self.dynamic_frame.winfo_children()
-            for key, val in dynamic_data.items():
-                key_clean = key.rstrip(":")
-                for i, widget in enumerate(children):
-                    if isinstance(widget, ttk.Label):
-                        label_text = widget.cget("text").rstrip(":")
-                        if label_text == key_clean and i + 1 < len(children):
-                            next_widget = children[i + 1]
-                            if isinstance(next_widget, ttk.Entry):
-                                next_widget.delete(0, tk.END)
-                                next_widget.insert(0, val)
-
     def select_measurement(self, meas_type, event=None):
         print(f"Selected measurement type: {meas_type}")
 
@@ -250,18 +133,7 @@ class FEMeasurementApp(MeasurementApp):
         self.update_dynamic_inputs(None)
 
     def update_dynamic_inputs(self, event):
-        # Save current dynamic values before clearing (so switching back preserves edits)
-        dynamic_title = self.dynamic_frame.cget("text").strip()
-        if dynamic_title and self.dynamic_inputs:
-            current_vals = {}
-            children = self.dynamic_frame.winfo_children()
-            for i, widget in enumerate(children):
-                if isinstance(widget, ttk.Label) and i + 1 < len(children):
-                    next_widget = children[i + 1]
-                    if isinstance(next_widget, ttk.Entry):
-                        current_vals[widget.cget("text").rstrip(":")] = next_widget.get()
-            if current_vals:
-                self._saved_dynamic[dynamic_title] = current_vals
+        self._cache_dynamic_inputs()
 
         # Clear previous dynamic inputs
         for widget in self.dynamic_frame.winfo_children():
@@ -411,6 +283,8 @@ class FEMeasurementApp(MeasurementApp):
         self.plot_data(self.experiment.filename)
 
     def plot_data(self, event=None):
+        if not hasattr(self, 'experiment') or self.experiment.filename is None:
+            return
         self.ax.clear()
         metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)
         x_data = data[self.x_axis.get()]

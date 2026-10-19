@@ -80,7 +80,7 @@ class _LiveIVSweep(IVSweep):
 
 DEFAULTS = {
     "sm_address": "VIRTUAL",
-    "save_dir": r"your\default\save\directory",
+    "save_dir": r"scratch",
     "v_start": 0.0,
     "v_stop": 1.0,
     "num_steps": 50,

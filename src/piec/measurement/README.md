@@ -64,6 +64,16 @@ from piec.measurement.magneto_transport import AMR
 
 ## Creating New Experiments
 
+All measurement GUIs inherit settings persistence from `MeasurementApp`. Closing
+a window prompts to save its inputs, instrument addresses, save directory,
+checkboxes, and plot selections. Settings load automatically on the next launch.
+Dynamic panels should call `_cache_dynamic_inputs()` before replacing their
+widgets and `_apply_saved_dynamic()` after building the new panel, so each
+measurement type retains its own values.
+
+GUIs and notebooks in `Measurements` default to the relative `scratch` directory,
+which is ignored by Git. Choose a different save directory for data to keep.
+
 To create a new waveform measurement:
 1.  Inherit from `DiscreteWaveform`.
 2.  Define `configure_awg()` to setup the specific pulse/shape.
