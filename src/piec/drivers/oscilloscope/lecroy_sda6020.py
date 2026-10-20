@@ -269,9 +269,11 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         self.instrument.write("COMM_FORMAT DEF9,WORD,BIN")
         self.instrument.write("COMM_HEADER OFF")
         self.instrument.write("COMM_ORDER LO")
-        # Reset transfer slicing left by other software or front-panel settings.
-        points = self._current_acquisition_points or 0
-        self.instrument.write(f"WAVEFORM_SETUP SP,1,NP,{points},FP,0,SN,0")
+        # Transfer the entire record (NP=0), clearing any previous slicing.
+        # MEMORY_SIZE controls acquisition memory; the actual record can have
+        # extra points. Capping NP at the requested memory size can leave the
+        # descriptor's LAST_VALID_PNT outside the transferred data array.
+        self.instrument.write("WAVEFORM_SETUP SP,1,NP,0,FP,0,SN,0")
 
     def set_acquisition_channel(self, channel=None):
         """
@@ -314,8 +316,9 @@ class LeCroySDA6020(Scpi, Oscilloscope):
             channels, in the desired output order. None retains the selection.
             Enable the input traces with toggle_channel before acquiring.
         acquisition_mode (str): Normal real-time acquisition ('NORM').
-        acquisition_points (int): Maximum acquisition and transfer point count;
-            the scope rounds acquisition memory to a supported size.
+        acquisition_points (int): Requested acquisition memory size; the scope
+            rounds to a supported size and may include extra record points.
+            The entire record is transferred so its descriptor remains valid.
         """
         if channel is not None:
             if isinstance(channel, list) and (not channel or len(set(channel)) != len(channel)):
@@ -336,9 +339,12 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         'CH1', 'CH2', etc., in selection order. Each channel uses its own scaling.
         Running acquisition is paused during transfer and then resumed. A pending
         single acquisition is allowed to finish first (subject to the VISA timeout).
-        Raises ValueError for invalid descriptors or incompatible time axes rather
-        than returning unscaled or misaligned data. Only real-time records are
-        supported; segmented and RIS records require different timing decoding.
+        Multi-channel records use C1's time axis when C1 is selected, otherwise
+        the first selected channel's. Samples share the acquisition timebase;
+        per-channel timestamp differences are ignored without resampling voltages.
+        Raises ValueError for invalid descriptors or unequal channel record lengths.
+        Only real-time records are supported; segmented and RIS records require
+        different timing decoding.
 
         Protocol and descriptor layout: WM-RCM-E Rev D, pp. 57-58, 112, 257-258,
         and Appendix II (https://cdn.teledynelecroy.com/files/manuals/wm-rcm-e_rev_d.pdf).
@@ -359,13 +365,18 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         try:
             self.instrument.write("STOP")
             data = {}
-            for channel in channels:
+            # Read the shared time reference first; retain the requested column order.
+            read_channels = [1] + [ch for ch in channels if ch != 1] if 1 in channels else channels
+            for channel in read_channels:
                 times, volts = self._read_waveform(channel)
-                if data and not np.array_equal(data['Time'], times):
-                    raise ValueError(f"C{channel} has a different time axis; cannot combine channels")
-                data['Time'] = times
+                if data:
+                    if len(data['Time']) != len(volts):
+                        raise ValueError(f"C{channel} has a different sample count; cannot combine channels")
+                else:
+                    data['Time'] = times
                 data['Voltage' if len(channels) == 1 else f'CH{channel}'] = volts
-            return pd.DataFrame(data)
+            columns = ['Time', 'Voltage'] if len(channels) == 1 else ['Time'] + [f'CH{ch}' for ch in channels]
+            return pd.DataFrame(data, columns=columns)
         finally:
             if trigger_mode in ("AUTO", "NORM"):
                 self.instrument.write(f"TRIG_MODE {trigger_mode}")
@@ -388,7 +399,10 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         count = struct.unpack_from('<i', desc, 116)[0]
         first, last = struct.unpack_from('<ii', desc, 124)
         if len(raw_data) != count or not (0 <= first <= last < count):
-            raise ValueError(f"C{channel}: incomplete waveform data")
+            raise ValueError(
+                f"C{channel}: incomplete waveform data "
+                f"(received={len(raw_data)}, expected={count}, first={first}, last={last})"
+            )
         # Discard padding while retaining the samples' positions in the record.
         times = np.arange(first, last + 1) * h_gain + h_offset
         volts = raw_data[first:last + 1] * v_gain - v_offset
