@@ -159,7 +159,7 @@ class MeasurementApp:
         self.save_dir_entry = ttk.Entry(self.static_frame, width=40)
         self.save_dir_entry.grid(row=0, column=1, padx=5, pady=5)
         # Inheriting classes should set default if needed, or we can check kwarg
-        ttk.Button(self.static_frame, text="BROWSE", command=lambda: self.browse_directory(self.save_dir_entry), style="TButton").grid(row=0, column=2, padx=5)
+        ttk.Button(self.static_frame, text="BROWSE", command=lambda: self.browse_directory(self.save_dir_entry), style="TButton").grid(row=0, column=2, padx=5, sticky='ew')
         self.setup_instrument_inputs()
 
         # 2. Dynamic Inputs Frame (Placeholder for subclass) - Using Card style
@@ -200,7 +200,7 @@ class MeasurementApp:
             'stepper_motor': 'Stepper', 'stepper': 'Stepper', 'lockin': 'Lock-in',
         }
         self.instrument_frame = ttk.Frame(self.static_frame, style='Card.TFrame')
-        self.instrument_frame.grid(row=1, column=0, columnspan=3, sticky='ew')
+        self.instrument_frame.grid(row=1, column=0, columnspan=2, sticky='ew')
         resources = self.get_visa_resources()
         for row, name in enumerate(self._instruments):
             label = labels.get(name, name.replace('_', ' ').title())
@@ -209,12 +209,10 @@ class MeasurementApp:
             entry.grid(row=row, column=1, padx=5, pady=5)
             entry.set('VIRTUAL')
             self.instrument_address_entries[name] = entry
-            ttk.Button(self.instrument_frame, text='TEST',
-                       command=lambda name=name: self.test_instrument(name)).grid(row=row, column=2, padx=5)
-        controls = ttk.Frame(self.instrument_frame, style='Card.TFrame')
-        controls.grid(row=len(self._instruments), column=0, columnspan=3, sticky='ew')
-        ttk.Button(controls, text='REFRESH', command=self.refresh_instruments).pack(side=tk.LEFT, padx=5)
-        ttk.Button(controls, text='AUTODETECT', command=self.autodetect_instruments).pack(side=tk.LEFT, padx=5)
+        controls = ttk.Frame(self.static_frame, style='Card.TFrame')
+        controls.grid(row=1, column=2, sticky='new')
+        ttk.Button(controls, text='REFRESH', command=self.refresh_instruments).pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(controls, text='AUTODETECT', command=self.autodetect_instruments).pack(fill=tk.X, padx=5, pady=5)
 
     def refresh_instruments(self):
         """Rescan addresses without discarding the user's current selections."""
@@ -504,11 +502,20 @@ class MeasurementApp:
             
         sys.stdout = self.original_stdout
         sys.stderr = self.original_stderr
-        if self.experiment is not None:
-            self.experiment.safe_close()
-        self.close_instruments()
-        plt.close(self.fig)
-        self.root.destroy()
+        try:
+            if self.experiment is not None:
+                self.experiment.safe_close()
+        except Exception as error:
+            messagebox.showerror(
+                "Instrument shutdown failed",
+                f"Could not reset the experiment's instruments:\n\n{error}\n\n"
+                "The GUI will close. Some instruments may not have reset; check them manually.",
+                parent=self.root,
+            )
+        finally:
+            self.close_instruments()
+            plt.close(self.fig)
+            self.root.destroy()
 
     def get_settings_file_path(self):
         """Returns the path to the settings file based on the class name."""

@@ -355,3 +355,33 @@ def test_shutdown_resets_experiment_before_closing_connections(open_gui):
     app.on_closing()
     assert events == ['reset', 'disconnect']
     assert app.instruments == {}
+
+
+def test_shutdown_reports_lost_connection_and_still_closes(open_gui, monkeypatch):
+    from types import SimpleNamespace
+    from piec.measurement.gui_utils import messagebox
+
+    app = open_gui()
+    events = []
+
+    def disconnected():
+        events.append('reset')
+        raise ConnectionError('Instrument connection was lost')
+
+    def show_error(title, message, **kwargs):
+        assert app.root.winfo_exists()
+        assert kwargs['parent'] is app.root
+        assert 'Instrument connection was lost' in message
+        assert 'check them manually' in message
+        events.append('popup')
+
+    monkeypatch.setattr(messagebox, 'showerror', show_error)
+    app.experiment = SimpleNamespace(safe_close=disconnected)
+    app.instruments['awg'] = SimpleNamespace(close=lambda: events.append('disconnect'))
+    app.on_closing()
+    assert events == ['reset', 'popup', 'disconnect']
+    assert app.instruments == {}
+    with pytest.raises(tk.TclError):
+        app.root.winfo_exists()
+    assert sys.stdout is app.original_stdout
+    assert sys.stderr is app.original_stderr

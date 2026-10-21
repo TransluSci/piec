@@ -72,8 +72,8 @@ widgets and `_apply_saved_dynamic()` after building the new panel, so each
 measurement type retains its own values.
 
 Declare a GUI's required instrument categories in `_instruments`. The parent
-creates address selectors (defaulting to `VIRTUAL`), Refresh, Autodetect, and
-connection-test buttons. Refresh preserves selected addresses, even when a device
+creates address selectors (defaulting to `VIRTUAL`), with Refresh and Autodetect
+aligned below Browse. Refresh preserves selected addresses, even when a device
 is disconnected. The generated fields are included in saved GUI settings.
 
 ```python
@@ -94,7 +94,9 @@ Optional per-instrument constructor arguments can be passed by category name;
 simulation-only arguments belong in `virtual_options`, for example
 `virtual_options={'awg': {'simulation_points': 1000}}`. `close_instruments()`
 releases GUI-owned connections and runs automatically when the window closes,
-after the experiment's `safe_close()`.
+after the experiment's `safe_close()`. If resetting an instrument fails, the GUI
+shows an error with the failure details, then releases its connections and closes
+after the popup is dismissed. Check the instruments manually in that case.
 
 Autodetect closes its temporary probe connections and leaves unmatched selections
 unchanged. Categories with one registered, manual-only driver (currently Geo's
