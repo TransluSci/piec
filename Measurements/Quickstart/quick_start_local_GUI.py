@@ -21,17 +21,10 @@ except Exception:
 
 import time
 from piec.measurement.gui_utils import MeasurementApp
-from piec.drivers.autodetect import autodetect, _safe_close
-from piec.drivers.awg.awg import Awg
-from piec.drivers.oscilloscope.oscilloscope import Oscilloscope
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.simulation.fe_material import Resistor
 
 DEFAULTS = {
-    "awg_address": "VIRTUAL",
-    "osc_address": "VIRTUAL",
-    "save_dir": r"your\default\save\directory",
+    "save_dir": r"scratch",
     "waveform": "SIN",
     "frequency": 1000.0,
     "amplitude": 1.0,
@@ -42,6 +35,8 @@ DEFAULTS = {
 class QuickstartApp(MeasurementApp):
     """Quickstart GUI application inheriting from PIEC's standard MeasurementApp."""
 
+    _instruments = ('awg', 'oscilloscope')
+
     def __init__(self, root):
         super().__init__(root, title="PIEC — Quickstart Measurement GUI", geometry="1300x750")
 
@@ -49,42 +44,8 @@ class QuickstartApp(MeasurementApp):
         print("Ctrl+Enter: Capture Waveform")
         print("Select 'VIRTUAL' or choose a connected instrument from the dropdowns.")
 
-        visa_resources = self.get_visa_resources()
-
         # 1. Static Inputs (Save Directory is row 0 in base MeasurementApp)
         self.save_dir_entry.insert(0, DEFAULTS["save_dir"])
-
-        ttk.Label(self.static_frame, text="AWG Address:").grid(row=1, column=0, sticky="w")
-        self.awg_address_entry = ttk.Combobox(
-            self.static_frame,
-            values=["VIRTUAL"] + list(visa_resources),
-            state="readonly",
-        )
-        self.awg_address_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.awg_address_entry.set(DEFAULTS["awg_address"])
-
-        ttk.Button(
-            self.static_frame,
-            text="Refresh",
-            command=self.refresh_instruments,
-            style="TButton",
-        ).grid(row=1, column=2, padx=5)
-
-        ttk.Label(self.static_frame, text="Oscilloscope Address:").grid(row=2, column=0, sticky="w")
-        self.osc_address_entry = ttk.Combobox(
-            self.static_frame,
-            values=["VIRTUAL"] + list(visa_resources),
-            state="readonly",
-        )
-        self.osc_address_entry.grid(row=2, column=1, padx=5, pady=5)
-        self.osc_address_entry.set(DEFAULTS["osc_address"])
-
-        ttk.Button(
-            self.static_frame,
-            text="Autodetect",
-            command=self.autodetect_instruments,
-            style="TButton",
-        ).grid(row=2, column=2, padx=5)
 
         # 2. Dynamic Inputs — Signal configuration
         self.dynamic_frame.config(text="SIGNAL CONFIGURATION")
@@ -151,46 +112,10 @@ class QuickstartApp(MeasurementApp):
         self.ax.set_ylabel("Voltage (V)")
         self.canvas.draw()
 
-    def refresh_instruments(self):
-        """Scans and updates available VISA resources in the dropdowns."""
-        print("Refreshing VISA instruments...")
-        visa_resources = self.get_visa_resources()
-        self.awg_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
-        self.osc_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
-        print(f"Found {len(visa_resources)} VISA resource(s).")
-
-    def autodetect_instruments(self):
-        """Discovers connected AWG and Oscilloscope instruments automatically."""
-        print("Autodetecting instruments... this may take a moment.")
-
-        # Probe AWG
-        try:
-            inst = autodetect(address="awg", verbose=True, required_type=Awg)
-            if inst:
-                addr = inst.instrument.resource_name if hasattr(inst, "instrument") else "VIRTUAL"
-                self.awg_address_entry.set(addr)
-                _safe_close(inst)
-                print(f"Detected AWG at {addr}")
-        except Exception as e:
-            print(f"AWG autodetection note: {e}")
-
-        # Probe Oscilloscope
-        try:
-            inst = autodetect(address="scope", verbose=True, required_type=Oscilloscope)
-            if inst:
-                addr = inst.instrument.resource_name if hasattr(inst, "instrument") else "VIRTUAL"
-                self.osc_address_entry.set(addr)
-                _safe_close(inst)
-                print(f"Detected Oscilloscope at {addr}")
-        except Exception as e:
-            print(f"Scope autodetection note: {e}")
-
-        print("Autodetect complete.")
-
     def run_measurement(self):
         """Executes waveform generation and capture."""
-        awg_address = self.awg_address_entry.get().strip()
-        osc_address = self.osc_address_entry.get().strip()
+        awg_address = self.instrument_address_entries['awg'].get().strip()
+        osc_address = self.instrument_address_entries['oscilloscope'].get().strip()
         save_dir = self.save_dir_entry.get().strip()
         waveform = self.waveform_entry.get().strip().upper()
 
@@ -204,28 +129,17 @@ class QuickstartApp(MeasurementApp):
 
         print(f"Capturing {waveform} waveform ({frequency:g} Hz, {amplitude:g} V)...")
 
-        # Instantiate AWG
         try:
-            if awg_address == "VIRTUAL":
-                awg = VirtualAwg("VIRTUAL", simulation_points=1000)
-            else:
-                awg = autodetect(awg_address, required_type=Awg)
-        except Exception as e:
-            print(f"ERROR connecting to AWG at '{awg_address}': {e}")
+            instruments = self.connect_instruments(virtual_options={'awg': {'simulation_points': 1000}})
+        except Exception as error:
+            print(f"Could not connect instruments: {error}")
             return
+        awg = instruments['awg']
+        scope = instruments['oscilloscope']
+        if osc_address == 'VIRTUAL':
+            scope.sample = Resistor(50.0)
 
-        # Instantiate Oscilloscope
-        try:
-            if osc_address == "VIRTUAL":
-                scope = VirtualScope("VIRTUAL")
-                scope.sample = Resistor(50.0)
-            else:
-                scope = autodetect(osc_address, required_type=Oscilloscope)
-        except Exception as e:
-            print(f"ERROR connecting to Oscilloscope at '{osc_address}': {e}")
-            return
-
-                # Execute measurement
+        # Execute measurement
         try:
             if awg_address == "VIRTUAL" and osc_address == "VIRTUAL":
                 # Keep existing virtual behavior unchanged
@@ -263,12 +177,7 @@ class QuickstartApp(MeasurementApp):
             return
 
         finally:
-
-            if awg_address != "VIRTUAL" and hasattr(awg, "instrument"):
-                _safe_close(awg)
-
-            if osc_address != "VIRTUAL" and hasattr(scope, "instrument"):
-                _safe_close(scope)
+            self.close_instruments()
         # Plot result
         self.ax.clear()
         time_ms = data["Time"] * 1000.0

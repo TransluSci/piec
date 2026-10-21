@@ -4,11 +4,23 @@ This directory contains classes for managing discrete waveform generation, measu
 
 ## Directory Structure
 
+- **`experiment.py`**: Contains `Experiment`, the common base for all measurement types. `DiscreteWaveform`, `IVSweep`, and `MagnetoTransport` inherit from it; their specific implementations inherit through those classes.
 - **`discrete_waveform.py`**: Contains the `DiscreteWaveform` base class and specific implementations:
     -   `HysteresisLoop`: For ferroelectric hysteresis measurements using triangular waveforms.
     -   `ThreePulsePund`: For PUND (Positive-Up-Negative-Down) switching measurements.
 - **`magneto_transport.py`**: Contains `MagnetoTransport` and `AMR` (Anisotropic Magnetoresistance) classes for controlling magnets, stepper motors, and lock-in amplifiers.
-- **`amr.py`**: (Currently empty/placeholder).
+- **`iv_sweep.py`**: Contains `IVSweep` for sourcemeter voltage sweeps.
+- **`amr.py`**: Re-exports `AMR` and magneto-transport helpers.
+
+`Experiment` provides save-directory initialization, metadata collection, and
+independent history snapshots. `DiscreteWaveform`, `IVSweep`, and
+`MagnetoTransport` initialize this shared state after setting their measurement
+parameters and declare all required instrument attributes in `_instruments`.
+Call `experiment.safe_close()` to reset each declared instrument using its
+`initialize()` method.
+The collector stores instrument IDs and current public parameters, including
+dictionary-valued settings such as plot configuration. Each measurement refreshes
+metadata before saving and records a history snapshot at the end of its run.
 
 ## Usage
 
@@ -51,6 +63,48 @@ from piec.measurement.magneto_transport import AMR
 ```
 
 ## Creating New Experiments
+
+All measurement GUIs inherit settings persistence from `MeasurementApp`. Closing
+a window prompts to save its inputs, instrument addresses, save directory,
+checkboxes, and plot selections. Settings load automatically on the next launch.
+Dynamic panels should call `_cache_dynamic_inputs()` before replacing their
+widgets and `_apply_saved_dynamic()` after building the new panel, so each
+measurement type retains its own values.
+
+Declare a GUI's required instrument categories in `_instruments`. The parent
+creates address selectors (defaulting to `VIRTUAL`), with Refresh and Autodetect
+aligned below Browse. Refresh preserves selected addresses, even when a device
+is disconnected. The generated fields are included in saved GUI settings.
+
+```python
+class MyWaveformApp(MeasurementApp):
+    _instruments = ('awg', 'oscilloscope')
+
+    def run_measurement(self):
+        instruments = self.connect_instruments()
+        awg = instruments['awg']
+        scope = instruments['oscilloscope']
+        # Configure the instruments and capture the measurement here.
+```
+
+No model-specific driver imports are needed in the GUI. Category names and aliases
+use the driver discovery system. `connect_instruments()` opens the selected
+addresses with matching driver types and closes partial connections on failure.
+Optional per-instrument constructor arguments can be passed by category name;
+simulation-only arguments belong in `virtual_options`, for example
+`virtual_options={'awg': {'simulation_points': 1000}}`. `close_instruments()`
+releases GUI-owned connections and runs automatically when the window closes,
+after the experiment's `safe_close()`. If resetting an instrument fails, the GUI
+shows an error with the failure details, then releases its connections and closes
+after the popup is dismissed. Check the instruments manually in that case.
+
+Autodetect closes its temporary probe connections and leaves unmatched selections
+unchanged. Categories with one registered, manual-only driver (currently Geo's
+stepper) retain explicit-address connection support; they are not automatically
+detected. No fallback model is guessed for categories with multiple drivers.
+
+GUIs and notebooks in `Measurements` default to the relative `scratch` directory,
+which is ignored by Git. Choose a different save directory for data to keep.
 
 To create a new waveform measurement:
 1.  Inherit from `DiscreteWaveform`.

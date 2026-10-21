@@ -9,5 +9,6 @@ dist/
 .venv/
 piec-*/
 tmp/
+scratch/
 src/piec/testing/
 docs/source/api_generated/
