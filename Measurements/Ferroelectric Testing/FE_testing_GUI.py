@@ -5,14 +5,9 @@ import numpy as np
 import pandas as pd
 from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
-from piec.drivers.oscilloscope.k_dsox3024a import KeysightDSOX3024a
-from piec.drivers.awg.k_81150a import Keysight81150a
-from piec.drivers.awg.virtual_awg import VirtualAwg
-from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
 from piec.measurement.gui_utils import MeasurementApp
 
-DEFAULTS = {"awg_address":"VIRTUAL",
-            "osc_address":"VIRTUAL",
+DEFAULTS = {
             "save_dir":r"scratch",
             "vdiv":0.01,
             "area":'1.0e-5**2',
@@ -32,6 +27,8 @@ DEFAULTS = {"awg_address":"VIRTUAL",
 
 
 class FEMeasurementApp(MeasurementApp):
+    _instruments = ('awg', 'oscilloscope')
+
     def __init__(self, root):
         super().__init__(root, title="Ferroelectric Measurement GUI", geometry="1200x700")
         print("Welcome to the FE testing GUI! Please select a measurement type and choose your awg and osc addresses.")
@@ -41,21 +38,8 @@ class FEMeasurementApp(MeasurementApp):
         print("Ctrl+r: Change V/div")
         print("Ctrl+t: Change Time Offset")
 
-        visa_resources = self.get_visa_resources()
-
         # Static Inputs (Save Dir is at row 0 in base)
         self.save_dir_entry.insert(0, DEFAULTS["save_dir"])
-        ttk.Label(self.static_frame, text="AWG Address:").grid(row=1, column=0, sticky="w")
-        self.awg_address_entry = ttk.Combobox(self.static_frame, values=["VIRTUAL"]+list(visa_resources), state="readonly")
-        self.awg_address_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.awg_address_entry.set(DEFAULTS["awg_address"])
-        ttk.Button(self.static_frame, text="Refresh", command=self.refresh_instruments, style="TButton").grid(row=1, column=2, rowspan=2, padx=5)
-
-        ttk.Label(self.static_frame, text="Oscilloscope Address:").grid(row=2, column=0, sticky="w")
-        self.osc_address_entry = ttk.Combobox(self.static_frame, values=["VIRTUAL"]+list(visa_resources), state="readonly")
-        self.osc_address_entry.grid(row=2, column=1, padx=5, pady=5)
-        self.osc_address_entry.set(DEFAULTS["osc_address"])
-
         ttk.Label(self.static_frame, text="Oscilloscope V/div:").grid(row=3, column=0, sticky="w")
         self.vdiv_entry = ttk.Entry(self.static_frame, width=24)
         self.vdiv_entry.grid(row=3, column=1, padx=5, pady=5)
@@ -154,16 +138,6 @@ class FEMeasurementApp(MeasurementApp):
         for key in self.dynamic_inputs:
             DEFAULTS[key] = self.dynamic_inputs[key].get()
 
-    def refresh_instruments(self):
-        print('Refreshing VISA instruments...')
-        visa_resources = self.get_visa_resources()
-        
-        self.awg_address_entry["values"] = ["VIRTUAL"] + visa_resources
-        self.osc_address_entry["values"] = ["VIRTUAL"] + visa_resources
-        
-        self.awg_address_entry.set("VIRTUAL")
-        self.osc_address_entry.set("VIRTUAL")
-
     def setup_hysteresis_inputs(self):
         ttk.Label(self.dynamic_frame, text="Frequency (Hz):").grid(row=0, column=0, sticky="w")
         self.dynamic_inputs["frequency"] = ttk.Entry(self.dynamic_frame, width=20)
@@ -228,18 +202,16 @@ class FEMeasurementApp(MeasurementApp):
 
         print(f"Running {self.measurement_type.get()} measurement...")
         # get static inputs for passthrough to measurment object
-        awg_address = self.awg_address_entry.get()
-        osc_address = self.osc_address_entry.get()
+        awg_address = self.instrument_address_entries['awg'].get()
         save_dir = self.save_dir_entry.get()
         measurement_type = self.measurement_type.get()
-        if awg_address == "VIRTUAL":
-            awg = VirtualAwg(awg_address)
-        else:
-            awg = Keysight81150a(awg_address)
-        if osc_address == "VIRTUAL": 
-            osc = VirtualScope(osc_address)
-        else:
-            osc = KeysightDSOX3024a(osc_address)
+        try:
+            instruments = self.connect_instruments()
+        except Exception as error:
+            print(f"Could not connect instruments: {error}")
+            return
+        awg = instruments['awg']
+        osc = instruments['oscilloscope']
 
         v_div = float(self.vdiv_entry.get())
         area = float(eval(str(self.area_entry.get())))
@@ -283,7 +255,7 @@ class FEMeasurementApp(MeasurementApp):
         self.plot_data(self.experiment.filename)
 
     def plot_data(self, event=None):
-        if not hasattr(self, 'experiment') or self.experiment.filename is None:
+        if self.experiment is None or self.experiment.filename is None:
             return
         self.ax.clear()
         metadata, data = standard_csv_to_metadata_and_data(self.experiment.filename)

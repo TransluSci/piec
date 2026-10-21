@@ -8,6 +8,10 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.pyplot as plt
+from piec.drivers.autodetect import (
+    autodetect, _dynamic_driver_scan, _import_class_from_path,
+    _resolve_type_string, _safe_close,
+)
 
 plot_layout_params = {
             "font.size": 15,
@@ -48,10 +52,25 @@ class ConsoleRedirector:
         pass
 
 class MeasurementApp:
+    # Driver category names (or aliases such as "scope" and "calibrator").
+    _instruments = ()
+
     def __init__(self, root, title="Measurement GUI", geometry="1200x700", icon_path=None):
         self.root = root
         self._saved_dynamic = {}
         self._loading_settings = False
+        self.instrument_address_entries = {}
+        self.instruments = {}
+        self._instrument_types = {}
+        self._manual_drivers = {}
+        self._driver_registry = None
+        for name in self._instruments:
+            category = _resolve_type_string(name)
+            if category is None:
+                raise ValueError(f"Unknown instrument type: {name!r}")
+            if name in self._instrument_types:
+                raise ValueError(f"Duplicate instrument type: {name!r}")
+            self._instrument_types[name] = category
         self.root.title(title)
         self.root.geometry(geometry)
         self.experiment = None  # Placeholder for the experiment instance, to be set by subclasses
@@ -140,7 +159,8 @@ class MeasurementApp:
         self.save_dir_entry = ttk.Entry(self.static_frame, width=40)
         self.save_dir_entry.grid(row=0, column=1, padx=5, pady=5)
         # Inheriting classes should set default if needed, or we can check kwarg
-        ttk.Button(self.static_frame, text="Browse", command=lambda: self.browse_directory(self.save_dir_entry), style="TButton").grid(row=0, column=2, padx=5)
+        ttk.Button(self.static_frame, text="BROWSE", command=lambda: self.browse_directory(self.save_dir_entry), style="TButton").grid(row=0, column=2, padx=5)
+        self.setup_instrument_inputs()
 
         # 2. Dynamic Inputs Frame (Placeholder for subclass) - Using Card style
         self.dynamic_frame = ttk.LabelFrame(self.left_panel, text="DYNAMIC INPUTS", padding=10, style="Card.TLabelframe")
@@ -169,6 +189,134 @@ class MeasurementApp:
         """Binds keys in self.keyboard_shortcuts to the root window"""
         for key, callback in self.keyboard_shortcuts.items():
             self.root.bind(key, callback)
+
+    def setup_instrument_inputs(self):
+        """Build address selectors and discovery controls from ``_instruments``."""
+        if not self._instruments:
+            return
+        labels = {
+            'awg': 'AWG', 'oscilloscope': 'Oscilloscope', 'scope': 'Oscilloscope',
+            'dmm': 'DMM', 'dc_calibrator': 'Calibrator', 'calibrator': 'Calibrator',
+            'stepper_motor': 'Stepper', 'stepper': 'Stepper', 'lockin': 'Lock-in',
+        }
+        self.instrument_frame = ttk.Frame(self.static_frame, style='Card.TFrame')
+        self.instrument_frame.grid(row=1, column=0, columnspan=3, sticky='ew')
+        resources = self.get_visa_resources()
+        for row, name in enumerate(self._instruments):
+            label = labels.get(name, name.replace('_', ' ').title())
+            ttk.Label(self.instrument_frame, text=f'{label} Address:').grid(row=row, column=0, sticky='w')
+            entry = ttk.Combobox(self.instrument_frame, values=['VIRTUAL'] + list(resources), state='readonly')
+            entry.grid(row=row, column=1, padx=5, pady=5)
+            entry.set('VIRTUAL')
+            self.instrument_address_entries[name] = entry
+            ttk.Button(self.instrument_frame, text='TEST',
+                       command=lambda name=name: self.test_instrument(name)).grid(row=row, column=2, padx=5)
+        controls = ttk.Frame(self.instrument_frame, style='Card.TFrame')
+        controls.grid(row=len(self._instruments), column=0, columnspan=3, sticky='ew')
+        ttk.Button(controls, text='REFRESH', command=self.refresh_instruments).pack(side=tk.LEFT, padx=5)
+        ttk.Button(controls, text='AUTODETECT', command=self.autodetect_instruments).pack(side=tk.LEFT, padx=5)
+
+    def refresh_instruments(self):
+        """Rescan addresses without discarding the user's current selections."""
+        resources = self.get_visa_resources()
+        for entry in self.instrument_address_entries.values():
+            selected = entry.get()
+            entry['values'] = list(dict.fromkeys(['VIRTUAL'] + list(resources) + ([selected] if selected else [])))
+        print(f'Found {len(resources)} instrument resource(s).')
+
+    def _manual_driver(self, name):
+        """Find categories with a single, explicitly manual-only model.
+
+        Such a model can be opened at an address chosen by the user, but cannot
+        identify itself during a discovery scan (for example Geo's stepper).
+        Never guess a model when a category has multiple physical drivers.
+        """
+        if name not in self._manual_drivers:
+            category = self._instrument_types[name]
+            candidates = {}
+            if self._driver_registry is None:
+                self._driver_registry = _dynamic_driver_scan()
+            for identifier, path in self._driver_registry.items():
+                driver = _import_class_from_path(path)
+                if driver is not None and issubclass(driver, category):
+                    candidates.setdefault(driver, []).append(identifier)
+            manual = None
+            if len(candidates) == 1:
+                driver, identifiers = next(iter(candidates.items()))
+                if all(identifier.startswith('MANUAL_ONLY:') for identifier in identifiers):
+                    manual = driver
+            self._manual_drivers[name] = manual
+        return self._manual_drivers[name]
+
+    def autodetect_instruments(self):
+        """Find each declared instrument and close all temporary connections."""
+        print('Autodetecting instruments... this may take a moment.')
+        for name, entry in self.instrument_address_entries.items():
+            instrument = None
+            try:
+                if self._manual_driver(name) is not None:
+                    print(f'{name} requires a manually selected address; keeping {entry.get()}.')
+                    continue
+                instrument = autodetect(address=name, required_type=self._instrument_types[name], verbose=True)
+                if instrument is None:
+                    print(f'No {name} detected; keeping {entry.get()}.')
+                    continue
+                address = instrument.instrument.resource_name
+                entry['values'] = list(dict.fromkeys(list(entry['values']) + [address]))
+                entry.set(address)
+                print(f'Detected {name} at {address}')
+            except Exception as error:
+                print(f'Could not detect {name}: {error}')
+            finally:
+                _safe_close(instrument)
+
+    def connect_instrument(self, name, **options):
+        """Open the selected address with a type-checked physical or virtual driver."""
+        address = self.instrument_address_entries[name].get().strip()
+        if not address:
+            raise ConnectionError(f'No address selected for {name}.')
+        category = self._instrument_types[name]
+        if address.upper() == 'VIRTUAL':
+            instrument = autodetect(address=f'VIRTUAL_{name}', required_type=category, **options)
+        else:
+            manual = self._manual_driver(name)
+            instrument = (manual(address=address, **options) if manual is not None else
+                          autodetect(address=address, required_type=category, **options))
+        if instrument is None or not isinstance(instrument, category):
+            _safe_close(instrument)
+            raise ConnectionError(f'Could not connect to a {name} at {address}.')
+        return instrument
+
+    def connect_instruments(self, *, virtual_options=None, **instrument_options):
+        """Connect all declared types, cleaning up if any connection fails."""
+        self.close_instruments()
+        try:
+            for name in self._instruments:
+                options = dict(instrument_options.get(name, {}))
+                if self.instrument_address_entries[name].get().strip().upper() == 'VIRTUAL':
+                    options.update((virtual_options or {}).get(name, {}))
+                self.instruments[name] = self.connect_instrument(name, **options)
+        except Exception:
+            self.close_instruments()
+            raise
+        return self.instruments
+
+    def close_instruments(self):
+        """Release the connections owned by this GUI."""
+        for instrument in self.instruments.values():
+            _safe_close(instrument)
+        self.instruments = {}
+
+    def test_instrument(self, name):
+        """Check the selected instrument's identity without retaining a session."""
+        instrument = None
+        try:
+            instrument = self.connect_instrument(name)
+            print(f'{name}: {instrument.idn()}')
+        except Exception as error:
+            print(f'Could not test {name}: {error}')
+        finally:
+            _safe_close(instrument)
 
     def run_measurement(self):
         print("WARNING: run_measurement not implemented in subclass")
@@ -282,8 +430,8 @@ class MeasurementApp:
                              relief="flat", 
                              background=bg_field, 
                              foreground=fg_text,
-                             borderwidth=0,
-                             font=("Helvetica", 15, "bold"))
+                             borderwidth=2,
+                             font=("Helvetica", 12, "bold"))
         
         self.style.map("TButton", 
                        background=[('active', '#4A4A4A'), ('pressed', '#555555')],
@@ -356,8 +504,10 @@ class MeasurementApp:
             
         sys.stdout = self.original_stdout
         sys.stderr = self.original_stderr
+        if self.experiment is not None:
+            self.experiment.safe_close()
+        self.close_instruments()
         plt.close(self.fig)
-        self.experiment.safe_close() if self.experiment else None
         self.root.destroy()
 
     def get_settings_file_path(self):

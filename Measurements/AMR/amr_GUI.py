@@ -7,10 +7,6 @@ import numpy as np
 import pandas as pd
 import time
 import os
-from piec.drivers.dmm.keithley193a import Keithley193a
-from piec.drivers.dc_calibrator.edc522 import EDC522
-from piec.drivers.stepper_motor.arduino_stepper import Geos_Stepper
-from piec.drivers.lockin.srs830 import SRS830
 from piec.measurement.amr import AMR
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.gui_utils import MeasurementApp
@@ -18,10 +14,6 @@ from piec.measurement.gui_utils import MeasurementApp
 import threading
 
 DEFAULTS = {
-    "dmm_address": "VIRTUAL",
-    "calibrator_address": "VIRTUAL",
-    "stepper_address": "VIRTUAL",
-    "lockin_address": "VIRTUAL",
     "save_dir": r"scratch",
     "field": 100.0,
     "angle_step": 10.0,
@@ -35,6 +27,8 @@ DEFAULTS = {
 }
 
 class AMRApp(MeasurementApp):
+    _instruments = ('dmm', 'dc_calibrator', 'stepper_motor', 'lockin')
+
     def __init__(self, root):
         super().__init__(root, title="AMR Measurement GUI", geometry="1600x900")
         print("Welcome to the AMR Measurement GUI!")
@@ -43,36 +37,8 @@ class AMRApp(MeasurementApp):
         self.measurement_thread = None
         self.is_measuring = False
 
-        visa_resources = self.get_visa_resources()
-
         # Static Inputs
         self.save_dir_entry.insert(0, DEFAULTS["save_dir"])
-
-        # Instrument selection row 1
-        ttk.Label(self.static_frame, text="DMM Address:").grid(row=1, column=0, sticky="w")
-        self.dmm_address_entry = ttk.Combobox(self.static_frame, values=["VIRTUAL"] + list(visa_resources), state="readonly")
-        self.dmm_address_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.dmm_address_entry.set(DEFAULTS["dmm_address"])
-
-        ttk.Label(self.static_frame, text="Calibrator Address:").grid(row=2, column=0, sticky="w")
-        self.calibrator_address_entry = ttk.Combobox(self.static_frame, values=["VIRTUAL"] + list(visa_resources), state="readonly")
-        self.calibrator_address_entry.grid(row=2, column=1, padx=5, pady=5)
-        self.calibrator_address_entry.set(DEFAULTS["calibrator_address"])
-
-        # Instrument selection row 2
-        ttk.Label(self.static_frame, text="Stepper Address:").grid(row=3, column=0, sticky="w")
-        self.stepper_address_entry = ttk.Combobox(self.static_frame, values=["VIRTUAL"] + list(visa_resources), state="readonly")
-        self.stepper_address_entry.grid(row=3, column=1, padx=5, pady=5)
-        self.stepper_address_entry.set(DEFAULTS["stepper_address"])
-
-        ttk.Label(self.static_frame, text="Lock-in Address:").grid(row=4, column=0, sticky="w")
-        self.lockin_address_entry = ttk.Combobox(self.static_frame, values=["VIRTUAL"] + list(visa_resources), state="readonly")
-        self.lockin_address_entry.grid(row=4, column=1, padx=5, pady=5)
-        self.lockin_address_entry.set(DEFAULTS["lockin_address"])
-
-        ttk.Button(self.static_frame, text="Refresh", command=self.refresh_instruments, style="TButton").grid(row=1, column=2, padx=5)
-        ttk.Button(self.static_frame, text="Autodetect", command=self.autodetect_instruments, style="TButton").grid(row=2, column=2, padx=5)
-        ttk.Button(self.static_frame, text="Test Stepper", command=self.test_stepper, style="TButton").grid(row=3, column=2, padx=5)
 
         # Initialize dynamic inputs and plot config
         self.setup_dynamic_inputs()
@@ -140,83 +106,6 @@ class AMRApp(MeasurementApp):
         self.y_axis.set("X")
         self.y_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
-    def test_stepper(self):
-        addr = self.stepper_address_entry.get()
-        if not addr:
-            print("ERROR: No address selected for Stepper.")
-            return
-
-        print(f"Testing Stepper at {addr}...")
-        from piec.drivers.autodetect import _safe_close
-        
-        try:
-            # Create the specific Geos_Stepper instance
-            # This handles virtual mode automatically if addr is "VIRTUAL"
-            inst = Geos_Stepper(address=addr)
-            
-            # Use the instrument's own idn method which sends '0,0' for Geos hardware
-            res = inst.idn()
-            
-            if "Not connected" not in res:
-                print(f"SUCCESS: {res}")
-            else:
-                print(f"FAILURE: Stepper at {addr} returned '{res}'")
-            
-            _safe_close(inst)
-        except Exception as e:
-            print(f"ERROR: Stepper test failed: {e}")
-
-
-    def refresh_instruments(self):
-        print("Refreshing VISA instruments...")
-        visa_resources = self.get_visa_resources()
-        self.dmm_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
-        self.calibrator_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
-        self.stepper_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
-        self.lockin_address_entry["values"] = ["VIRTUAL"] + list(visa_resources)
-
-    def autodetect_instruments(self):
-        print("Autodetecting instruments... this may take a moment.")
-        from piec.drivers.autodetect import autodetect, _safe_close
-        from piec.drivers.dmm.dmm import DMM
-        from piec.drivers.dc_calibrator.dc_calibrator import DCCalibrator
-        from piec.drivers.stepper_motor.stepper_motor import Stepper
-        from piec.drivers.lockin.lockin import Lockin
-
-        # DMM
-        inst = autodetect(address="dmm", verbose=True, required_type=DMM)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.dmm_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected DMM at {addr}")
-
-        # Calibrator
-        inst = autodetect(address="dc_calibrator", verbose=True, required_type=DCCalibrator)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.calibrator_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected Calibrator at {addr}")
-
-        # Stepper
-        inst = autodetect(address="stepper_motor", verbose=True, required_type=Stepper)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.stepper_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected Stepper at {addr}")
-
-        # Lockin
-        inst = autodetect(address="lockin", verbose=True, required_type=Lockin)
-        if inst:
-            addr = inst.instrument.resource_name if hasattr(inst, 'instrument') else "VIRTUAL"
-            self.lockin_address_entry.set(addr)
-            _safe_close(inst)
-            print(f"Detected Lockin at {addr}")
-
-        print("Autodetect complete.")
-
     def run_measurement(self):
         if self.is_measuring:
             print("Measurement already in progress...")
@@ -224,11 +113,6 @@ class AMRApp(MeasurementApp):
 
         print("Running AMR measurement...")
 
-        # Get addresses
-        dmm_addr = self.dmm_address_entry.get()
-        cal_addr = self.calibrator_address_entry.get()
-        step_addr = self.stepper_address_entry.get()
-        lock_addr = self.lockin_address_entry.get()
         save_dir = self.save_dir_entry.get()
 
         # Get parameters
@@ -251,38 +135,20 @@ class AMRApp(MeasurementApp):
         DEFAULTS["sensitivity"] = sensitivity
         DEFAULTS["initialize_lockin"] = initialize_lockin
 
-        from piec.drivers.dmm.virtual_dmm import VirtualDMM
-        from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
-        from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
-        from piec.drivers.lockin.virtual_lockin import VirtualLockin
-
-        # Initialize drivers
-        if dmm_addr.upper() == "VIRTUAL":
-            dmm = VirtualDMM(dmm_addr)
-        else:
-            dmm = Keithley193a(dmm_addr)
-            
-        if cal_addr.upper() == "VIRTUAL":
-            calibrator = VirtualCalibrator(cal_addr, voltage_callibration=float(DEFAULTS["voltage_calibration"]))
-        else:
-            calibrator = EDC522(cal_addr)
-            
-        if step_addr.upper() == "VIRTUAL":
-            stepper = VirtualStepper(step_addr)
-        else:
-            stepper = Geos_Stepper(step_addr)
-            
-        if lock_addr.upper() == "VIRTUAL":
-            lockin = VirtualLockin(lock_addr)
-        else:
-            lockin = SRS830(lock_addr)
+        try:
+            instruments = self.connect_instruments(
+                virtual_options={'dc_calibrator': {'voltage_callibration': float(DEFAULTS['voltage_calibration'])}},
+            )
+        except Exception as error:
+            print(f"Could not connect instruments: {error}")
+            return
 
         # Instantiate experiment
         self.experiment = AMR(
-            dmm=dmm,
-            calibrator=calibrator,
-            arduino=stepper,
-            lockin=lockin,
+            dmm=instruments['dmm'],
+            calibrator=instruments['dc_calibrator'],
+            arduino=instruments['stepper_motor'],
+            lockin=instruments['lockin'],
             field=field,
             angle_step=angle_step,
             total_angle=int(total_angle),
@@ -368,7 +234,7 @@ class AMRApp(MeasurementApp):
             self.plot_data() # Final update
 
     def plot_data(self, event=None):
-        if not hasattr(self, 'experiment') or self.experiment.filename is None:
+        if self.experiment is None or self.experiment.filename is None:
             return
             
         if not os.path.exists(self.experiment.filename):

@@ -7,8 +7,6 @@ import numpy as np
 import threading
 import time
 import pandas as pd
-from piec.drivers.sourcemeter.keithley2400 import Keithley2400
-from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
 from piec.measurement.iv_sweep import IVSweep
 from piec.measurement.gui_utils import MeasurementApp
 from piec.simulation.fe_material import Resistor
@@ -79,7 +77,6 @@ class _LiveIVSweep(IVSweep):
         print("Sweep complete.")
 
 DEFAULTS = {
-    "sm_address": "VIRTUAL",
     "save_dir": r"scratch",
     "v_start": 0.0,
     "v_stop": 1.0,
@@ -91,6 +88,8 @@ DEFAULTS = {
 
 
 class IVSweepApp(MeasurementApp):
+    _instruments = ('sourcemeter',)
+
     def __init__(self, root):
         super().__init__(root, title="IV Sweep Measurement GUI", geometry="1600x900")
         print("Welcome to the IV Sweep GUI!")
@@ -99,22 +98,8 @@ class IVSweepApp(MeasurementApp):
         self.measurement_thread = None
         self.is_measuring = False
 
-        visa_resources = self.get_visa_resources()
-
         # Static Inputs (Save Dir is at row 0 in base)
         self.save_dir_entry.insert(0, DEFAULTS["save_dir"])
-
-        ttk.Label(self.static_frame, text="Sourcemeter Address:").grid(row=1, column=0, sticky="w")
-        self.sm_address_entry = ttk.Combobox(
-            self.static_frame,
-            values=["VIRTUAL"] + list(visa_resources),
-            state="readonly",
-        )
-        self.sm_address_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.sm_address_entry.set(DEFAULTS["sm_address"])
-        ttk.Button(
-            self.static_frame, text="Refresh", command=self.refresh_instruments, style="TButton"
-        ).grid(row=1, column=2, padx=5)
 
         ttk.Label(self.static_frame, text="Sense Mode:").grid(row=2, column=0, sticky="w")
         self.sense_mode_entry = ttk.Combobox(
@@ -173,12 +158,6 @@ class IVSweepApp(MeasurementApp):
         self.y_axis.set("current (A)")
         self.y_axis.bind("<<ComboboxSelected>>", self.plot_data)
 
-    def refresh_instruments(self):
-        print("Refreshing VISA instruments...")
-        visa_resources = self.get_visa_resources()
-        self.sm_address_entry["values"] = ["VIRTUAL"] + visa_resources
-        self.sm_address_entry.set("VIRTUAL")
-
     def run_measurement(self):
         if self.is_measuring:
             print("Measurement already in progress...")
@@ -186,7 +165,7 @@ class IVSweepApp(MeasurementApp):
 
         print("Running IV Sweep measurement...")
 
-        sm_address = self.sm_address_entry.get()
+        sm_address = self.instrument_address_entries['sourcemeter'].get()
         save_dir = self.save_dir_entry.get()
         sense_mode = self.sense_mode_entry.get()
 
@@ -204,11 +183,13 @@ class IVSweepApp(MeasurementApp):
         DEFAULTS["dwell_time"] = dwell_time
         DEFAULTS["sense_mode"] = sense_mode
 
+        try:
+            sourcemeter = self.connect_instruments()['sourcemeter']
+        except Exception as error:
+            print(f"Could not connect instruments: {error}")
+            return
         if sm_address == "VIRTUAL":
-            sourcemeter = VirtualSourcemeter()
             sourcemeter.virtual_sample = Resistor(resistance=1000.0)
-        else:
-            sourcemeter = Keithley2400(sm_address)
 
         self.experiment = _LiveIVSweep(
             sourcemeter=sourcemeter,
@@ -293,7 +274,7 @@ class IVSweepApp(MeasurementApp):
             self.plot_data()
 
     def plot_data(self, event=None):
-        if not hasattr(self, 'experiment'):
+        if self.experiment is None:
             return
 
         live_v = self.experiment._live_voltages
