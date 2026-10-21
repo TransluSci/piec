@@ -273,15 +273,17 @@ class Agilent33220A(Scpi, Awg):
 
     # --- Arbitrary Waveform Functions ---
 
-    def create_arb_waveform(self, channel=1, name=None, data=None):
+    def create_arb_waveform(self, channel=1, data=None, arb_name=None):
         """
         Creates an arbitrary waveform and downloads it to volatile memory.
-        If a name is provided, copies it to non-volatile memory under that name.
+        arb_name=None (default) leaves it in temporary memory. A supplied name
+        copies it to nonvolatile memory, except the reserved VOLATILE alias.
 
         Args:
             channel (int): The channel to create the arbitrary waveform on (default 1).
-            name (str, optional): Custom name in non-volatile memory (up to 12 chars).
             data (list or ndarray): Data points (1 to 65536 points).
+            arb_name (str or None): None for temporary memory, or a custom name
+                in nonvolatile memory (up to 12 characters).
         """
         if data is None:
             raise ValueError("data must be provided")
@@ -318,29 +320,30 @@ class Agilent33220A(Scpi, Awg):
                 data_str = ", ".join(f"{float(x):.6g}" for x in norm_data)
                 self.instrument.write(f"DATA VOLATILE, {data_str}")
 
-        if name is not None:
-            clean_name = str(name).strip().upper()
+        if arb_name is not None:
+            clean_name = str(arb_name).strip().upper()
             if clean_name and clean_name != "VOLATILE":
                 if not (1 <= len(clean_name) <= 12):
-                    raise ValueError(f"Arbitrary waveform name must be 1 to 12 characters, got '{name}'")
+                    raise ValueError(f"Arbitrary waveform name must be 1 to 12 characters, got '{arb_name}'")
                 if not clean_name[0].isalpha():
-                    raise ValueError(f"Arbitrary waveform name must start with a letter, got '{name}'")
+                    raise ValueError(f"Arbitrary waveform name must start with a letter, got '{arb_name}'")
                 if not all(c.isalnum() or c == '_' for c in clean_name):
-                    raise ValueError(f"Arbitrary waveform name can only contain letters, numbers, and underscores, got '{name}'")
+                    raise ValueError(f"Arbitrary waveform name can only contain letters, numbers, and underscores, got '{arb_name}'")
                 if clean_name in ("EXP_RISE", "EXP_FALL", "NEG_RAMP", "SINC", "CARDIAC"):
                     raise ValueError(f"Cannot overwrite built-in waveform '{clean_name}'")
                 self.instrument.write(f"DATA:COPY {clean_name}, VOLATILE")
 
-    def set_arb_waveform(self, channel=1, name="VOLATILE"):
+    def set_arb_waveform(self, channel=1, arb_name=None):
         """
         Sets the arbitrary waveform to be generated on the selected channel.
+        arb_name=None (default) selects the uploaded volatile waveform.
         Selects one of the five built-in waveforms ('EXP_RISE', 'EXP_FALL', 'NEG_RAMP',
         'SINC', 'CARDIAC'), a user-defined waveform, or 'VOLATILE'.
         Command: FUNCtion:USER {<arb name>|VOLATILE} (Manual p. 240).
         """
-        if name is None:
-            name = "VOLATILE"
-        token = str(name).strip().upper()
+        if arb_name is None:
+            arb_name = "VOLATILE"
+        token = str(arb_name).strip().upper()
         self.instrument.write(f"FUNC:USER {token}")
 
     # --- Trigger and Sync Functions ---

@@ -278,24 +278,27 @@ class DaqAsAwg(Awg):
         scaled_data = data / max_abs
         return scaled_data
 
-    def create_arb_waveform(self, channel, name, data):
+    def create_arb_waveform(self, channel, data, arb_name=None):
         """
         Stores an arbitrary waveform data array.
-        Data is normalized to +/- 1.0 upon creation.
+        Data is normalized to +/- 1.0 upon creation. None uses the temporary
+        VOLATILE slot; named waveforms are kept in emulator memory only.
         """
+        arb_name = "VOLATILE" if arb_name is None else arb_name
         scaled_data = self._scale_waveform_data(data)
-        self._arb_waveforms[name] = scaled_data
+        self._arb_waveforms[arb_name] = scaled_data
         
-    def set_arb_waveform(self, channel, name):
+    def set_arb_waveform(self, channel, arb_name=None):
         """
-        Selects the arbitrary waveform by name.
+        Selects a waveform by name, or the temporary waveform when None.
         """
-        if name not in self._arb_waveforms:
-            raise ValueError(f"Arbitrary waveform '{name}' not found. Create it first.")
+        arb_name = "VOLATILE" if arb_name is None else arb_name
+        if arb_name not in self._arb_waveforms:
+            raise ValueError(f"Arbitrary waveform '{arb_name}' not found. Create it first.")
         
         params = self._get_params(channel)
         params['waveform'] = 'USER'
-        params['arb_name'] = name
+        params['arb_name'] = arb_name
         self._update_if_active(channel)
 
     # --- Synthesis ---

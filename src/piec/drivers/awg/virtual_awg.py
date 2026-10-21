@@ -311,13 +311,14 @@ class VirtualAwg(VirtualInstrument, Awg):
         if duty_cycle is not None:
             self.set_pulse_duty_cycle(channel, duty_cycle)
 
-    def create_arb_waveform(self, channel, name, data):
+    def create_arb_waveform(self, channel, data, arb_name=None):
         """
         Create and store an arbitrary waveform.
 
         Args:
             channel (int): Channel number (1-2)
-            name (str): Name of the waveform
+            arb_name (str or None): Optional name, ignored by this simulation.
+                One temporary waveform is stored per channel.
             data (list or np.array): Waveform data points
         """
         # Store the arbitrary waveform in state
@@ -331,13 +332,14 @@ class VirtualAwg(VirtualInstrument, Awg):
         
         self.state['arb_waveform'][channel] = voltage_data
 
-    def set_arb_waveform(self, channel, name):
+    def set_arb_waveform(self, channel, arb_name=None):
         """
         Set the arbitrary waveform for a channel.
 
         Args:
             channel (int): Channel number (1-2)
-            name (str): Name of the waveform
+            arb_name (str or None): Optional name, ignored by this simulation.
+                One temporary waveform is stored per channel.
         """
         # For simulation, just mark the waveform as selected
         self.state['waveform'][channel] = 'USER'
