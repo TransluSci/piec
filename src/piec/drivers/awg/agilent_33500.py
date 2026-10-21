@@ -466,32 +466,36 @@ class Agilent33500(Scpi, Awg):
     # Arbitrary Waveform Functions
     # -------------------------------------------------------------------------
 
-    def create_arb_waveform(self, channel, name, data):
+    def create_arb_waveform(self, channel, data, arb_name=None):
         """
         Creates an arbitrary waveform on the selected channel and downloads it to instrument memory.
 
         Args:
             channel (int): The channel to create the arbitrary waveform on
-            name (str): The name of the arbitrary waveform
             data (list or ndarray): The data points of the arbitrary waveform
+            arb_name (str or None): None (default) for the temporary VOLATILE
+                slot, or a waveform name in working memory.
 
         Notes:
-            Requires an explicit, nonempty name containing only alphanumeric
-            characters and underscores. No default name is generated and no
-            overwrite confirmation is requested. The method converts data to
+            Uses the temporary VOLATILE slot when arb_name is None. An explicit
+            arb_name must be nonempty and contain only alphanumeric
+            characters and underscores. This method uploads to working memory;
+            it does not save a nonvolatile file or request overwrite confirmation.
+            The method converts data to
             floating point, checks 8 to 1,000,000 points and values between -1.0 and
             +1.0, then sends SOURce<channel>:DATA:ARBitrary with comma-separated
             values formatted to six decimal places. Uploading does not select the
             waveform or enable output; call set_arb_waveform separately. String
-            arguments, including name, are lowercased by the driver framework.
+            arguments, including arb_name, are lowercased by the driver framework.
 
         Raises:
             ValueError: If the name is invalid, the point count is out of range,
                 or data contains values outside [-1.0, 1.0].
         """
-        if not name or not isinstance(name, str):
+        arb_name = "VOLATILE" if arb_name is None else arb_name
+        if not arb_name or not isinstance(arb_name, str):
             raise ValueError("Arbitrary waveform name must be a non-empty string")
-        if not name.replace("_", "").isalnum():
+        if not arb_name.replace("_", "").isalnum():
             raise ValueError("Waveform name must contain only alphanumeric characters and underscores")
 
         data_array = np.asarray(data, dtype=float)
@@ -502,29 +506,32 @@ class Agilent33500(Scpi, Awg):
         if np.any(data_array < -1.0) or np.any(data_array > 1.0):
             raise ValueError("Data points must be between -1.0 and 1.0")
 
-        # Download via SOURce{channel}:DATA:ARBitrary <name>, <data>
+        # Download via SOURce{channel}:DATA:ARBitrary <arb_name>, <data>
         csv_data = ",".join(f"{v:.6f}" for v in data_array)
-        self.instrument.write(f"SOURce{channel}:DATA:ARBitrary {name},{csv_data}")
+        self.instrument.write(f"SOURce{channel}:DATA:ARBitrary {arb_name},{csv_data}")
 
-    def set_arb_waveform(self, channel, name):
+    def set_arb_waveform(self, channel, arb_name=None):
         """
         Sets the arbitrary waveform to be generated on the selected channel
 
         Args:
             channel (int): The channel to set the arbitrary waveform on
-            name (str): The name of the arbitrary waveform to be set
+            arb_name (str or None): None (default) for the temporary waveform,
+                or an existing waveform name in working memory.
 
         Notes:
-            Requires a nonempty name. Writes SOURce<channel>:FUNCtion:ARBitrary
-            <name>, then SOURce<channel>:FUNCtion ARB. Does not enable channel
+            Defaults to the temporary VOLATILE slot. A supplied arb_name must be
+            nonempty. Writes SOURce<channel>:FUNCtion:ARBitrary
+            <arb_name>, then SOURce<channel>:FUNCtion ARB. Does not enable channel
             output. Names are lowercased by the driver framework.
 
         Raises:
-            ValueError: If name is not a nonempty string.
+            ValueError: If arb_name is not a nonempty string.
         """
-        if not name or not isinstance(name, str):
+        arb_name = "VOLATILE" if arb_name is None else arb_name
+        if not arb_name or not isinstance(arb_name, str):
             raise ValueError("Arbitrary waveform name must be a non-empty string")
-        self.instrument.write(f"SOURce{channel}:FUNCtion:ARBitrary {name}")
+        self.instrument.write(f"SOURce{channel}:FUNCtion:ARBitrary {arb_name}")
         self.instrument.write(f"SOURce{channel}:FUNCtion ARB")
 
     # -------------------------------------------------------------------------

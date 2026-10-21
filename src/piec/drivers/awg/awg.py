@@ -32,7 +32,7 @@ class Awg(Instrument):
     trigger_mode = ["EDGE", "LEV"] #[EDGE (edge), LEV (level)]
     slew_rate = None #useful information about the instrument, but need not be implemented
     arb_data_range = (None, None) #range of data points for arbitrary waveform generation
-    arb_name = ["VOLATILE"] # Default arbitrary waveform name, to be used if an instrument doesn't support named waveforms.
+    arb_name = None # Optional stored waveform name; validated by each model driver.
 
     # --- Optional feature class attributes ---
     pulse_delay = pulse_width #typically the same
@@ -208,26 +208,31 @@ class Awg(Instrument):
             self.set_pulse_duty_cycle(channel, duty_cycle)
 
     #Now we move to the arb functions
-    def create_arb_waveform(self, channel, name, data):
+    def create_arb_waveform(self, channel, data, arb_name=None):
         """
-        Creates an arbitrary waveform to be generated on the selected channel and saves to instrument memory if applicable. If no name is given, it will be generated with a default name. Typically
-        corresponding to the volatile memory of the instrument. In the case where the given name already exists, it will prompt the user to overwrite or not.
-        For implementing the data transfer, use the most documented version from the manual.
+        Uploads an arbitrary waveform to the selected channel.
+        By default, arb_name=None uploads to volatile (temporary) memory without
+        saving to nonvolatile instrument memory. A non-None arb_name requests a
+        saved waveform under that name, where supported by the model driver.
+        Uploading does not select the waveform or enable output; call
+        set_arb_waveform separately.
         args:
             channel (int): The channel to create the arbitrary waveform on
-            name (str): The name of the arbitrary waveform
             data (list or ndarray): The data points of the arbitrary waveform
+            arb_name (str or None): None (default) for temporary memory, or a
+                name to save the waveform to instrument memory.
         """
 
-    def set_arb_waveform(self, channel, name):
+    def set_arb_waveform(self, channel, arb_name=None):
         """
-        Sets the arbitrary waveform to be generated on the selected channel
-        Model drivers translate the common VOLATILE name to a device-specific
-        slot when necessary. Devices without named storage may ignore name.
-        Selecting a name does not create or upload waveform data.
+        Selects the arbitrary waveform to generate on the selected channel.
+        By default, arb_name=None selects the uploaded temporary waveform.
+        A non-None arb_name selects an existing saved waveform by name.
+        Selection does not upload, save, or enable output.
         args:
             channel (int): The channel to set the arbitrary waveform on
-            name (str): The name of the arbitrary waveform to be set
+            arb_name (str or None): None (default) for the temporary waveform,
+                or the name of an existing saved waveform.
         """
 
     #trigger and sync functions

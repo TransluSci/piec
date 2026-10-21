@@ -295,22 +295,32 @@ class Keysight81150a(Scpi, Awg):
             self.set_pulse_duty_cycle(channel, duty_cycle)
 
     #Now we move to the arb functions
-    def create_arb_waveform(self, channel, name, data):
+    def create_arb_waveform(self, channel, data, arb_name=None):
         """
-        Creates an arbitrary waveform to be generated on the selected channel and saves to instrument memory if applicable. If no name is given, it will be generated with a default name. Typically
-        corresponding to the volatile memory of the instrument. In the case where the given name already exists, it will prompt the user to overwrite or not.
-        For implementing the data transfer, use the most documented version from the manual.
+        Uploads an arbitrary waveform to the selected channel's volatile buffer.
+        arb_name=None (default) leaves it in temporary memory without saving to
+        the instrument's nonvolatile memory. A non-None arb_name also copies it
+        to nonvolatile memory under that name, prompting to delete a stored
+        waveform if that memory is full. Uploading does not select the waveform
+        or enable output; call set_arb_waveform separately.
         args:
             channel (int): The channel to create the arbitrary waveform on
-            name (str): The name of the arbitrary waveform
             data (list or ndarray): The data points of the arbitrary waveform
+            arb_name (str or None): None (default) for temporary data, or a name
+                to save in nonvolatile memory. 'VOLATILE' is reserved; use None.
         """
+        if arb_name is not None:
+            if not isinstance(arb_name, str) or not arb_name.strip():
+                raise ValueError("arb_name must be a non-empty string or None")
+            arb_name = arb_name.strip()
+            if arb_name.upper() == "VOLATILE":
+                raise ValueError("VOLATILE is reserved; use arb_name=None for a temporary waveform")
         # Scale the waveform data to the valid range See scale_waveform_data
         scaled_data = scale_waveform_data(data)  
         self.instrument.write(":FORM:BORD SWAP")
 
         self.instrument.write_binary_values(":DATA{}:DAC VOLATILE, ".format(channel), scaled_data, datatype='h') #need h as 2bit bytes see struct module
-        if name is not None:
+        if arb_name is not None:
             #first check if has room to copy
             slots_available = self.instrument.query('DATA:NVOLatile:FREE?').strip() #returns a number corresponding to num_slots_free
             if int(slots_available) == 0:
@@ -319,15 +329,20 @@ class Keysight81150a(Scpi, Awg):
                 name_to_delete = ask_user_to_select(stored_wfs_list)
                 self.instrument.write(":DATA:DEL {}".format(name_to_delete))
 
-            self.instrument.write(":DATA:COPY {}, VOLATILE".format(name))
+            self.instrument.write(":DATA:COPY {}, VOLATILE".format(arb_name))
 
-    def set_arb_waveform(self, channel, name):
+    def set_arb_waveform(self, channel, arb_name=None):
         """
-        Sets the arbitrary waveform to be generated on the selected channel
+        Selects the arbitrary waveform to generate on the selected channel.
+        arb_name=None (default) selects the uploaded volatile buffer.
+        A non-None arb_name selects an existing stored waveform. Selection does
+        not upload, save, or enable output.
         args:
             channel (int): The channel to set the arbitrary waveform on
-            name (str): The name of the arbitrary waveform to be set
+            arb_name (str or None): None (default) for the temporary waveform,
+                or the name of an existing stored waveform.
         """
+        name = "VOLATILE" if arb_name is None else arb_name
         self.instrument.write(":FUNC{}:USER {}".format(channel, name)) #makes current USER selected name, but does not switch instrument to it
         self.instrument.write(":FUNC{} USER".format(channel)) #switches instrument to user waveform
 

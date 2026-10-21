@@ -227,10 +227,13 @@ class SDG2000X(Scpi, Awg):
 
         self.instrument.write(f"C{channel}:BSWV DLY,{pulse_delay}")
 
-    def create_arb_waveform(self, channel, name, data):
+    def create_arb_waveform(self, channel, data, arb_name=None):
         """
         Creates/Downloads an arbitrary waveform to the instrument.
+        arb_name=None uses the default VOLATILE slot; otherwise uses that name.
+        Storage behavior is determined by the instrument WVDT command.
         """
+        arb_name = "VOLATILE" if arb_name is None else arb_name
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
         
@@ -245,19 +248,20 @@ class SDG2000X(Scpi, Awg):
 
         # Construct header command. 
         # Example 4.1.5 uses: C1:WVDT WVNM,wave1, ... WAVEDATA,<data>
-        cmd_header = f"C{channel}:WVDT WVNM,{name},WAVEDATA,"
+        cmd_header = f"C{channel}:WVDT WVNM,{arb_name},WAVEDATA,"
         
         # Send raw command with binary data appended
         self.instrument.write_raw(cmd_header.encode('ascii') + binary_data)
 
-    def set_arb_waveform(self, channel, name):
+    def set_arb_waveform(self, channel, arb_name=None):
         """
-        Selects an arbitrary waveform by name.
+        Selects an arbitrary waveform by name; None selects the VOLATILE slot.
         """
+        arb_name = "VOLATILE" if arb_name is None else arb_name
         if channel not in self.channel:
             raise ValueError(f"Invalid channel. Must be one of {self.channel}")
 
-        self.instrument.write(f"C{channel}:ARWV NAME,{name}")
+        self.instrument.write(f"C{channel}:ARWV NAME,{arb_name}")
 
     def set_trigger_source(self, channel, trigger_source):
         """

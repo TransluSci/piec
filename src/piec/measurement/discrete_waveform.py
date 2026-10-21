@@ -284,13 +284,13 @@ class HysteresisLoop(DiscreteWaveform):
         dense = interpolate_sparse_to_dense(np.linspace(0,len(interp_v_array),len(interp_v_array)), interp_v_array, total_points=n_points)
 
         # Create the arbitrary waveform in the AWG's volatile memory
-        self.awg.create_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE", data=dense)
+        self.awg.create_arb_waveform(channel=int(self.voltage_channel), data=dense)
         
         # Configure the AWG output using the specific methods
         invert = self.amplitude < 0
         polarity = "INV" if invert else "NORM"
         
-        self.awg.set_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE")
+        self.awg.set_arb_waveform(channel=int(self.voltage_channel))
         # Vpp = amplitude*2
         self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(self.amplitude) * 2)
         self.awg.set_offset(channel=int(self.voltage_channel), offset=self.offset)
@@ -400,10 +400,10 @@ class ThreePulsePund(DiscreteWaveform):
         dense_v = interpolate_sparse_to_dense(sparse_t, sparse_v, total_points=n_points)
         
         # write to awg
-        self.awg.create_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE", data=dense_v)
+        self.awg.create_arb_waveform(channel=int(self.voltage_channel), data=dense_v)
         
         # Configure the AWG output using the specific methods
-        self.awg.set_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE")
+        self.awg.set_arb_waveform(channel=int(self.voltage_channel))
         self.awg.set_offset(channel=int(self.voltage_channel), offset=self.offset)
         self.awg.set_amplitude(channel=int(self.voltage_channel), amplitude=abs(amplitude))
         self.awg.set_frequency(channel=int(self.voltage_channel), frequency=1/self.length)
