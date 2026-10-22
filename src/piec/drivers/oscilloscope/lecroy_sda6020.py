@@ -17,7 +17,7 @@ class LeCroySDA6020(Scpi, Oscilloscope):
 
     AUTODETECT_ID = "SDA6020"
     AI_STATUS = "assisted"
-    HARDWARE_TESTED = False  # Updated multi-channel acquisition needs bench verification
+    HARDWARE_TESTED = True  #10/22/2026
 
     channel = [1, 2, 3, 4]
     vdiv = (0.002, 1.0)              # 2 mV/div to 1 V/div (50 Ohm only)

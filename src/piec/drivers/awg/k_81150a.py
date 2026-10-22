@@ -303,6 +303,8 @@ class Keysight81150a(Scpi, Awg):
         to nonvolatile memory under that name, prompting to delete a stored
         waveform if that memory is full. Uploading does not select the waveform
         or enable output; call set_arb_waveform separately.
+        Transfers signed 16-bit DAC values in an explicit IEEE-488.2 binary block
+        using NORM (big-endian) byte order, and waits for the upload to complete.
         args:
             channel (int): The channel to create the arbitrary waveform on
             data (list or ndarray): The data points of the arbitrary waveform
@@ -316,10 +318,16 @@ class Keysight81150a(Scpi, Awg):
             if arb_name.upper() == "VOLATILE":
                 raise ValueError("VOLATILE is reserved; use arb_name=None for a temporary waveform")
         # Scale the waveform data to the valid range See scale_waveform_data
-        scaled_data = scale_waveform_data(data)  
-        self.instrument.write(":FORM:BORD SWAP")
-
-        self.instrument.write_binary_values(":DATA{}:DAC VOLATILE, ".format(channel), scaled_data, datatype='h') #need h as 2bit bytes see struct module
+        scaled_data = scale_waveform_data(data)
+        self.instrument.write(":FORM:BORD NORM")
+        byte_order = self.instrument.query(":FORM:BORD?").strip().upper()
+        if byte_order != "NORM":
+            raise ValueError(f"Expected NORM byte order for waveform upload, got {byte_order!r}")
+        payload = scaled_data.astype(">i2").tobytes()
+        byte_count = str(len(payload))
+        header = f":DATA{channel}:DAC VOLATILE,#{len(byte_count)}{byte_count}".encode("ascii")
+        self.instrument.write_raw(header + payload + b"\n")
+        self.instrument.query("*OPC?")
         if arb_name is not None:
             #first check if has room to copy
             slots_available = self.instrument.query('DATA:NVOLatile:FREE?').strip() #returns a number corresponding to num_slots_free
@@ -345,6 +353,7 @@ class Keysight81150a(Scpi, Awg):
         name = "VOLATILE" if arb_name is None else arb_name
         self.instrument.write(":FUNC{}:USER {}".format(channel, name)) #makes current USER selected name, but does not switch instrument to it
         self.instrument.write(":FUNC{} USER".format(channel)) #switches instrument to user waveform
+        self.instrument.query("*OPC?")
 
     #trigger and sync functions
     def set_trigger_source(self, channel, trigger_source):
