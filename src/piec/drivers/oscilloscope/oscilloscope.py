@@ -211,7 +211,7 @@ class Oscilloscope(Instrument):
 
     def configure_acquisition(self, channel: Union[int, list[int]], acquisition_mode, acquisition_points):
         """
-        Configures the scope (ideally in binary) to specific parameters such as length, mode and what channels to acquire.
+        Configures the channels, acquisition mode and requested record length.
         args:
             channel (int or list[int]): One channel or a nonempty list of channels
                 to acquire. Every channel must be in the model's channel capability
@@ -223,15 +223,16 @@ class Oscilloscope(Instrument):
 
     def get_data(self):
         """
-        Returns data for the channel or channels selected by configure_acquisition.
+        Returns waveform data for the channels selected by configure_acquisition.
         If configure_acquisition was not called, returns all displayed channels
         with the default parameters.
         args:
             None
         Returns:
-            data (Dataframe): Returns the data in a Pandas Dataframe with the following convention:
-                If only one channel is displayed/configured, the dataframe will have two columns: 'Time' and 'Voltage'.
-                Otherwise, the dataframe will have 'Time' first and one column for each channel with the convention 'CH1', 'CH2', etc.
+            data (pandas.DataFrame): 'Time' in seconds followed by voltage data
+                in volts. One channel, including a one-element selection list,
+                returns 'Time', 'Voltage'. Multiple channels return 'Time',
+                'CH1', 'CH2', etc., in selection order.
         """
 
     # --- Optional Features ---
