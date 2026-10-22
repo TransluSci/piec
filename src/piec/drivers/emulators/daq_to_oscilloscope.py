@@ -325,27 +325,9 @@ class DaqAsOscilloscope(Oscilloscope):
         actual_duration = time.perf_counter() - start_time
         return np.array(data), actual_duration
 
-    def quick_read(self):
-        """
-        Returns a snapshot (numpy array).
-        """
-        if not self._scope_state['running']:
-             return np.array([])
-             
-        channel = self._scope_state['acq_channel']
-        ch_state = self._get_ch_state(channel)
-        
-        raw_data, _ = self._acquire_waveform(channel)
-        
-        if len(raw_data) == 0:
-            return np.array([])
-            
-        scaled_data = raw_data * ch_state['attenuation']
-        return scaled_data
-
     def get_data(self):
         """
-        Returns a DataFrame with 'Time' and Channel data.
+        Returns a single-channel DataFrame with 'Time' and 'Voltage' columns.
         """
         channel = self._scope_state['acq_channel']
         ch_state = self._get_ch_state(channel)
@@ -383,7 +365,7 @@ class DaqAsOscilloscope(Oscilloscope):
         
         df = pd.DataFrame({
             "Time": t,
-            f"Channel {channel}": scaled_data
+            "Voltage": scaled_data
         })
         return df
 

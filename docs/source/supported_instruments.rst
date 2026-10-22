@@ -34,7 +34,7 @@ Category Overview
    * - :ref:`Lockin <lockin>`
      - 1 supported model
    * - :ref:`Oscilloscope <oscilloscope>`
-     - 6 supported models
+     - 2 supported models
    * - :ref:`Pulser <pulser>`
      - 1 supported model
    * - :ref:`Sourcemeter <sourcemeter>`
@@ -193,24 +193,8 @@ Oscilloscope
         - Driver Class
         - Protocol
         - Requirements
-      * - Agilent/Keysight InfiniVision 5000 X-Series Oscilloscope
-        - :py:class:`~piec.drivers.oscilloscope.agilent_dsox5000.AgilentDSOX5000`
-        - SCPI
-        - NI-VISA
       * - Keysight DSOX3024A Oscilloscope
         - :py:class:`~piec.drivers.oscilloscope.k_dsox3024a.KeysightDSOX3024a`
-        - SCPI
-        - NI-VISA
-      * - Rigol DS1000Z Series Oscilloscope
-        - :py:class:`~piec.drivers.oscilloscope.rigol_ds1000z.RigolDS1000Z`
-        - SCPI
-        - NI-VISA
-      * - Tektronix TDS 2000 Series Oscilloscope
-        - :py:class:`~piec.drivers.oscilloscope.tektronix_tds2000.TektronixTDS2000`
-        - SCPI
-        - NI-VISA
-      * - Tektronix TDS 6604 Oscilloscope
-        - :py:class:`~piec.drivers.oscilloscope.tektronix_tds6604.TDS6604`
         - SCPI
         - NI-VISA
       * - Teledyne LeCroy SDA 6020 Oscilloscope

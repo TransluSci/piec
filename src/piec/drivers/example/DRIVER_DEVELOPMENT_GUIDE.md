@@ -319,6 +319,8 @@ The class attributes must follow a specific syntax based on what kind of paramet
 > `frequency` limits directly on the class.
 
 ## 5. Method Conventions: `set_`, `configure_`, and `run_`
+Category-specific methods and return formats are defined by the parent interface;
+its contracts take precedence over these general naming conventions.
 Function naming strictly determines scope:
 * **`set_<property>` Methods:** Must perform a **SINGLE** action. For instance, `set_frequency` only changes the frequency. They correspond directly to SCPI writes assigning one explicit hardware parameter. 
 * **`get_<property>` Methods:** Must **RETURN** a single, unformatted value (e.g., a status bit, a scalar measurement).
@@ -328,11 +330,10 @@ Function naming strictly determines scope:
   - Preserve the parent signature. When designing a new interface, use `None`
     for optional settings and call their `set_` methods only when supplied.
     Existing parent-defined convenience defaults remain part of the contract.
-* **`quick_read` Method:** A specialized **convenience function** (common in Oscilloscopes) used to return whatever data is currently ready or displayed on the hardware (e.g., a cursor value or mean measurement). It is used for fast, unformatted polling.
 * **`run_<routine>` Methods:** Used for **hardware-executed routines** where the instrument performs a complete operation internally (at hardware speed) and then returns the results. The key distinction is that a `run_` method triggers autonomous instrument behavior — unlike `set_` (which only writes a parameter) or `configure_` (which just calls multiple `set_` methods). Examples:
   - `run_voltage_sweep(...)` — the sourcemeter executes the full I-V sweep internally and returns all data points at once.
   - `run_current_sweep(...)` — same for current sweep.
-  - This is fundamentally different from manually looping `set_source_voltage` + `quick_read` in Python.
+  - A Python loop that changes a setting and reads a measurement is not a hardware-executed routine.
 
 ## 6. Method Signatures and Default Parameters
 * Method signatures must perfectly mirror the parent interface.
@@ -352,6 +353,52 @@ Function naming strictly determines scope:
   - Structural/targeting defaults like `channel=1`.
   - Boolean flag toggles like `on=True`, `ac=False`, or `four_wire=False`.
   - **Convenience `configure_` Methods:** These are allowed to retain sensible default values if those defaults are established in the parent interface. 
+
+### Annotation-Guided Parameter Validation
+
+With `check_params=True`, public method parameter annotations define accepted
+types and input structure; capability attributes still define allowed values
+and ranges. These checks run before the method body or state tracking. Parameters
+without annotations retain the existing capability-only validation behavior.
+
+For example, the category can declare:
+
+```python
+from typing import Union
+
+channel = [1, 2, 3, 4]  # Physical channels available on this model
+
+def configure_acquisition(self, channel: Union[int, list[int]], acquisition_mode, acquisition_points):
+    ...
+```
+
+Here `1` and `[1, 2, 3]` pass validation. Every list element must have the
+declared type and satisfy the channel capability. `[1, 9]` fails if channel 9 is
+unavailable. Capability selections must be nonempty. Validation passes the
+original scalar or list structure to the driver; it does not loop over hardware
+operations or implement multiple-channel acquisition automatically.
+
+* Supported annotations are scalar classes, `Any`, unions, and typed lists
+  (`list[int]` or `typing.List[int]`). Use `typing.Union` for Python 3.9
+  compatibility; `int | list[int]` also works on Python 3.10 and newer.
+  Other annotation forms are not supported by this validator and raise
+  `TypeError` when checked.
+* Types are strict: an `int` annotation rejects `"1"`, `1.0`, and `True`.
+  A `float` annotation requires a float; declare `Union[int, float]` if both
+  are accepted. Annotated discrete choices must match the capability option's
+  type as well as its value. String comparisons remain case-insensitive.
+* Model overrides inherit omitted parameter annotations from their category
+  and other bases. Explicit override annotations take precedence; preserve the
+  category's accepted input contract when implementing a model.
+* `None` remains an allowed omission for parameters with a default of `None`.
+  Otherwise, explicitly include `None` in the annotation if accepted.
+  A capability of `None` disables capability checks, not annotated type checks.
+* Wrong types raise `TypeError`; invalid capability values and empty selections
+  raise `ValueError`. `check_params=False` bypasses both validation layers.
+* Annotations affect validation only. Drivers must still implement the accepted
+  scalar/list behavior, and state tracking still records the supplied argument
+  as `_current_<name>`. Keep acquisition selections separate from a scalar
+  waveform transfer source when implementing multiple-channel retrieval.
 
 ## 7. Communication & Protocol Convenience
 * For VISA-based drivers, read variables using `self.instrument.query("SCPI?")`

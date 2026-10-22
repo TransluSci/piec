@@ -36,6 +36,10 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
     acquisition_mode = ["NORM", "AVER", "HRES", "PEAK"]
     acquisition_points = (100, 8000000)
 
+    def _initialize_state(self):
+        super()._initialize_state()
+        self._current_acquisition_channel = None
+
     def autoscale(self):
         """
         Autoscales the oscilloscope
@@ -242,6 +246,7 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
             channel (int): The desired channel to acquire 
         """
         self.instrument.write(f":WAVeform:SOURce CHANnel{channel}")
+        self._current_acquisition_channel = channel
         
     def set_acquisition_mode(self, acquisition_mode):
         """
@@ -261,44 +266,38 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
 
     def configure_acquisition(self, channel=None, acquisition_mode=None, acquisition_points=None):
         """
-        Configures the scope (ideally in binary) to specific parameters such as length (how much data to capture), etc
+        Configures the channels, mode and point count used for data reading.
         args:
-            channel (int): The desired channel to acquire
+            channel (int or list[int]): One channel or a nonempty list of distinct
+                channels, in the desired output order. None retains the selection.
+                Without an explicit selection, get_data reads displayed channels.
             acquisition_mode (str): The desired acquisition mode (e.g. normal or averaging) 
             acquisition_points (int): The number of data points to capture
         """
-        if channel:
-            self.set_acquisition_channel(channel)
+        if channel is not None:
+            if isinstance(channel, list):
+                if not channel or len(set(channel)) != len(channel):
+                    raise ValueError("Select a nonempty list of distinct channels")
+                self._current_acquisition_channel = channel.copy()
+            else:
+                self.set_acquisition_channel(channel)
         if acquisition_mode:
             self.set_acquisition_mode(acquisition_mode)
         if acquisition_points:
             self.set_acquisition_points(acquisition_points)
 
-    def quick_read(self):
-        """
-        Quick read function that returns the default data in a numpy array. Typically this should be used to get a snapshot of the current waveform (e.g. the current display).
-        
-        args:
-            None
-        Returns:
-            data (ndarray): Returns the data in a quick way.
-        """
-        self.instrument.write(":WAVeform:FORMat BYTE")
-        self.instrument.write(":WAVeform:POINts:MODE NORMal")
-        data = self.instrument.query_binary_values(":WAVeform:DATA?", datatype='B')
-        return np.array(data)
-
     def get_data(self):
         """
         Returns the data depending on how it was configured with configure_acquisition.
-        If a specific channel was set, returns that channel ('Time', 'Voltage').
-        If no channel was explicitly set, acquires all channels currently displayed/active
-        on the scope ('Time', 'Channel 1', 'Channel 2', ...).
+        One selected channel returns 'Time', 'Voltage'. Multiple selected channels
+        return 'Time', 'CH1', 'CH2', etc., in selection order.
+        If no channel was explicitly set, reads all currently displayed channels.
+        Reset clears the selection and restores displayed-channel reading.
         """
         # 1. Determine which channel(s) to fetch
-        target_ch = getattr(self, "_current_channel", None)
+        target_ch = getattr(self, "_current_acquisition_channel", None)
         if target_ch is not None:
-            active_channels = [target_ch]
+            active_channels = target_ch if isinstance(target_ch, list) else [target_ch]
         else:
             # Query the scope for all visibly enabled channels
             active_channels = [
@@ -353,7 +352,7 @@ class KeysightDSOX3024a(Scpi, Oscilloscope):
             if time_array is None or len(time_array) != len(voltage):
                 time_array = (np.arange(len(voltage)) - x_ref) * x_inc + x_org
 
-            col_name = "Voltage" if len(active_channels) == 1 else f"Channel {ch}"
+            col_name = "Voltage" if len(active_channels) == 1 else f"CH{ch}"
             data_dict[col_name] = voltage
 
         if time_array is None:
