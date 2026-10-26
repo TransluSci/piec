@@ -27,7 +27,7 @@ Each level inherits from the one above it, adding specificity:
        to this interface, making drivers interchangeable.
 
    Level 3 — Specific instrument model
-       Examples: KeysightDSOX3024a, Agilent33220a, SR830, Keithley2400
+       Examples: KeysightDSOX3024a, Agilent33220A, SRS830, Keithley2400
        Inherits from a Level 2 class, optionally with Scpi or Digilent,
        and implements the hardware-specific logic using that instrument's
        exact command set.
@@ -55,7 +55,8 @@ What each level provides
    * Provides the ``AutoCheckMeta`` framework for automatic parameter validation and
      state tracking based on class attributes. Setting a class attribute to ``None``
      bypasses this validation, allowing for custom driver-side handling.
-   * Exposes ``read()``, ``write()``, and ``query()`` methods used by all subclasses.
+   * Stores the communication resource as ``self.instrument``; physical drivers use
+     its ``read()``, ``write()``, and ``query()`` methods.
 
 **Level 1 — Scpi** (``piec.drivers.scpi.Scpi``)
    A **convenience class**, not a separate structural level. It inherits from
@@ -150,6 +151,80 @@ Import the specific driver class and instantiate it with the instrument's addres
 
 For help connecting or finding an instrument's address, see :doc:`connecting_to_instrument`.
 
+Oscilloscope waveform data
+--------------------------
+
+The physical Keysight DSOX3024A and LeCroy SDA6020 drivers read one selected
+channel, a list of selected channels, or the channels displayed on the scope.
+With the desired signals connected and channels displayed:
+
+.. code-block:: python
+
+   from piec.drivers.autodetect import autodetect
+
+   scope = autodetect('scope', check_params=True)
+   scope.configure_acquisition(channel=1)
+   data = scope.get_data()  # Columns: Time, Voltage
+   data.plot(x='Time', ylabel='Voltage (V)')
+
+   scope.configure_acquisition(channel=[2, 1])
+   data = scope.get_data()  # Columns: Time, CH2, CH1
+
+``get_data()`` returns a pandas DataFrame with time in seconds and voltages in
+volts. A single channel, including a one-element list such as ``[3]``, returns
+``Time, Voltage``. Multiple channels return ``Time`` followed by ``CH<n>``
+columns in selection order.
+
+Before an explicit acquisition selection, ``get_data()`` reads displayed
+channels. ``reset()`` or ``initialize()`` clears that selection; passing
+``channel=None`` to ``configure_acquisition()`` retains it. Resetting also
+changes hardware settings, so configure the scope again before reading.
+Use ``get_data()`` for scope waveform reads; ``quick_read()`` is no longer part
+of the oscilloscope interface.
+
+Arbitrary waveforms
+-------------------
+
+Upload and select an arbitrary waveform in separate steps:
+
+.. code-block:: python
+
+   data = [0, 1, 0, -1]
+   awg.create_arb_waveform(channel=1, data=data)
+   awg.set_arb_waveform(channel=1)
+
+``arb_name=None`` is the default for both methods. On the 81150A, this uses the
+temporary volatile buffer without saving a waveform to nonvolatile memory.
+To save a waveform, supply a name when uploading, then use the same name to
+select it:
+
+.. code-block:: python
+
+   awg.create_arb_waveform(channel=1, data=data, arb_name='STAIRCASE')
+   awg.set_arb_waveform(channel=1, arb_name='STAIRCASE')
+
+Named storage support depends on the model driver. The 81150A reserves the
+name ``VOLATILE``; use ``None`` or omit ``arb_name`` for temporary uploads.
+Uploading and selecting do not enable output. Configure the frequency,
+amplitude, offset, and load for the connected setup, then call
+``awg.output(channel=1, on=True)`` when ready.
+
+On the 81150A, input values describe relative sample levels, not voltages.
+The scaling helper uses the largest absolute value and preserves the waveform's
+relative levels without recentering it. For example, ``[0, 1, 0, -1]`` and
+``[0, 5, 0, -5]`` produce approximately the same scaled waveform. Positive-only
+data such as ``[0, 0.5, 1]`` uses approximately half the total DAC span.
+
+The printed peak-to-peak ratio estimates the DAC span before transfer; it does
+not measure output voltage. For an 81150A, read the stored waveform span with:
+
+.. code-block:: python
+
+   print(awg.instrument.query(':DATA1:ATTR:PTP? VOLATILE').strip())
+
+A value near ``1.0`` means the stored waveform uses the full DAC span.
+Verify the shape and physical voltage on the connected scope.
+
 Parameter validation
 --------------------
 
@@ -159,7 +234,7 @@ controlled by the ``check_params`` flag at instantiation and is **off by default
 
 .. code-block:: python
 
-   # Default — no validation performed (fastest for scripting)
+   # Automatic validation off; model-specific checks may still run
    awg = Keysight81150a('GPIB0::8::INSTR')
 
    # Validation enabled — arguments are checked on every method call
@@ -175,16 +250,22 @@ class attributes before executing:
 * **Dictionary** (e.g. ``frequency = {'waveform': {'SIN': (1e-6, 30e6), ...}}``) — the
   valid range depends on the current value of another parameter. piec resolves the
   dependency automatically using the current instrument state.
-* **None** — validation for that parameter is skipped entirely. The driver handles it
-  internally. This is the standard way for a driver to opt out of automatic checking for
-  a specific parameter.
+* **None** — automatic capability checks for that parameter are skipped. The driver
+  handles its bounds or allowed values internally; annotated types are still checked.
+
+Where a method declares parameter types, validation checks those types too.
+For example, ``configure_acquisition(channel=[1, 2])`` checks each selected
+channel against the scope's supported channels. Annotated integer channels do
+not accept strings such as ``'1'`` or floats such as ``1.0``.
 
 Model-profiled virtual drivers are the exception to the default-off policy. Constructing
 ``ModelDriver("VIRTUAL")`` enables validation automatically so the simulation enforces that
 model's class-level capabilities. Pass ``check_params=False`` explicitly to opt out.
 
-If a value fails validation, a ``ValueError`` is raised before any command is sent to the
-instrument.
+Incorrect annotated types raise ``TypeError``; unsupported capability values
+raise ``ValueError`` before the method sends hardware commands. For interactive
+driver testing, enable ``check_params=True`` when connecting. You can also
+enable it on an existing instance with ``scope.check_params = True``.
 
 .. note::
    **String arguments are automatically lowercased** before validation and before being
@@ -208,7 +289,7 @@ an instrument accepts:
    from piec.drivers.awg.k_81150a import Keysight81150a
 
    print(Keysight81150a.channel)    # [1, 2]
-   print(Keysight81150a.amplitude)  # (0.01, 10.0)
+   print(Keysight81150a.amplitude)  # (0, 5); instance limits depend on amplifier mode
    print(Keysight81150a.waveform)   # ['SIN', 'SQU', 'RAMP', 'PULS', ...]
 
 Attribute values follow a consistent syntax:

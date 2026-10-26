@@ -17,7 +17,7 @@ class LeCroySDA6020(Scpi, Oscilloscope):
 
     AUTODETECT_ID = "SDA6020"
     AI_STATUS = "assisted"
-    HARDWARE_TESTED = True  # Tested on physical hardware
+    HARDWARE_TESTED = True  #10/22/2026
 
     channel = [1, 2, 3, 4]
     vdiv = (0.002, 1.0)              # 2 mV/div to 1 V/div (50 Ohm only)
@@ -53,6 +53,8 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         acquisition in AUTO trigger mode so old waveforms are cleared.
         """
         self.instrument.write("VBS 'app.SaveRecall.Setup.DoRecallDefaultPanelWithTriggerModeAuto'")
+        self._initialize_state()
+        self._current_acquisition_channel = None
 
     def toggle_channel(self, channel, on=True):
         """
@@ -266,6 +268,12 @@ class LeCroySDA6020(Scpi, Oscilloscope):
         """
         self.instrument.write("COMM_FORMAT DEF9,WORD,BIN")
         self.instrument.write("COMM_HEADER OFF")
+        self.instrument.write("COMM_ORDER LO")
+        # Transfer the entire record (NP=0), clearing any previous slicing.
+        # MEMORY_SIZE controls acquisition memory; the actual record can have
+        # extra points. Capping NP at the requested memory size can leave the
+        # descriptor's LAST_VALID_PNT outside the transferred data array.
+        self.instrument.write("WAVEFORM_SETUP SP,1,NP,0,FP,0,SN,0")
 
     def set_acquisition_channel(self, channel=None):
         """
@@ -302,63 +310,103 @@ class LeCroySDA6020(Scpi, Oscilloscope):
 
     def configure_acquisition(self, channel=None, acquisition_mode=None, acquisition_points=None):
         """
-        Configures the scope for data reading
+        Configures the scope for data reading.
+
+        channel (int or list[int]): One channel or a nonempty list of supported
+            channels, in the desired output order. None retains the selection.
+            Enable the input traces with toggle_channel before acquiring.
+        acquisition_mode (str): Normal real-time acquisition ('NORM').
+        acquisition_points (int): Requested acquisition memory size; the scope
+            rounds to a supported size and may include extra record points.
+            The entire record is transferred so its descriptor remains valid.
         """
         if channel is not None:
-            self.set_acquisition_channel(channel=channel)
+            if isinstance(channel, list) and (not channel or len(set(channel)) != len(channel)):
+                raise ValueError("Select a nonempty list of distinct channels")
+            # The scalar setter is deliberately not used for a list. AutoCheckMeta
+            # inherits the parent's annotation and validates each selected channel.
+            self._current_acquisition_channel = channel.copy() if isinstance(channel, list) else channel
         if acquisition_mode is not None:
             self.set_acquisition_mode(acquisition_mode=acquisition_mode)
         if acquisition_points is not None:
             self.set_acquisition_points(acquisition_points=acquisition_points)
 
-    def quick_read(self):
-        """
-        Quick read function that returns the default data in a numpy array.
-        """
-        channel = getattr(self, "_current_acquisition_channel", None) or 1
-        self.set_acquisition()
-        self.instrument.write("COMM_HEADER OFF")
-        self.instrument.write("COMM_FORMAT DEF9,WORD,BIN")
-        raw_data = self.instrument.query_binary_values(f"C{channel}:WF? DAT1", datatype='h', is_big_endian=False)
-        return np.array(raw_data)
-
     def get_data(self):
         """
-        Returns the data in a Pandas Dataframe.
-        """
-        channel = getattr(self, "_current_acquisition_channel", None) or 1
-        self.set_acquisition()
-        
-        # LeCroy waveform descriptors contain necessary scaling factors
-        self.instrument.write("COMM_HEADER OFF")
-        desc = self.instrument.query_binary_values(f"C{channel}:WF? DESC", datatype='B')
-        
-        # Very simplified parsing of the waveform descriptor based on LeCroy manual
-        # Real world LeCroy driver parsing is substantially more involved, requiring struct unpacking of the 346 byte descriptor
-        # This is a structural placeholder that attempts to grab basic scaling
-        v_gain = 1.0
-        v_offset = 0.0
-        h_gain = 1.0
-        h_offset = 0.0
-        
-        try:
-            # Bytes 156-159: vertical gain
-            v_gain = struct.unpack('f', bytes(desc[156:160]))[0]
-            # Bytes 160-163: vertical offset
-            v_offset = struct.unpack('f', bytes(desc[160:164]))[0]
-            # Bytes 176-179: horizontal interval
-            h_gain = struct.unpack('f', bytes(desc[176:180]))[0]
-            # Bytes 180-187: horizontal offset
-            h_offset = struct.unpack('d', bytes(desc[180:188]))[0]
-        except Exception:
-            print("Warning: Could not fully parse LeCroy waveform descriptor. Data will be unscaled raw ADC values.")
+        Returns a Pandas DataFrame for the selected or, by default, displayed inputs.
 
-        raw_data = self.instrument.query_binary_values(f"C{channel}:WF? DAT1", datatype='h', is_big_endian=False)
-        
-        v_data = (np.array(raw_data) * v_gain) - v_offset
-        t_data = (np.arange(len(v_data)) * h_gain) + h_offset
-        
-        return pd.DataFrame({'Time': t_data, 'Voltage': v_data})
+        One channel returns 'Time', 'Voltage'; multiple channels return 'Time',
+        'CH1', 'CH2', etc., in selection order. Each channel uses its own scaling.
+        Running acquisition is paused during transfer and then resumed. A pending
+        single acquisition is allowed to finish first (subject to the VISA timeout).
+        Multi-channel records use C1's time axis when C1 is selected, otherwise
+        the first selected channel's. Samples share the acquisition timebase;
+        per-channel timestamp differences are ignored without resampling voltages.
+        Raises ValueError for invalid descriptors or unequal channel record lengths.
+        Only real-time records are supported; segmented and RIS records require
+        different timing decoding.
+
+        Protocol and descriptor layout: WM-RCM-E Rev D, pp. 57-58, 112, 257-258,
+        and Appendix II (https://cdn.teledynelecroy.com/files/manuals/wm-rcm-e_rev_d.pdf).
+        """
+        self.set_acquisition()
+        channels = getattr(self, "_current_acquisition_channel", None)
+        if channels is None:
+            channels = [ch for ch in self.channel
+                        if self.instrument.query(f"C{ch}:TRACE?").strip().upper() == "ON"]
+        elif not isinstance(channels, list):
+            channels = [channels]
+        if not channels:
+            raise ValueError("No input channels are selected or displayed")
+
+        trigger_mode = self.instrument.query("TRIG_MODE?").strip().upper()
+        if trigger_mode == "SINGLE":
+            self.instrument.query("WAIT;*OPC?")
+        try:
+            self.instrument.write("STOP")
+            data = {}
+            # Read the shared time reference first; retain the requested column order.
+            read_channels = [1] + [ch for ch in channels if ch != 1] if 1 in channels else channels
+            for channel in read_channels:
+                times, volts = self._read_waveform(channel)
+                if data:
+                    if len(data['Time']) != len(volts):
+                        raise ValueError(f"C{channel} has a different sample count; cannot combine channels")
+                else:
+                    data['Time'] = times
+                data['Voltage' if len(channels) == 1 else f'CH{channel}'] = volts
+            columns = ['Time', 'Voltage'] if len(channels) == 1 else ['Time'] + [f'CH{ch}' for ch in channels]
+            return pd.DataFrame(data, columns=columns)
+        finally:
+            if trigger_mode in ("AUTO", "NORM"):
+                self.instrument.write(f"TRIG_MODE {trigger_mode}")
+
+    def _read_waveform(self, channel):
+        """Decode one real-time waveform using the documented WAVEDESC offsets."""
+        desc = bytes(self.instrument.query_binary_values(f"C{channel}:WF? DESC", datatype='B'))
+        if len(desc) < 346 or not desc.startswith(b'WAVEDESC'):
+            raise ValueError(f"C{channel}: invalid waveform descriptor")
+        if struct.unpack_from('<hh', desc, 32) != (1, 1):
+            raise ValueError(f"C{channel}: expected little-endian WORD waveform")
+        if struct.unpack_from('<i', desc, 144)[0] > 1 or any(struct.unpack_from('<ii', desc, 48)):
+            raise ValueError(f"C{channel}: segmented or RIS waveforms are not supported")
+        v_gain, v_offset = struct.unpack_from('<ff', desc, 156)
+        h_gain, h_offset = struct.unpack_from('<fd', desc, 176)
+        if not np.isfinite([v_gain, v_offset, h_gain, h_offset]).all() or v_gain <= 0 or h_gain <= 0:
+            raise ValueError(f"C{channel}: invalid waveform scaling")
+        raw_data = np.asarray(self.instrument.query_binary_values(
+            f"C{channel}:WF? DAT1", datatype='h', is_big_endian=False))
+        count = struct.unpack_from('<i', desc, 116)[0]
+        first, last = struct.unpack_from('<ii', desc, 124)
+        if len(raw_data) != count or not (0 <= first <= last < count):
+            raise ValueError(
+                f"C{channel}: incomplete waveform data "
+                f"(received={len(raw_data)}, expected={count}, first={first}, last={last})"
+            )
+        # Discard padding while retaining the samples' positions in the record.
+        times = np.arange(first, last + 1) * h_gain + h_offset
+        volts = raw_data[first:last + 1] * v_gain - v_offset
+        return times, volts
 
     def get_measurement(self, channel, measurement_type):
         """

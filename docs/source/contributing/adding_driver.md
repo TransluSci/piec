@@ -336,7 +336,7 @@ of the minimum requirements of the instrument: what is the most general
 interface, with some consolidations for convenience where useful? Prefer
 `set_`, `get_`, and `configure_` methods for individual settings, values, and
 groups of settings. Use the guide's `read_` or `run_` conventions when needed;
-existing methods such as `quick_read()` remain part of their current interfaces.
+Keep existing method names where the current category interface defines them.
 
 For things we expect all instruments of that type to have, define common names
 and capability defaults in the base class. For example, `channel = [1]` means

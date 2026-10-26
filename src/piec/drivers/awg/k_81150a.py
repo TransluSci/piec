@@ -303,9 +303,17 @@ class Keysight81150a(Scpi, Awg):
         to nonvolatile memory under that name, prompting to delete a stored
         waveform if that memory is full. Uploading does not select the waveform
         or enable output; call set_arb_waveform separately.
-        args:
+        Transfers signed 16-bit DAC values in an explicit IEEE-488.2 binary block
+        using NORM (big-endian) byte order, and waits for the upload to complete.
+
+        Input values are relative sample levels, not volts. The scaling helper
+        uses the largest absolute value without recentering asymmetric data.
+        Output voltage is configured separately through amplitude, offset and load.
+
+        Args:
             channel (int): The channel to create the arbitrary waveform on
-            data (list or ndarray): The data points of the arbitrary waveform
+            data (list or ndarray): Numeric sample levels with a nonzero absolute
+                peak. Integer and floating-point values are accepted.
             arb_name (str or None): None (default) for temporary data, or a name
                 to save in nonvolatile memory. 'VOLATILE' is reserved; use None.
         """
@@ -316,10 +324,16 @@ class Keysight81150a(Scpi, Awg):
             if arb_name.upper() == "VOLATILE":
                 raise ValueError("VOLATILE is reserved; use arb_name=None for a temporary waveform")
         # Scale the waveform data to the valid range See scale_waveform_data
-        scaled_data = scale_waveform_data(data)  
-        self.instrument.write(":FORM:BORD SWAP")
-
-        self.instrument.write_binary_values(":DATA{}:DAC VOLATILE, ".format(channel), scaled_data, datatype='h') #need h as 2bit bytes see struct module
+        scaled_data = scale_waveform_data(data)
+        self.instrument.write(":FORM:BORD NORM")
+        byte_order = self.instrument.query(":FORM:BORD?").strip().upper()
+        if byte_order != "NORM":
+            raise ValueError(f"Expected NORM byte order for waveform upload, got {byte_order!r}")
+        payload = scaled_data.astype(">i2").tobytes()
+        byte_count = str(len(payload))
+        header = f":DATA{channel}:DAC VOLATILE,#{len(byte_count)}{byte_count}".encode("ascii")
+        self.instrument.write_raw(header + payload + b"\n")
+        self.instrument.query("*OPC?")
         if arb_name is not None:
             #first check if has room to copy
             slots_available = self.instrument.query('DATA:NVOLatile:FREE?').strip() #returns a number corresponding to num_slots_free
@@ -336,8 +350,9 @@ class Keysight81150a(Scpi, Awg):
         Selects the arbitrary waveform to generate on the selected channel.
         arb_name=None (default) selects the uploaded volatile buffer.
         A non-None arb_name selects an existing stored waveform. Selection does
-        not upload, save, or enable output.
-        args:
+        not upload, save, or enable output. Waits for selection to complete.
+
+        Args:
             channel (int): The channel to set the arbitrary waveform on
             arb_name (str or None): None (default) for the temporary waveform,
                 or the name of an existing stored waveform.
@@ -345,6 +360,7 @@ class Keysight81150a(Scpi, Awg):
         name = "VOLATILE" if arb_name is None else arb_name
         self.instrument.write(":FUNC{}:USER {}".format(channel, name)) #makes current USER selected name, but does not switch instrument to it
         self.instrument.write(":FUNC{} USER".format(channel)) #switches instrument to user waveform
+        self.instrument.query("*OPC?")
 
     #trigger and sync functions
     def set_trigger_source(self, channel, trigger_source):
@@ -411,20 +427,22 @@ class Keysight81150a(Scpi, Awg):
             self.instrument.write(":TRIG")
 
     #additional methods
-    def configure_output_amplifier(self, channel: str='1', amplifier_type: str='HIV'):
+    def configure_output_amplifier(self, channel, amplifier_type):
         """
-        This program configures the output amplifier for either maximum bandwith or amplitude. Taken from EKPY.
-        NOTE: If in HIV mode max frequnecy is 50MHz, otherwise you get the full 120MHz
-        NOTE: if sending a sin wave above 120MHz max voltage is 3V_pp
-        args:
-            self (pyvisa.resources.gpib.GPIBInstrument): Keysight 81150A
-            channel (str): Desired Channel to configure accepted params are [1,2]
-            amplifier_type (str): Amplifier Type args = [HIV (MAximum Amplitude), HIB (Maximum Bandwith)]
+        Select the output amplifier and update amplitude and frequency limits.
+
+        Limits depend on the amplifier mode and selected waveform. Both
+        arguments are required.
+
+        Args:
+            channel (int): Output channel, 1 or 2.
+            amplifier_type (str): 'HIV' for maximum amplitude or 'HIB' for
+                maximum bandwidth.
         """
-        if amplifier_type == 'HIV' or amplifier_type == 'hiv':
+        if amplifier_type == 'hiv':
             self.amplitude = (0, 10)
             self.frequency = {'waveform': {'SIN': (1e-6, 5e6), 'SQU': (1e-6, 50e6), 'RAMP': (1e-6, 5e6), 'PULS': (1e-6, 50e6), 'NOIS': None, 'DC': None, 'PATTERN': (1e-6, 50e6), 'USER': (1e-6, 50e6)}}
-        if amplifier_type == 'HIB' or amplifier_type == 'hib':
+        elif amplifier_type == 'hib':
             self.amplitude = (0, 5)
             self.frequency = {'waveform': {'SIN': (1e-6, 240e6), 'SQU': (1e-6, 120e6), 'RAMP': (1e-6, 5e6), 'PULS': (1e-6, 120e6), 'NOIS': None, 'DC': None, 'PATTERN': (1e-6, 120e6), 'USER': (1e-6, 120e6)}}
         self.instrument.write("OUTP{}:ROUT {}".format(channel, amplifier_type))
@@ -444,13 +462,26 @@ class Keysight81150a(Scpi, Awg):
         self.configure_output_amplifier(channel=2, amplifier_type='HIB')
 
     #Helper Functions
-def scale_waveform_data(data: np.array, preserve_vertical_resolution: bool=False) -> np.array:
+def scale_waveform_data(data, preserve_vertical_resolution: bool=False) -> np.array:
         """
-        Helper function that scales values to a max of 8191 in such a way that the abs(max) is 8191
-        and the rest is uniformly scaled. All VALUES SHOULD BE INTEGERS
-        NOTE YOU LOSE RESOLUTION WITH THIS METHOD if preserve_vertical_resoltuion is false, but it preserves the wf shape!
-        shuld print estimated lost in  PP VOLTAGE from resolution
+        Scale relative sample levels into the signed DAC range [-8191, 8191].
+
+        Uses the largest absolute input value and preserves zero and relative
+        levels without recentering the data. By default, prefers an integer scale
+        factor, which may leave some DAC range unused. If no integer factor uses
+        at least half the range, falls back to the full-scale factor. Conversion
+        to integer codes truncates fractional results.
+
+        Args:
+            data (list or ndarray): Nonempty numeric samples with a nonzero peak.
+            preserve_vertical_resolution (bool): If True, use the full-scale
+                factor directly instead of searching for an integer factor.
+
+        Returns:
+            ndarray: Scaled int32 DAC codes. The printed ratio estimates their
+            peak-to-peak span before upload; it does not measure output voltage.
         """
+        data = np.asarray(data)
         max_abs = np.max(abs(data))
         max_inst = 8191
         scale_factor = None
