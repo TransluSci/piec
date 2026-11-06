@@ -24,6 +24,9 @@ class Keithley2400(Scpi, Sourcemeter):
     current = (-1.05, 1.05) # amps
     voltage_compliance = (-210, 210)
     current_compliance = (-1.05, 1.05)
+
+    # Optional capabilities
+    off_mode = ['HIMP', 'NORM', 'ZERO', 'GUAR']
  
 
     # --- Core Instrument State Control ---
@@ -296,3 +299,23 @@ class Keithley2400(Scpi, Sourcemeter):
         voltages = values[0::5]
         currents = values[1::5]
         return pd.DataFrame({'Voltage': voltages, 'Current': currents})
+
+    # Optional methods
+
+    def set_off_mode(self, channel=1, off_mode=None):
+        """
+        Selects the electrical state used when the output is turned off.
+        args:
+            channel (int): The channel to configure. Default is 1.
+            off_mode (str): 'HIMP', 'NORM', 'ZERO', or 'GUAR' (case-insensitive).
+                High impedance opens the output relay when the output is off.
+                Reset restores the instrument's default 'NORM' mode.
+        """
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
+        if off_mode is None:
+            raise ValueError("off_mode must be provided")
+        off_mode = off_mode.upper()
+        if off_mode not in self.off_mode:
+            raise ValueError(f"Invalid off_mode {off_mode!r}. Must be one of {self.off_mode}")
+        self.instrument.write(f":OUTP:SMOD {off_mode}")
