@@ -21,6 +21,7 @@ class Sourcemeter(Instrument):
     current = (None, None)
     voltage_compliance = (None, None)
     current_compliance = (None, None)
+    off_mode = []  # Optional output-off states explicitly supported by a driver.
 
     # --- Core Instrument State Control ---
 
@@ -157,6 +158,14 @@ class Sourcemeter(Instrument):
     # --- Optional Features ---
     # These are features that not all sourcemeters support.
     # If a driver does not override these, they will gracefully skip.
+
+    @optional
+    def set_off_mode(self, channel=1, off_mode=None):
+        """Select an output-off state advertised in ``off_mode``.
+
+        Battery measurements require an implemented HIMP mode, rather than
+        relying on the default off state or this optional no-op.
+        """
 
     @optional
     def run_voltage_sweep(self, start, stop, steps, current_compliance, delay=0):

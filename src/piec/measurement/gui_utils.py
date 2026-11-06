@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from piec.drivers.autodetect import (
     autodetect, _dynamic_driver_scan, _import_class_from_path,
@@ -359,7 +360,10 @@ class MeasurementApp:
         self.plot_frame = ttk.LabelFrame(parent, text="ACQUIRED DATA", padding=5, style="Card.TLabelframe")
         self.plot_frame.grid(row=0, column=0, sticky="nsew") 
         
-        self.fig, self.ax = plt.subplots() 
+        # Embedded canvases belong to this Tk root. pyplot.subplots() creates
+        # an additional Tk figure manager/window before the canvas is embedded.
+        self.fig = Figure()
+        self.ax = self.fig.subplots()
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 

@@ -10,6 +10,12 @@ This directory contains classes for managing discrete waveform generation, measu
     -   `ThreePulsePund`: For PUND (Positive-Up-Negative-Down) switching measurements.
 - **`magneto_transport.py`**: Contains `MagnetoTransport` and `AMR` (Anisotropic Magnetoresistance) classes for controlling magnets, stepper motors, and lock-in amplifiers.
 - **`iv_sweep.py`**: Contains `IVSweep` for sourcemeter voltage sweeps.
+- **`gcd.py`**: Contains `GCD` for constant-current charge/discharge cycling with a sourcemeter. Run `python Measurements/GCD/gcd_virtual.py` for the simulated battery demo; see `docs/source/measurements/gcd.rst` for parameters and outputs.
+  `Measurements/GCD/gcd_GUI.py` and `Measurements/GCD/GCD_testing.ipynb` provide
+  AMR-style GUI and notebook workflows. The GUI includes live plots, Pause/Stop,
+  and shared settings persistence. Both default to `VIRTUAL`, retain physical
+  SMU addresses, and attach a battery/enable accelerated time only for virtual
+  drivers. `GCD.safe_close()` leaves HIMP selected and never resets the SMU.
 - **`amr.py`**: Re-exports `AMR` and magneto-transport helpers.
 
 `Experiment` provides save-directory initialization, metadata collection, and
@@ -18,6 +24,8 @@ independent history snapshots. `DiscreteWaveform`, `IVSweep`, and
 parameters and declare all required instrument attributes in `_instruments`.
 Call `experiment.safe_close()` to reset each declared instrument using its
 `initialize()` method.
+`GCD` overrides this battery-specific cleanup: it retains HIMP output-off mode,
+disables output, and clears the current setpoint without issuing a reset.
 The collector stores instrument IDs and current public parameters, including
 dictionary-valued settings such as plot configuration. Each measurement refreshes
 metadata before saving and records a history snapshot at the end of its run.

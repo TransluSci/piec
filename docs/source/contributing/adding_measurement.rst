@@ -24,13 +24,20 @@ Choosing the right base class
   an oscilloscope to capture the response.
 * Inherit from ``MagnetoTransport`` for experiments involving magnetic fields and transport
   measurements.
-* Inherit from the base ``Measurement`` class directly for experiments that don't fit an
-  existing category.
+* Inherit from the base ``Experiment`` class (``piec.measurement.experiment``)
+  directly for experiments that don't fit an existing category.
 
 Implementing the required methods
 -----------------------------------
 
-Your measurement class must implement:
+Follow the relevant category's workflow. Direct ``Experiment`` subclasses declare
+their required instrument attribute names in ``_instruments`` and initialize
+parameters before calling ``super().__init__(save_dir=...)``. Implement
+``run_experiment()`` to configure instruments, acquire data, disable outputs in a
+``finally`` block, save with the standard CSV helpers, and record history using
+``_update_history()``. See :doc:`../measurements/gcd` for a sourcemeter example.
+
+``DiscreteWaveform`` subclasses implement:
 
 ``configure_awg(self)``
    Build and send the specific waveform or pulse sequence to the AWG. Called automatically

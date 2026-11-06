@@ -1,5 +1,7 @@
 """Generic virtual sourcemeter for testing and simulation."""
 
+import math
+
 from ..virtual_instrument import VirtualInstrument
 from .sourcemeter import Sourcemeter
 
@@ -10,6 +12,8 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
 
     Measurements are produced by the shared external virtual sample.
     """
+
+    off_mode = ['HIMP', 'NORM', 'ZERO', 'GUAR']
 
     def __init__(self, address='VIRTUAL', **kwargs):
         super().__init__(address=address, **kwargs)
@@ -22,6 +26,7 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
             'sense_mode': '2W',
             'voltage_compliance': 210.0,
             'current_compliance': 1.05,
+            'off_mode': 'NORM',
         }
 
     def idn(self):
@@ -30,7 +35,9 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
     def write(self, command):
         cmd = command.upper().strip()
 
-        if ':OUTP' in cmd:
+        if ':OUTP:SMOD' in cmd:
+            self.set_off_mode(off_mode=cmd.split()[-1])
+        elif ':OUTP' in cmd:
             self.state['output_on'] = 'ON' in cmd
         elif ':SOUR:FUNC' in cmd:
             if 'VOLT' in cmd:
@@ -116,6 +123,14 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
         if channel not in self.channel:
             raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
         self.state['output_on'] = on
+
+    def set_off_mode(self, channel=1, off_mode=None):
+        """Store the selected output-off state (relay physics are not modeled)."""
+        if channel not in self.channel:
+            raise ValueError(f"Invalid channel {channel}. Must be one of {self.channel}")
+        if off_mode is None or off_mode.upper() not in self.off_mode:
+            raise ValueError(f'Invalid off_mode {off_mode!r}. Must be one of {self.off_mode}')
+        self.state['off_mode'] = off_mode.upper()
 
     def set_source_function(self, channel=1, source_func=None):
         if channel not in self.channel:
@@ -206,16 +221,36 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
 
     # Measurement Methods
 
+    def advance_time(self, seconds):
+        """Advance a dynamic sample by seconds without wall-clock waiting.
+
+        The attached sample must implement ``advance_time(current, seconds)``.
+        Current is zero with output off; repeated reads never advance time.
+        """
+        if not math.isfinite(seconds) or seconds < 0:
+            raise ValueError('seconds must be finite and nonnegative')
+        advance = getattr(self.sample, 'advance_time', None)
+        if not callable(advance):
+            raise TypeError('The virtual sample does not support advance_time')
+        _, current = self._measured_voltage_current()
+        advance(current, seconds)
+
     def _measured_voltage_current(self):
         """Return the response of the shared external virtual sample."""
+        if not self.state['output_on']:
+            voltage, _ = self.sample.current_response(0.0, 0.0)
+            return float(voltage), 0.0
         if self.state['source_func'] == 'CURR':
             current = self.state['source_current']
             voltage, _ = self.sample.current_response(current, 0.0)
-            voltage = self._clamp(
+            limited_voltage = self._clamp(
                 float(voltage),
                 -self.state['voltage_compliance'],
                 self.state['voltage_compliance'],
             )
+            if limited_voltage != voltage:
+                current, _ = self.sample.voltage_response(limited_voltage, 0.0)
+            voltage = limited_voltage
         else:
             voltage = self.state['source_voltage']
             current, _ = self.sample.voltage_response(voltage, 0.0)

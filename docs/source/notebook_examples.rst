@@ -33,5 +33,7 @@ Notebooks live in the repository's ``Measurements/`` directory:
   hysteresis and PUND measurements.
 * `IV sweeps <https://github.com/TransluSci/piec/blob/master/Measurements/DCIV/IV_sweep_testing.ipynb>`_:
   current-voltage measurements.
+* ``Measurements/GCD/GCD_testing.ipynb``: charge-discharge cycling with physical
+  or virtual sourcemeters (defaults to ``VIRTUAL``); see :doc:`measurements/gcd`.
 
 Review each notebook's instrument addresses and settings before running.

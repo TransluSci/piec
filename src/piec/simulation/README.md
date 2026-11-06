@@ -7,6 +7,14 @@ This module provides tools for simulating various materials and their responses.
 `sample.py` defines `Sample`, the common base for all simulated samples. `Material` and `MagneticSample` inherit from it; `Resistor`, `Dielectric`, and `Ferroelectric` inherit through `Material`.
 
 Every sample accepts a `name` and `parameter_dict`, initialized by `Sample`.
+`battery.py` adds `Battery(Sample)`, a coulomb-counting battery with a linear
+open-circuit voltage curve and series resistance. It supports instantaneous
+`current_response` and `voltage_response` reads; explicit `advance_time(current,
+seconds)` evolves its state of charge. `VirtualSourcemeter.advance_time(seconds)`
+drives this model without waiting. The default ferroelectric sample and static
+resistor/dielectric responses do not model battery cycling. See the GCD
+measurement documentation for a complete virtual example.
+
 Existing default names are preserved, including `None` for an unnamed
 ferroelectric sample. Each sample without a supplied dictionary gets its own
 empty dictionary. Resistor, dielectric, and magnetic models fill missing keys
