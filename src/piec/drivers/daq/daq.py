@@ -9,6 +9,10 @@ import threading
 import time
 from numbers import Integral, Real
 from typing import Union
+
+import pandas as pd
+
+
 class Daq(Instrument):
     """
     All daqs must be able to either acquire or output signals.
@@ -68,15 +72,22 @@ class Daq(Instrument):
         """Read one analog-input value in volts."""
 
     def read_AI_scan(self, ai_channel: Union[int, list[int]], points, rate):
-        """Acquire points per channel at rate samples per channel per second.
-
-        Select one analog input or a nonempty list of inputs. One channel
-        returns a list of voltages. Multiple channels return a dict with
-        values (samples by channels in selection order), time (seconds
-        from scan start), and rate (actual samples per channel per second).
-
+        """
+        Acquire a finite scan of one or more analog inputs.
         Use the device clock where available. A software fallback must
         document its timing and keep channel readings in the same scan.
+        args:
+            ai_channel (int or list[int]): One channel or a nonempty list of
+                unique channels from the model's `ai_channel` capability.
+            points (int): Number of samples to acquire per channel.
+            rate (float): Requested sample rate in Hz per channel.
+        Returns:
+            data (pandas.DataFrame): 'Time' in seconds from scan start,
+                followed by voltage columns in volts. One channel, including
+                a one-element list, returns 'Time', 'Voltage'. Multiple
+                channels return 'Time' followed by 'AI<n>' columns in
+                selection order, where n is the DAQ channel number.
+                data.attrs['sample_rate'] holds the actual per-channel rate in Hz.
         """
 
     def _scan_channels(self, ai_channel):
@@ -87,6 +98,15 @@ class Daq(Instrument):
         if len(set(channels)) != len(channels):
             raise ValueError('Choose unique analog input channels')
         return channels
+
+    @staticmethod
+    def _scan_dataframe(ai_channel, time, values, rate):
+        """Format a scan using the public column and metadata contract."""
+        columns = ['Voltage'] if values.shape[1] == 1 else [f'AI{ch}' for ch in ai_channel]
+        data = pd.DataFrame(values, columns=columns, copy=False)
+        data.insert(0, 'Time', time)
+        data.attrs['sample_rate'] = rate
+        return data
 
     def read_data(self, ai_channel):
         """Read data from a channel using the driver's documented default."""

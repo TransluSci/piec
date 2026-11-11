@@ -281,10 +281,9 @@ class DaqAsOscilloscope(Oscilloscope):
         scan_implementation = getattr(type(self.daq), "read_AI_scan", None)
         if scan_implementation is not None and scan_implementation is not Daq.read_AI_scan:
             try:
-                data = np.array(
-                    self.daq.read_AI_scan(ai_channel=daq_channel, points=num_points, rate=sample_rate)
-                )
-                actual_rate = getattr(self.daq, "_last_ai_scan_rate", sample_rate)
+                scan = self.daq.read_AI_scan(ai_channel=daq_channel, points=num_points, rate=sample_rate)
+                data = scan['Voltage'].to_numpy()
+                actual_rate = scan.attrs.get('sample_rate', sample_rate)
                 actual_duration = len(data) / actual_rate if actual_rate else total_time_target
                 return data, actual_duration
             except Exception as e:

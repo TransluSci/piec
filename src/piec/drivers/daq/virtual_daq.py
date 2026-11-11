@@ -322,7 +322,23 @@ class VirtualDaq(VirtualInstrument, Daq):
         return self.state['ai_values'].get(ai_channel, 0.0)
 
     def read_AI_scan(self, ai_channel, points, rate):
-        """Simulate a common clock and a 10 Hz sine on each selected input."""
+        """
+        Acquire a finite scan of one or more analog inputs.
+        Use the device clock where available. A software fallback must
+        document its timing and keep channel readings in the same scan.
+        args:
+            ai_channel (int or list[int]): One channel or a nonempty list of
+                unique channels from the model's `ai_channel` capability.
+            points (int): Number of samples to acquire per channel.
+            rate (float): Requested sample rate in Hz per channel.
+        Returns:
+            data (pandas.DataFrame): 'Time' in seconds from scan start,
+                followed by voltage columns in volts. One channel, including
+                a one-element list, returns 'Time', 'Voltage'. Multiple
+                channels return 'Time' followed by 'AI<n>' columns in
+                selection order, where n is the DAQ channel number.
+                data.attrs['sample_rate'] holds the actual per-channel rate in Hz.
+        """
         channels = self._scan_channels(ai_channel)
         if isinstance(points, bool) or not isinstance(points, int) or points < 1:
             raise ValueError('points must be a positive integer')
@@ -330,13 +346,9 @@ class VirtualDaq(VirtualInstrument, Daq):
         if not np.isfinite(rate) or rate <= 0 or (low is not None and rate < low) or (high is not None and rate > high):
             raise ValueError(f'Input scan rate must be between {low} and {high}')
         warn_for_large_simulation_points(points * len(channels), label="virtual DAQ scan")
-        self._last_ai_scan_rate = rate
         time = np.arange(points) / rate
         values = np.sin(2 * np.pi * 10 * time)
-        if len(channels) == 1:
-            return values.tolist()
-        return {'values': np.repeat(values[:, None], len(channels), axis=1),
-                'time': time, 'rate': rate}
+        return self._scan_dataframe(channels, time, np.repeat(values[:, None], len(channels), axis=1), rate)
 
     def read_DI(self, dio_channel):
         """

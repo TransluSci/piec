@@ -186,13 +186,13 @@ DAQ analog reads
 ----------------
 
 Use ``read_AI(ai_channel=0)`` for one voltage or
-``read_AI_scan(ai_channel=0, points=1000, rate=1000)`` for a list of voltages.
-A one-element channel list returns the same format. For several channels, pass
-an ordered list such as ``ai_channel=[2, 0]``. The result contains ``values``
-(one row per scan and one column per selected channel), ``time`` in seconds,
-and the actual per-channel ``rate`` in Hz. MCC inputs share a scan clock and
-are sampled in sequence. Use ``ao_channel`` for analog output commands and
-``dio_channel`` for digital line commands.
+``read_AI_scan(ai_channel=0, points=1000, rate=1000)`` for a pandas DataFrame
+with ``Time`` and ``Voltage`` columns. A one-element channel list returns the
+same format. An ordered list such as ``ai_channel=[2, 0]`` returns ``Time``,
+``AI2``, and ``AI0``. Time is in seconds and voltages are in volts. The actual
+per-channel rate in Hz is available at ``data.attrs['sample_rate']``.
+MCC inputs share a scan clock and are sampled in sequence. Use ``ao_channel``
+for analog output commands and ``dio_channel`` for digital line commands.
 
 Arbitrary waveforms
 -------------------
