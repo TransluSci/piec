@@ -15,7 +15,6 @@ try:
         DigitalPortType,
         FunctionType,
         ScanOptions,
-        Status,
         TimerIdleState,
         ULRange,
     )
@@ -26,7 +25,6 @@ except ImportError:
     DigitalPortType = None
     FunctionType = None
     ScanOptions = None
-    Status = None
     TimerIdleState = None
     ULRange = None
 
@@ -247,75 +245,27 @@ class USB1208HS(Digilent, Daq):
         if voltage_range != (-10.0, 10.0):
             raise ValueError(f"{self.model} analog outputs have a fixed +/-10 V range")
 
-    def read_AI(self, channel):
+    def read_AI(self, ai_channel):
         """Read one analog-input sample and return volts."""
-        self._validate_ai_channel(channel)
-        return float(self.ul.v_in(self.board_num, channel, self._ai_ul_range(channel)))
+        self._validate_ai_channel(ai_channel)
+        return float(self.ul.v_in(self.board_num, ai_channel, self._ai_ul_range(ai_channel)))
 
-    def read_AI_scan(self, channel, points, rate):
-        """Acquire a finite, hardware-paced single-channel scan in volts."""
-        self._validate_ai_channel(channel)
-        if not isinstance(points, int) or isinstance(points, bool) or points <= 0:
-            raise ValueError("points must be a positive integer")
-        if not 1 <= rate <= 1_000_000:
-            raise ValueError("rate must be between 1 S/s and 1,000,000 S/s")
 
-        memhandle = self.ul.scaled_win_buf_alloc(points)
-        if not memhandle:
-            raise MemoryError("Universal Library could not allocate the AI scan buffer")
-
-        try:
-            options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
-            actual_rate = self.ul.a_in_scan(
-                self.board_num,
-                channel,
-                channel,
-                points,
-                int(rate),
-                self._ai_ul_range(channel),
-                memhandle,
-                options,
-            )
-            self._last_ai_scan_rate = actual_rate
-
-            timeout_at = time.monotonic() + points / float(rate) + 5.0
-            while True:
-                status, _, _ = self.ul.get_status(
-                    self.board_num, FunctionType.AIFUNCTION
-                )
-                if status == Status.IDLE:
-                    break
-                if time.monotonic() >= timeout_at:
-                    raise TimeoutError(f"{self.model} analog-input scan timed out")
-                time.sleep(0.01)
-
-            values = (c_double * points)()
-            self.ul.scaled_win_buf_to_array(memhandle, values, 0, points)
-            return list(values)
-        finally:
-            try:
-                self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
-            except Exception:
-                # Still release the Windows buffer if UL has already torn down
-                # the completed background operation.
-                pass
-            self.ul.win_buf_free(memhandle)
-
-    def write_AO(self, channel, data):
+    def write_AO(self, ao_channel, data):
         """Write one or more software-paced voltage values to an AO channel."""
-        self._validate_channel(channel, self.ao_channel, "AO")
+        self._validate_channel(ao_channel, self.ao_channel, "AO")
         values = [data] if isinstance(data, (int, float)) else data
         for value in values:
             voltage = float(value)
             if not -10.0 <= voltage <= 10.0:
                 raise ValueError("analog-output values must be within +/-10 V")
             self.ul.v_out(
-                self.board_num, channel, ULRange.BIP10VOLTS, voltage
+                self.board_num, ao_channel, ULRange.BIP10VOLTS, voltage
             )
 
-    def write_waveform_scan(self, channel, data, sample_rate):
+    def write_waveform_scan(self, ao_channel, data, sample_rate):
         """Start continuous hardware-paced waveform output on one AO channel."""
-        self._validate_channel(channel, self.ao_channel, "AO")
+        self._validate_channel(ao_channel, self.ao_channel, "AO")
         values = [float(value) for value in data]
         if not values:
             raise ValueError("data must contain at least one voltage value")
@@ -339,8 +289,8 @@ class USB1208HS(Digilent, Daq):
             )
             actual_rate = self.ul.a_out_scan(
                 self.board_num,
-                channel,
-                channel,
+                ao_channel,
+                ao_channel,
                 len(values),
                 int(sample_rate),
                 ULRange.BIP10VOLTS,
@@ -368,17 +318,17 @@ class USB1208HS(Digilent, Daq):
         port, bit = self._digital_port(dio_channel)
         self.ul.d_config_bit(self.board_num, port, bit, directions[direction])
 
-    def read_DI(self, channel):
+    def read_DI(self, dio_channel):
         """Read one digital I/O line as integer 0 or 1."""
-        self._validate_channel(channel, self.dio_channel, "DIO")
-        port, bit = self._digital_port(channel)
+        self._validate_channel(dio_channel, self.dio_channel, "DIO")
+        port, bit = self._digital_port(dio_channel)
         return int(self.ul.d_bit_in(self.board_num, port, bit))
 
-    def write_DO(self, channel, data):
+    def write_DO(self, dio_channel, data):
         """Write one or more software-paced states to a digital I/O line."""
-        self._validate_channel(channel, self.dio_channel, "DIO")
+        self._validate_channel(dio_channel, self.dio_channel, "DIO")
         values = [data] if isinstance(data, (int, bool)) else data
-        port, bit = self._digital_port(channel)
+        port, bit = self._digital_port(dio_channel)
         for value in values:
             if value not in (0, 1, False, True):
                 raise ValueError("digital-output values must be 0/1 or False/True")
@@ -387,79 +337,76 @@ class USB1208HS(Digilent, Daq):
     # Daq interface adapters. Selection and sample-rate methods retain settings
     # for later reads/writes because Universal Library receives these values at
     # operation time rather than through separate configuration commands.
-    def set_AI_channel(self, channel):
-        self._validate_ai_channel(channel)
-        self._selected_ai_channel = channel
+    def set_AI_channel(self, ai_channel):
+        self._validate_ai_channel(ai_channel)
+        self._selected_ai_channel = ai_channel
 
-    def set_AI_range(self, channel, range):
-        self.set_ai_range(channel, range)
+    def set_AI_range(self, ai_channel, range):
+        self.set_ai_range(ai_channel, range)
 
-    def set_AI_sample_rate(self, channel, sample_rate):
-        self._validate_ai_channel(channel)
+    def set_AI_sample_rate(self, ai_channel, sample_rate):
+        self._validate_ai_channel(ai_channel)
         if not 1 <= sample_rate <= 1_000_000:
             raise ValueError("sample_rate must be between 1 and 1,000,000 S/s")
-        self._ai_sample_rates[channel] = sample_rate
+        self._ai_sample_rates[ai_channel] = sample_rate
 
-    def configure_AI_channel(self, channel, range=None, sample_rate=None):
-        self.set_AI_channel(channel)
+    def configure_AI_channel(self, ai_channel, range=None, sample_rate=None):
+        self.set_AI_channel(ai_channel)
         if range is not None:
-            self.set_AI_range(channel, range)
+            self.set_AI_range(ai_channel, range)
         if sample_rate is not None:
-            self.set_AI_sample_rate(channel, sample_rate)
+            self.set_AI_sample_rate(ai_channel, sample_rate)
 
-    def set_AO_channel(self, channel):
-        self._validate_channel(channel, self.ao_channel, "AO")
-        self._selected_ao_channel = channel
+    def set_AO_channel(self, ao_channel):
+        self._validate_channel(ao_channel, self.ao_channel, "AO")
+        self._selected_ao_channel = ao_channel
 
-    def set_AO_range(self, channel, range):
-        self.set_ao_range(channel, range)
+    def set_AO_range(self, ao_channel, range):
+        self.set_ao_range(ao_channel, range)
 
-    def set_AO_sample_rate(self, channel, sample_rate):
-        self._validate_channel(channel, self.ao_channel, "AO")
+    def set_AO_sample_rate(self, ao_channel, sample_rate):
+        self._validate_channel(ao_channel, self.ao_channel, "AO")
         if not 1 <= sample_rate <= 1_000_000:
             raise ValueError("sample_rate must be between 1 and 1,000,000 S/s")
-        self._ao_sample_rates[channel] = sample_rate
+        self._ao_sample_rates[ao_channel] = sample_rate
 
-    def configure_AO_channel(self, channel, range=None, sample_rate=None):
-        self.set_AO_channel(channel)
+    def configure_AO_channel(self, ao_channel, range=None, sample_rate=None):
+        self.set_AO_channel(ao_channel)
         if range is not None:
-            self.set_AO_range(channel, range)
+            self.set_AO_range(ao_channel, range)
         if sample_rate is not None:
-            self.set_AO_sample_rate(channel, sample_rate)
+            self.set_AO_sample_rate(ao_channel, sample_rate)
 
-    def set_DIO_channel(self, channel):
-        self._validate_channel(channel, self.dio_channel, "DIO")
-        self._selected_dio_channel = channel
+    def set_DIO_channel(self, dio_channel):
+        self._validate_channel(dio_channel, self.dio_channel, "DIO")
+        self._selected_dio_channel = dio_channel
 
-    def set_DIO_mode(self, channel, mode):
-        self.set_dio_direction(channel, mode)
+    def set_DIO_mode(self, dio_channel, mode):
+        self.set_dio_direction(dio_channel, mode)
 
-    def configure_DIO_channel(self, channel, mode, sample_rate=None):
-        self.set_DIO_channel(channel)
-        self.set_DIO_mode(channel, mode)
+    def configure_DIO_channel(self, dio_channel, mode, sample_rate=None):
+        self.set_DIO_channel(dio_channel)
+        self.set_DIO_mode(dio_channel, mode)
         if sample_rate is not None:
-            self.set_DIO_sample_rate(channel, sample_rate)
+            self.set_DIO_sample_rate(dio_channel, sample_rate)
 
-    def set_DI_channel(self, channel):
-        self.set_DIO_channel(channel)
+    def set_DI_channel(self, dio_channel):
+        self.set_DIO_channel(dio_channel)
 
-    def configure_DI_channel(self, channel, sample_rate=None):
-        self.set_DI_channel(channel)
-        self.set_DIO_mode(channel, "I")
+    def configure_DI_channel(self, dio_channel, sample_rate=None):
+        self.set_DI_channel(dio_channel)
+        self.set_DIO_mode(dio_channel, "I")
         if sample_rate is not None:
-            self.set_DI_sample_rate(channel, sample_rate)
+            self.set_DI_sample_rate(dio_channel, sample_rate)
 
-    def set_DO_channel(self, channel):
-        self.set_DIO_channel(channel)
+    def set_DO_channel(self, dio_channel):
+        self.set_DIO_channel(dio_channel)
 
-    def configure_DO_channel(self, channel, sample_rate=None):
-        self.set_DO_channel(channel)
-        self.set_DIO_mode(channel, "O")
+    def configure_DO_channel(self, dio_channel, sample_rate=None):
+        self.set_DO_channel(dio_channel)
+        self.set_DIO_mode(dio_channel, "O")
         if sample_rate is not None:
-            self.set_DO_sample_rate(channel, sample_rate)
+            self.set_DO_sample_rate(dio_channel, sample_rate)
 
-    def quick_read(self):
-        return self.read_AI(self._selected_ai_channel)
-
-    def read_data(self, channel):
-        return self.read_AI(channel)
+    def read_data(self, ai_channel):
+        return self.read_AI(ai_channel)

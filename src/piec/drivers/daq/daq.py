@@ -8,6 +8,7 @@ import math
 import threading
 import time
 from numbers import Integral, Real
+from typing import Union
 class Daq(Instrument):
     """
     All daqs must be able to either acquire or output signals.
@@ -51,54 +52,63 @@ class Daq(Instrument):
     def set_input_mode(self, ai_mode):
         """Set the analog-input wiring mode when it is configurable."""
 
-    def set_AI_channel(self, channel):
+    def set_AI_channel(self, ai_channel):
         """Select an analog-input channel."""
 
-    def set_AI_range(self, channel, range):
+    def set_AI_range(self, ai_channel, range):
         """Set or validate an analog-input voltage range."""
 
-    def set_AI_sample_rate(self, channel, sample_rate):
+    def set_AI_sample_rate(self, ai_channel, sample_rate):
         """Store/configure the hardware-paced input sample rate."""
 
-    def configure_AI_channel(self, channel, range=None, sample_rate=None):
+    def configure_AI_channel(self, ai_channel, range=None, sample_rate=None):
         """Configure an analog-input channel using supplied settings."""
 
-    def read_AI(self, channel):
+    def read_AI(self, ai_channel):
         """Read one analog-input value in volts."""
 
-    def read_AI_scan(self, channel, points, rate):
-        """Acquire a finite analog-input scan.
+    def read_AI_scan(self, ai_channel: Union[int, list[int]], points, rate):
+        """Acquire points per channel at rate samples per channel per second.
 
-        Drivers with hardware-paced acquisition should use the device clock.
-        Drivers without hardware scanning must implement a software-paced
-        fallback using repeated analog-input reads. A software fallback must
-        document that its requested sample rate is not timing-guaranteed.
+        Select one analog input or a nonempty list of inputs. One channel
+        returns a list of voltages. Multiple channels return a dict with
+        values (samples by channels in selection order), time (seconds
+        from scan start), and rate (actual samples per channel per second).
+
+        Use the device clock where available. A software fallback must
+        document its timing and keep channel readings in the same scan.
         """
 
-    def quick_read(self):
-        """Read the currently selected/default analog-input channel."""
+    def _scan_channels(self, ai_channel):
+        channels = ai_channel if isinstance(ai_channel, list) else [ai_channel]
+        if not channels or any(isinstance(ch, bool) or not isinstance(ch, Integral)
+                               or ch not in self.ai_channel for ch in channels):
+            raise ValueError(f'Choose analog input channels from {self.ai_channel}')
+        if len(set(channels)) != len(channels):
+            raise ValueError('Choose unique analog input channels')
+        return channels
 
-    def read_data(self, channel):
+    def read_data(self, ai_channel):
         """Read data from a channel using the driver's documented default."""
 
     # Analog Output
-    def set_AO_channel(self, channel):
+    def set_AO_channel(self, ao_channel):
         """Select an analog-output channel."""
 
-    def set_AO_range(self, channel, range):
+    def set_AO_range(self, ao_channel, range):
         """Set or validate an analog-output voltage range."""
 
-    def set_AO_sample_rate(self, channel, sample_rate):
+    def set_AO_sample_rate(self, ao_channel, sample_rate):
         """Store/configure the hardware-paced output sample rate."""
 
-    def configure_AO_channel(self, channel, range=None, sample_rate=None):
+    def configure_AO_channel(self, ao_channel, range=None, sample_rate=None):
         """Configure an analog-output channel using supplied settings."""
 
-    def write_AO(self, channel, data):
+    def write_AO(self, ao_channel, data):
         """Write one or more voltage values to an analog-output channel."""
 
     @optional
-    def output(self, channel, on=True):
+    def output(self, ao_channel, on=True):
         """Explicitly enable/disable an output when hardware supports it.
 
         Many DAQs have no separate output switch: a write immediately changes
@@ -107,43 +117,43 @@ class Daq(Instrument):
         """
 
     # Digital Input/Output
-    def set_DIO_channel(self, channel):
+    def set_DIO_channel(self, dio_channel):
         """Select a digital I/O line."""
 
-    def set_DIO_mode(self, channel, mode):
+    def set_DIO_mode(self, dio_channel, mode):
         """Configure a digital I/O line as input or output."""
 
     @optional
-    def set_DIO_sample_rate(self, channel, sample_rate):
+    def set_DIO_sample_rate(self, dio_channel, sample_rate):
         """Configure a hardware-paced digital I/O sample rate."""
 
-    def configure_DIO_channel(self, channel, mode, sample_rate=None):
+    def configure_DIO_channel(self, dio_channel, mode, sample_rate=None):
         """Configure a digital I/O line using supplied settings."""
 
-    def set_DI_channel(self, channel):
+    def set_DI_channel(self, dio_channel):
         """Select a digital line for input."""
 
     @optional
-    def set_DI_sample_rate(self, channel, sample_rate):
+    def set_DI_sample_rate(self, dio_channel, sample_rate):
         """Configure a hardware-paced digital-input sample rate."""
 
-    def configure_DI_channel(self, channel, sample_rate=None):
+    def configure_DI_channel(self, dio_channel, sample_rate=None):
         """Configure a digital line as input."""
 
-    def read_DI(self, channel):
+    def read_DI(self, dio_channel):
         """Read one digital line as 0 or 1."""
 
-    def set_DO_channel(self, channel):
+    def set_DO_channel(self, dio_channel):
         """Select a digital line for output."""
 
     @optional
-    def set_DO_sample_rate(self, channel, sample_rate):
+    def set_DO_sample_rate(self, dio_channel, sample_rate):
         """Configure a hardware-paced digital-output sample rate."""
 
-    def configure_DO_channel(self, channel, sample_rate=None):
+    def configure_DO_channel(self, dio_channel, sample_rate=None):
         """Configure a digital line as output."""
 
-    def write_DO(self, channel, data):
+    def write_DO(self, dio_channel, data):
         """Write one or more Boolean states to a digital-output line."""
 
     def get_trigger_pulse_capabilities(self):

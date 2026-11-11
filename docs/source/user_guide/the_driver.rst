@@ -182,6 +182,18 @@ changes hardware settings, so configure the scope again before reading.
 Use ``get_data()`` for scope waveform reads; ``quick_read()`` is no longer part
 of the oscilloscope interface.
 
+DAQ analog reads
+----------------
+
+Use ``read_AI(ai_channel=0)`` for one voltage or
+``read_AI_scan(ai_channel=0, points=1000, rate=1000)`` for a list of voltages.
+A one-element channel list returns the same format. For several channels, pass
+an ordered list such as ``ai_channel=[2, 0]``. The result contains ``values``
+(one row per scan and one column per selected channel), ``time`` in seconds,
+and the actual per-channel ``rate`` in Hz. MCC inputs share a scan clock and
+are sampled in sequence. Use ``ao_channel`` for analog output commands and
+``dio_channel`` for digital line commands.
+
 Arbitrary waveforms
 -------------------
 

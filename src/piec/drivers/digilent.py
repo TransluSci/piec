@@ -8,6 +8,11 @@ identification, and utility framework for all UL-based devices.
 This driver requires the 'mcculw' library to be installed.
 """
 
+from ctypes import c_double
+import time
+
+import numpy as np
+
 from .instrument import Instrument
 
 
@@ -17,7 +22,7 @@ from .instrument import Instrument
 # error on initialization.
 try:
     from mcculw import ul
-    from mcculw.enums import BoardInfo, ErrorCode
+    from mcculw.enums import BoardInfo, ErrorCode, FunctionType, ScanOptions, Status
     from mcculw.ul import ULError
     from mcculw.device_info import DaqDeviceInfo
     mcc_ul_imported = True
@@ -27,6 +32,9 @@ except:
     ul = None
     BoardInfo = None
     ErrorCode = None
+    FunctionType = None
+    ScanOptions = None
+    Status = None
     ULError = None
     DaqDeviceInfo = None
     mcc_ul_imported = False
@@ -286,13 +294,83 @@ class Digilent(Instrument):
 
     # --- Hardware Background Scan (New) ---
 
-    def write_waveform_scan(self, channel, data, sample_rate):
+    def read_AI_scan(self, ai_channel, points, rate):
+        """Read one or more analog inputs using the shared device clock."""
+        scan = self._scan_analog_inputs(ai_channel, points, rate)
+        if scan['values'].shape[1] == 1:
+            return scan['values'][:, 0].tolist()
+        return scan
+
+    def _scan_analog_inputs(self, ai_channel, points, rate, cancel_event=None, on_chunk=None):
+        """Scan a contiguous MCC input span and select columns in request order."""
+        channels = self._scan_channels(ai_channel)
+        low, high = min(channels), max(channels)
+        width = high - low + 1
+        if isinstance(points, bool) or not isinstance(points, int) or points < 1:
+            raise ValueError('points must be a positive integer')
+        minimum_rate, aggregate_rate = self.ai_sample_rate
+        if not minimum_rate <= rate <= aggregate_rate / width:
+            raise ValueError('Requested rate exceeds the input scan limits')
+        ranges = [self._ai_ul_range(ch) for ch in range(low, high + 1)]
+        if any(value != ranges[0] for value in ranges):
+            raise ValueError('All inputs in the scan span must use the same range')
+        total = points * width
+        if total > 20_000_000:
+            raise ValueError('Scan exceeds 20 million buffered samples; reduce points')
+
+        if cancel_event is not None and cancel_event.is_set():
+            return {'values': np.empty((0, len(channels))), 'time': np.empty(0), 'rate': rate}
+        values = np.empty((points, len(channels)))
+        handle = self.ul.scaled_win_buf_alloc(total)
+        if not handle:
+            raise MemoryError('Could not allocate analog input scan buffer')
+        columns = np.asarray(channels) - low
+        options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
+        transferred = 0
+        idle = False
+        try:
+            actual_rate = self.ul.a_in_scan(
+                self.board_num, low, high, total, int(rate), ranges[0], handle, options)
+            self._last_ai_scan_rate = actual_rate
+            deadline = time.monotonic() + points / actual_rate + 5.0
+            while True:
+                status, count, _ = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                idle = status == Status.IDLE
+                cancelled = cancel_event is not None and cancel_event.is_set()
+                if idle or cancelled or on_chunk is not None:
+                    available = min(total, count) // width
+                    if available > transferred:
+                        length = (available - transferred) * width
+                        buffer = (c_double * length)()
+                        self.ul.scaled_win_buf_to_array(handle, buffer, transferred * width, length)
+                        block = values[transferred:available]
+                        block[:] = np.asarray(buffer).reshape(-1, width)[:, columns]
+                        if on_chunk is not None:
+                            times = np.arange(transferred, available) / actual_rate
+                            on_chunk({'values': block, 'time': times, 'rate': actual_rate})
+                        transferred = available
+                if idle or cancelled:
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Analog input scan timed out')
+                time.sleep(0.01)
+            return {'values': values[:transferred], 'time': np.arange(transferred) / actual_rate,
+                    'rate': actual_rate}
+        finally:
+            try:
+                self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
+            except Exception:
+                if not idle:
+                    raise
+            self.ul.win_buf_free(handle)
+
+    def write_waveform_scan(self, ao_channel, data, sample_rate):
         """
         Calculates and outputs a waveform using hardware background scan.
         Requires 'mcculw' and a supported board.
         
         args:
-            channel (int): Output channel.
+            ao_channel (int): Output channel.
             data (list/array): Waveform points.
             sample_rate (int): Output rate in Hz.
         """
@@ -338,10 +416,10 @@ class Digilent(Instrument):
         try:
             # Start Scan
             # Note: channel argument is start_chan, end_chan
-            self.board.a_out_scan(self.board_num, channel, channel, 
+            self.board.a_out_scan(self.board_num, ao_channel, ao_channel,
                                   num_points, sample_rate, current_range, 
                                   memhandle, options)
-            print(f"Digilent: Started background scan on Ch {channel}")
+            print(f"Digilent: Started background scan on Ch {ao_channel}")
         except Exception as e:
             print(f"Digilent: Error starting scan: {e}")
             # Clean up memory if failed

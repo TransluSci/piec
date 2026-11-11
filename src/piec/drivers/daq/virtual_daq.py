@@ -122,32 +122,32 @@ class VirtualDaq(VirtualInstrument, Daq):
 
     # --- Analog Input Methods ---
 
-    def set_AI_channel(self, channel):
+    def set_AI_channel(self, ai_channel):
         """
         Sets the Analog Input channel for data acquisition.
         """
-        self.state['ai_channel'] = channel
+        self.state['ai_channel'] = ai_channel
 
-    def set_AI_range(self, channel, range):
+    def set_AI_range(self, ai_channel, range):
         """
         Sets the range for the Analog Input channel.
         """
-        self.state['ai_range'][channel] = range
+        self.state['ai_range'][ai_channel] = range
 
-    def set_AI_sample_rate(self, channel, sample_rate):
+    def set_AI_sample_rate(self, ai_channel, sample_rate):
         """
         Sets the sample rate for the Analog Input channel.
         """
-        self.state['ai_sample_rate'][channel] = sample_rate
+        self.state['ai_sample_rate'][ai_channel] = sample_rate
 
-    def configure_AI_channel(self, channel, range=None, sample_rate=None):
+    def configure_AI_channel(self, ai_channel, range=None, sample_rate=None):
         """
         Configures the Analog Input channel.
         """
         if range is not None:
-            self.set_AI_range(channel, range)
+            self.set_AI_range(ai_channel, range)
         if sample_rate is not None:
-            self.set_AI_sample_rate(channel, sample_rate)
+            self.set_AI_sample_rate(ai_channel, sample_rate)
 
     def set_input_mode(self, ai_mode):
         """
@@ -167,125 +167,125 @@ class VirtualDaq(VirtualInstrument, Daq):
 
     # --- Analog Output Methods ---
 
-    def set_AO_channel(self, channel):
+    def set_AO_channel(self, ao_channel):
         """
         Sets the Analog Output channel.
         """
-        self.state['ao_channel'] = channel
+        self.state['ao_channel'] = ao_channel
 
-    def set_AO_range(self, channel, range):
+    def set_AO_range(self, ao_channel, range):
         """
         Sets the range for the Analog Output channel.
         """
-        self.state['ao_range'][channel] = range
+        self.state['ao_range'][ao_channel] = range
 
-    def set_AO_sample_rate(self, channel, sample_rate):
+    def set_AO_sample_rate(self, ao_channel, sample_rate):
         """
         Sets the sample rate for the Analog Output channel.
         """
-        self.state['ao_sample_rate'][channel] = sample_rate
+        self.state['ao_sample_rate'][ao_channel] = sample_rate
 
-    def configure_AO_channel(self, channel, range=None, sample_rate=None):
+    def configure_AO_channel(self, ao_channel, range=None, sample_rate=None):
         """
         Configures the Analog Output channel.
         """
         if range is not None:
-            self.set_AO_range(channel, range)
+            self.set_AO_range(ao_channel, range)
         if sample_rate is not None:
-            self.set_AO_sample_rate(channel, sample_rate)
+            self.set_AO_sample_rate(ao_channel, sample_rate)
 
-    def write_AO(self, channel, data):
+    def write_AO(self, ao_channel, data):
         """
         Writes data to the Analog Output channel.
 
         args:
-            channel (int): The channel to write to (0-1).
+            ao_channel (int): The channel to write to (0-1).
             data (float or list): The voltage(s) to output.
         """
         if isinstance(data, (int, float)):
-            self.state['ao_values'][channel] = float(data)
+            self.state['ao_values'][ao_channel] = float(data)
         elif len(data) > 0:
-            self.state['ao_values'][channel] = float(data[-1])
+            self.state['ao_values'][ao_channel] = float(data[-1])
 
     # --- Digital I/O Methods ---
 
-    def set_DI_channel(self, channel):
+    def set_DI_channel(self, dio_channel):
         """
         Sets the Digital Input channel.
         """
-        self.state['di_channel'] = channel
+        self.state['di_channel'] = dio_channel
 
-    def set_DI_sample_rate(self, channel, sample_rate):
+    def set_DI_sample_rate(self, dio_channel, sample_rate):
         """
         Sets the sample rate for the Digital Input channel.
         """
         pass
 
-    def configure_DI_channel(self, channel, sample_rate=None):
+    def configure_DI_channel(self, dio_channel, sample_rate=None):
         """
         Configures the Digital Input channel.
         """
         if sample_rate is not None:
-            self.set_DI_sample_rate(channel, sample_rate)
+            self.set_DI_sample_rate(dio_channel, sample_rate)
 
-    def set_DO_channel(self, channel):
+    def set_DO_channel(self, dio_channel):
         """
         Sets the Digital Output channel.
         """
-        self.state['do_channel'] = channel
+        self.state['do_channel'] = dio_channel
 
-    def set_DO_sample_rate(self, channel, sample_rate):
+    def set_DO_sample_rate(self, dio_channel, sample_rate):
         """
         Sets the sample rate for the Digital Output channel.
         """
         pass
 
-    def configure_DO_channel(self, channel, sample_rate=None):
+    def configure_DO_channel(self, dio_channel, sample_rate=None):
         """
         Configures the Digital Output channel.
         """
         if sample_rate is not None:
-            self.set_DO_sample_rate(channel, sample_rate)
+            self.set_DO_sample_rate(dio_channel, sample_rate)
 
-    def write_DO(self, channel, data):
+    def write_DO(self, dio_channel, data):
         """
         Writes data to the Digital Output channel.
 
         args:
-            channel (int): The channel to write to.
+            dio_channel (int): The channel to write to.
             data (int/bool or list): 1/True for High, 0/False for Low.
         """
         if isinstance(data, (int, bool)):
-            self.state['dio_values'][channel] = 1 if data else 0
+            self.state['dio_values'][dio_channel] = 1 if data else 0
         elif len(data) > 0:
-            self.state['dio_values'][channel] = 1 if data[-1] else 0
+            self.state['dio_values'][dio_channel] = 1 if data[-1] else 0
 
-    def set_DIO_channel(self, channel):
+    def set_DIO_channel(self, dio_channel):
         """
         Sets the Digital I/O channel.
         """
-        self.state['dio_channel'] = channel
+        self.state['dio_channel'] = dio_channel
 
-    def set_DIO_mode(self, channel, mode):
+    def set_DIO_mode(self, dio_channel, mode):
         """
         Sets the direction for the Digital I/O channel.
         """
-        self.state['dio_direction'][channel] = mode
+        self.state['dio_direction'][dio_channel] = mode
 
-    def set_DIO_sample_rate(self, channel, sample_rate):
+    def set_DIO_sample_rate(self, dio_channel, sample_rate):
         """
         Sets the sample rate for the Digital I/O channel.
         """
         pass
 
-    def configure_DIO_channel(self, channel, mode=None, sample_rate=None):
+    def configure_DIO_channel(self, dio_channel, mode=None, sample_rate=None):
         """
         Configures the Digital I/O channel.
         """
         if mode is not None:
-            self.set_DIO_mode(channel, mode)
+            self.set_DIO_mode(dio_channel, mode)
         if sample_rate is not None:
-            self.set_DIO_sample_rate(channel, sample_rate)
+            self.set_DIO_sample_rate(dio_channel, sample_rate)
 
     def set_dio_direction(self, dio_channel, dio_direction):
         """
@@ -299,71 +299,62 @@ class VirtualDaq(VirtualInstrument, Daq):
 
     # --- Data Acquisition Methods ---
 
-    def quick_read(self):
-        """
-        Returns a simulated single-point voltage reading from channel 0.
-
-        Returns:
-            float: Simulated voltage (0.0V).
-        """
-        return 0.0
-
-    def read_data(self, channel):
+    def read_data(self, ai_channel):
         """
         Reads data from the specified channel.
 
         Returns:
             float or int: Simulated value (0.0 for AI, 0 for DI).
         """
-        if channel in self.state['ai_values']:
-            return self.state['ai_values'][channel]
+        if ai_channel in self.state['ai_values']:
+            return self.state['ai_values'][ai_channel]
         return 0
 
-    def read_AI(self, channel):
+    def read_AI(self, ai_channel):
         """
         Reads a simulated voltage from the specified Analog Input channel.
 
         args:
-            channel (int): The channel to read from.
+            ai_channel (int): The channel to read from.
         returns:
             float: Simulated voltage (0.0V).
         """
-        return self.state['ai_values'].get(channel, 0.0)
+        return self.state['ai_values'].get(ai_channel, 0.0)
 
-    def read_AI_scan(self, channel, points, rate):
-        """
-        Reads a simulated stream of Analog Input data (hardware-paced).
+    def read_AI_scan(self, ai_channel, points, rate):
+        """Simulate a common clock and a 10 Hz sine on each selected input."""
+        channels = self._scan_channels(ai_channel)
+        if isinstance(points, bool) or not isinstance(points, int) or points < 1:
+            raise ValueError('points must be a positive integer')
+        low, high = self.ai_sample_rate
+        if not np.isfinite(rate) or rate <= 0 or (low is not None and rate < low) or (high is not None and rate > high):
+            raise ValueError(f'Input scan rate must be between {low} and {high}')
+        warn_for_large_simulation_points(points * len(channels), label="virtual DAQ scan")
+        self._last_ai_scan_rate = rate
+        time = np.arange(points) / rate
+        values = np.sin(2 * np.pi * 10 * time)
+        if len(channels) == 1:
+            return values.tolist()
+        return {'values': np.repeat(values[:, None], len(channels), axis=1),
+                'time': time, 'rate': rate}
 
-        Generates a 10 Hz sine wave for testing.
-
-        args:
-            channel (int): The channel to read from.
-            points (int): Number of points to acquire.
-            rate (float): Sample rate in Hz.
-        returns:
-            list: Simulated voltage data.
-        """
-        warn_for_large_simulation_points(points, label="virtual DAQ scan")
-        t = np.linspace(0, points / rate, points)
-        return (np.sin(2 * np.pi * 10 * t)).tolist()
-
-    def read_DI(self, channel):
+    def read_DI(self, dio_channel):
         """
         Reads the state of a simulated digital input channel.
 
         args:
-            channel (int): The channel to read.
+            dio_channel (int): The channel to read.
         returns:
             int: Simulated value (0).
         """
-        return self.state['dio_values'].get(channel, 0)
+        return self.state['dio_values'].get(dio_channel, 0)
 
-    def output(self, channel, on=True):
+    def output(self, ao_channel, on=True):
         """
         Enables or disables output on a channel (no-op in virtual mode).
 
         args:
-            channel (int): The channel.
+            ao_channel (int): The channel.
             on (bool): True to enable, False to disable.
         """
         pass

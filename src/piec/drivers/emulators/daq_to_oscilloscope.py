@@ -143,7 +143,7 @@ class DaqAsOscilloscope(Oscilloscope):
         
         try:
             self.daq.configure_AI_channel(
-                daq_channel,
+                ai_channel=daq_channel,
                 range=voltage_range,
                 sample_rate=sample_rate,
             )
@@ -282,7 +282,7 @@ class DaqAsOscilloscope(Oscilloscope):
         if scan_implementation is not None and scan_implementation is not Daq.read_AI_scan:
             try:
                 data = np.array(
-                    self.daq.read_AI_scan(daq_channel, num_points, sample_rate)
+                    self.daq.read_AI_scan(ai_channel=daq_channel, points=num_points, rate=sample_rate)
                 )
                 actual_rate = getattr(self.daq, "_last_ai_scan_rate", sample_rate)
                 actual_duration = len(data) / actual_rate if actual_rate else total_time_target
@@ -310,7 +310,7 @@ class DaqAsOscilloscope(Oscilloscope):
         
         for _ in range(num_points):
             try:
-                val = read_func(daq_channel)
+                val = read_func(ai_channel=daq_channel)
                 data.append(val)
             except Exception as e:
                 print(f"Acquisition error: {e}")
