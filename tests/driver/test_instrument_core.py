@@ -7,7 +7,8 @@ from __future__ import annotations
 import pytest
 
 from piec.drivers import digilent as digilent_module
-from piec.drivers.digilent import Digilent
+from piec.drivers import mcc as mcc_module
+from piec.drivers.mcc import MCC
 import piec.drivers.instrument as instrument_module
 from piec.drivers.instrument import AutoCheckMeta, Instrument
 
@@ -64,14 +65,21 @@ def test_physical_open_failure_raises_connection_error(monkeypatch):
     assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
-def test_digilent_address_validation(monkeypatch):
-    """Ensure Digilent drivers validate MCC board numbers and handle missing dependencies."""
-    monkeypatch.setattr(digilent_module, "mcc_ul_imported", False)
-    monkeypatch.setattr(digilent_module, "ul", None)
+def test_mcc_address_validation(monkeypatch):
+    """Ensure MCC drivers validate MCC board numbers and handle missing dependencies."""
+    monkeypatch.setattr(mcc_module, "mcc_ul_imported", False)
+    monkeypatch.setattr(mcc_module, "ul", None)
     with pytest.raises(ImportError, match="mcculw"):
-        Digilent(address="VIRTUAL")
+        MCC(address="VIRTUAL")
 
-    monkeypatch.setattr(digilent_module, "mcc_ul_imported", True)
-    monkeypatch.setattr(digilent_module, "ul", object())
+    monkeypatch.setattr(mcc_module, "mcc_ul_imported", True)
+    monkeypatch.setattr(mcc_module, "ul", object())
     with pytest.raises(ValueError, match="MCC Board Number"):
-        Digilent(address="VIRTUAL")
+        MCC(address="VIRTUAL")
+
+
+def test_digilent_deprecation_alias():
+    """Ensure piec.drivers.digilent.Digilent emits a DeprecationWarning and aliases MCC."""
+    with pytest.deprecated_call(match="piec.drivers.digilent.Digilent"):
+        alias_cls = getattr(digilent_module, "Digilent")
+    assert alias_cls is MCC

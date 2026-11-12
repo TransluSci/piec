@@ -1,0 +1,284 @@
+"""
+This is the parent class for Measurement Computing (MCC, formerly Digilent) DAQ
+devices that use the Measurement Computing Universal Library (UL).
+
+It inherits from Instrument and provides a common connection,
+identification, and utility framework for all UL-based devices.
+
+This driver requires the 'mcculw' library to be installed.
+"""
+
+from .instrument import Instrument
+
+
+# --- Import the actual MCC Universal Library ---
+# We try to import the library. If it fails, we set the
+# library objects to None and the driver will raise an
+# error on initialization.
+try:
+    from mcculw import ul
+    from mcculw.enums import BoardInfo, ErrorCode
+    from mcculw.ul import ULError
+    from mcculw.device_info import DaqDeviceInfo
+    mcc_ul_imported = True
+except:
+    print("Warning: 'mcculw' library not found.")
+    print("The MCC driver cannot be used without this library.")
+    ul = None
+    BoardInfo = None
+    ErrorCode = None
+    ULError = None
+    DaqDeviceInfo = None
+    mcc_ul_imported = False
+
+
+class MCC(Instrument):
+    """
+    Parent class for MCC (Measurement Computing) instruments using the Universal Library.
+    
+    This class handles the connection and board identification,
+    replacing the VISA/PiecManager logic from the Scpi class.
+    
+    The 'address' for this class is the MCC Board Number (e.g., "0").
+    """
+    
+    def __init__(self, address, check_params=False, verbose=False, **kwargs):
+        """
+        Connects to the MCC DAQ device using its Board Number.
+        
+        Args:
+            address (str or int): The MCC Board Number (e.g., "0" or 0).
+            check_params (bool): Enable automatic parameter validation.
+            verbose (bool): If True, prints status messages.
+            **kwargs: Reserved for device-specific connection options.
+        """
+        if not mcc_ul_imported or ul is None:
+            raise ImportError(
+                "Cannot connect to an MCC device because the "
+                "'mcculw' library is not installed."
+            )
+
+        self._initialize_common_state(
+            check_params=check_params,
+            verbose=verbose,
+        )
+
+        try:
+            # The 'address' is the board number, not a VISA string
+            self.board_num = int(address)
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"Invalid address '{address}'. Must be an MCC Board Number "
+                "(e.g., '0')."
+            )
+        
+        # Store the (real) UL object and enums
+        self.board = ul
+        self.ul = ul  # Alias for child classes (e.g. USB231)
+        self.ul_error = ULError
+        self.error_codes = ErrorCode
+        
+        # Default capabilities
+        self.ao_info = None
+        self.max_rate = 5000 # Default safe rate for USB-231 (5kS/s)
+        
+        if self.verbose:
+            print(f"MCC: Connecting to board {self.board_num}...")
+        try:
+            # Check if board exists and get its name (this acts as a connection check)
+            self.dev_name = self.board.get_board_name(self.board_num)
+            print(f"MCC: Connected to {self.dev_name} on board {self.board_num}.")
+
+            # Fetch Device Info
+            if DaqDeviceInfo:
+                try:
+                    dev_info = DaqDeviceInfo(self.board_num)
+                    if dev_info.supports_analog_output:
+                        self.ao_info = dev_info.get_ao_info()
+                except Exception as e:
+                    if self.verbose:
+                        print(f"MCC: Could not fetch AO info: {e}")
+
+        except ULError as e:
+            raise ConnectionError(
+                f"Failed to connect to MCC board {self.board_num}. Error: {e}"
+            ) from e
+
+    def idn(self):
+        """
+        Returns an identification string from the Universal Library.
+
+        This is the UL-equivalent of the SCPI ``*IDN?`` command.
+
+        Returns:
+            str: Identification string in ``Manufacturer,Model,Serial,Version`` format.
+        """
+        try:
+            # Re-fetch the name in case it changed (unlikely, but good practice)
+            dev_name = self.board.get_board_name(self.board_num)
+            # Serial number retrieval is not a standard UL call, so
+            # we provide a placeholder.
+            serial = "s/n_unknown"
+            return f"Measurement_Computing,{dev_name},{serial},ver_UL"
+        except self.ul_error as e:
+            print(f"MCC: Could not get IDN. Error: {e}")
+            return "Measurement_Computing,Unknown_Device,s/n_unknown,ver_UL_error"
+
+    # --- Base Universal Library Commands ---
+    # These mirror the SCPI command set for a consistent interface
+    # across all instrument types.
+
+    def reset(self):
+        """
+        Resets the DAQ device to a known idle state.
+
+        This is the UL-equivalent of the SCPI ``*RST`` command.
+        Stops any active background scans and re-initialises the
+        internal state tracker.
+        """
+        # Stop any running background operations
+        try:
+            from mcculw.enums import FunctionType
+            self.board.stop_background(self.board_num, FunctionType.AIFUNCTION)
+        except Exception:
+            pass
+        try:
+            from mcculw.enums import FunctionType
+            self.board.stop_background(self.board_num, FunctionType.AOFUNCTION)
+        except Exception:
+            pass
+
+        self._initialize_state()
+        if self.verbose:
+            print(f"MCC: Reset board {self.board_num}.")
+
+    def clear(self):
+        """
+        Clears the device's error / status state.
+
+        This is the UL-equivalent of the SCPI ``*CLS`` command.
+        The MCC Universal Library does not maintain a persistent status
+        register, so this is effectively a no-op.
+        """
+        if self.verbose:
+            print("MCC: Clear (no-op for UL — no status register).")
+
+    def error(self):
+        """
+        Queries the device's most recent error status or message.
+
+        This is the UL-equivalent of the SCPI ``*ESR?`` / ``SYST:ERR?`` query.
+        
+        Returns:
+            str: The error message.
+        """
+        try:
+            message = self.board.get_err_msg(self.error_codes.NOERRORS)
+            return message
+        except self.ul_error as e:
+            return f"Failed to get error message. Error: {e}"
+        except AttributeError:
+            # This handles the case where the ul object itself is missing the function
+            return "Error: ul.get_err_msg function not found. Is 'mcculw' installed correctly?"
+
+    def wait(self):
+        """
+        Blocks until all pending background operations have completed.
+
+        This is the UL-equivalent of the SCPI ``*WAI`` command.
+        Polls the AI and AO background scan status until both are idle.
+        """
+        import time
+        try:
+            from mcculw.enums import FunctionType, Status
+        except ImportError:
+            return
+
+        timeout = time.time() + 30.0  # 30 second safety timeout
+        while time.time() < timeout:
+            try:
+                ai_status, _, _ = self.board.get_status(self.board_num, FunctionType.AIFUNCTION)
+                ao_status, _, _ = self.board.get_status(self.board_num, FunctionType.AOFUNCTION)
+                if ai_status == Status.IDLE and ao_status == Status.IDLE:
+                    return
+            except Exception:
+                return  # If status query fails, assume idle
+            time.sleep(0.01)
+
+        print("MCC: wait() timed out after 30 seconds.")
+
+    def self_test(self):
+        """
+        Runs a basic connectivity self-test.
+
+        This is the UL-equivalent of the SCPI ``*TST?`` command.
+        The MCC Universal Library does not have a formal self-test routine,
+        so this verifies communication by querying the board name.
+
+        Returns:
+            str: ``'0'`` for pass, ``'1'`` for fail.
+        """
+        try:
+            self.board.get_board_name(self.board_num)
+            return "0"  # Pass
+        except Exception as e:
+            print(f"MCC: Self-test failed. Error: {e}")
+            return "1"  # Fail
+
+    def operation_complete(self):
+        """
+        Queries whether all background operations have finished.
+
+        This is the UL-equivalent of the SCPI ``*OPC?`` command.
+
+        Returns:
+            str: ``'1'`` when all operations are complete, ``'0'`` otherwise.
+        """
+        try:
+            from mcculw.enums import FunctionType, Status
+            ai_status, _, _ = self.board.get_status(self.board_num, FunctionType.AIFUNCTION)
+            ao_status, _, _ = self.board.get_status(self.board_num, FunctionType.AOFUNCTION)
+            if ai_status == Status.IDLE and ao_status == Status.IDLE:
+                return "1"
+            return "0"
+        except Exception:
+            return "1"  # If status query fails, assume complete
+
+    def close(self):
+        """
+        Releases the DAQ device from the Universal Library.
+
+        This has no direct SCPI equivalent — it is specific to DAQ hardware
+        that must be explicitly released.
+        """
+        try:
+            if self.verbose:
+                print(f"MCC: Releasing board {self.board_num}...")
+            self.board.release_daq_device(self.board_num)
+        except self.ul_error as e:
+            print(f"MCC: Error releasing device. Error: {e}")
+
+    def initialize(self):
+        """
+        Convenience method that resets and clears the device to bring it
+        to a known good starting state.
+
+        Calls :meth:`reset` followed by :meth:`clear`.
+        """
+        self.reset()
+        self.clear()
+
+    # --- UL-Specific Utilities ---
+
+    def flash_led(self):
+        """
+        Flashes the LED on the device to physically identify it.
+        (Note: Not supported by all boards, e.g., USB-231)
+        """
+        try:
+            if self.verbose:
+                print(f"MCC: Flashing LED on board {self.board_num}...")
+            self.board.flash_led(self.board_num)
+        except self.ul_error as e:
+            # We will just print the error, as this is a non-critical function
+            print(f"MCC: Could not flash LED. Error: {e}")

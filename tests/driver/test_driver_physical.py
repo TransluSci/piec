@@ -31,7 +31,7 @@ import pandas as pd
 import pytest
 
 import piec.drivers as drivers_pkg
-from piec.drivers.digilent import Digilent
+from piec.drivers.mcc import MCC
 from piec.drivers.instrument import Instrument, get_class_attributes_from_instance, optional
 from piec.drivers.scpi import Scpi
 from piec.drivers.virtual_instrument import VirtualInstrument
@@ -592,7 +592,7 @@ def _visa_autodetect_driver_cases():
         cat_cls = categories[cat_name]
         for drv_cls in drv_list:
             idn = getattr(drv_cls, "AUTODETECT_ID", None)
-            if issubclass(drv_cls, Digilent):
+            if issubclass(drv_cls, MCC):
                 continue
             cases.append(pytest.param(drv_cls, cat_cls, idn, cat_name, id=drv_cls.__name__))
     return cases

@@ -128,6 +128,10 @@ class Daq(Instrument):
         """Write one or more voltage values to an analog-output channel."""
 
     @optional
+    def write_AO_scan(self, ao_channel, data, sample_rate):
+        """Start hardware-paced waveform output on an analog-output channel."""
+
+    @optional
     def output(self, ao_channel, on=True):
         """Explicitly enable/disable an output when hardware supports it.
 

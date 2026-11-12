@@ -2,7 +2,7 @@ import time
 from ctypes import c_double
 import numpy as np
 
-from ..digilent import Digilent
+from ..mcc import MCC
 from .daq import Daq
 
 try:
@@ -16,7 +16,7 @@ try:
         ULRange,
     )
 except ImportError:
-    # Digilent raises a contextual ImportError when hardware is initialized.
+    # MCC raises a contextual ImportError when hardware is initialized.
     ULRange = None
     DigitalIODirection = None
     DigitalPortType = None
@@ -25,7 +25,7 @@ except ImportError:
     ScanOptions = None
     Status = None
 
-class USB231(Digilent, Daq):
+class USB231(MCC, Daq):
     """
     Driver for the MCC USB-231 DAQ device.
     
@@ -74,7 +74,7 @@ class USB231(Digilent, Daq):
         Initialize the USB-231. 
         Defaults to Differential Mode (Channels 0-3) to match ai_channel default.
         """
-        # Initialize the parent Digilent class (handles connection)
+        # Initialize the parent MCC class (handles connection)
         super().__init__(address, **kwargs)
 
         self._ai_sample_rates = {}

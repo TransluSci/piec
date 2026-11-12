@@ -13,9 +13,9 @@ from .virtual_dispatch import (
     find_virtual_driver_class,
 )
 
-# Check for Digilent Library
+# Check for MCC Base Class
 
-from .digilent import Digilent
+from .mcc import MCC
 
 
 # Check for MCC Library
@@ -167,11 +167,11 @@ def _setup_mcc_device(target_identifier=None, board_num=0, verbose=False):
     try:
         ul.create_daq_device(board_num, target_device)
         if verbose:
-            print(f"Digilent: Configured {target_device.product_name} as Board {board_num}")
+            print(f"MCC: Configured {target_device.product_name} as Board {board_num}")
         return target_device.product_name
     except Exception as e:
         if verbose:
-            print(f"Digilent Config Error: {e}")
+            print(f"MCC Config Error: {e}")
         return None
 
 def _get_real_close(target):
@@ -309,9 +309,9 @@ def autodetect(address=None, verbose=False, required_type=None, **kwargs):
                     return None
                 if cls: 
                     return cls(address=0, verbose=verbose, **kwargs)
-            if required_type and not issubclass(Digilent, required_type):
+            if required_type and not issubclass(MCC, required_type):
                  return None
-            return Digilent(address=0, verbose=verbose, **kwargs)
+            return MCC(address=0, verbose=verbose, **kwargs)
         elif address is None:
             pass
         elif is_mcc and "::" not in str(address):

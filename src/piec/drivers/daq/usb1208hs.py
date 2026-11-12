@@ -6,7 +6,7 @@ import threading
 from ctypes import c_double
 import numpy as np
 
-from ..digilent import Digilent
+from ..mcc import MCC
 from .daq import Daq
 
 try:
@@ -21,7 +21,7 @@ try:
         ULRange,
     )
 except ImportError:
-    # Digilent raises a contextual ImportError when physical hardware is opened.
+    # MCC raises a contextual ImportError when physical hardware is opened.
     AnalogInputMode = None
     DigitalIODirection = None
     DigitalPortType = None
@@ -32,7 +32,7 @@ except ImportError:
     ULRange = None
 
 
-class USB1208HS(Digilent, Daq):
+class USB1208HS(MCC, Daq):
     """One driver for all three USB-1208HS family models.
 
     The device provides eight single-ended or four differential analog inputs,
@@ -315,7 +315,7 @@ class USB1208HS(Digilent, Daq):
                 self.board_num, ao_channel, ULRange.BIP10VOLTS, voltage
             )
 
-    def write_waveform_scan(self, ao_channel, data, sample_rate):
+    def write_AO_scan(self, ao_channel, data, sample_rate):
         """Start continuous hardware-paced waveform output on one AO channel."""
         self._validate_channel(ao_channel, self.ao_channel, "AO")
         values = [float(value) for value in data]
