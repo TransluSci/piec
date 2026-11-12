@@ -4,6 +4,7 @@ import time
 import math
 import threading
 from ctypes import c_double
+import numpy as np
 
 from ..digilent import Digilent
 from .daq import Daq
@@ -15,6 +16,7 @@ try:
         DigitalPortType,
         FunctionType,
         ScanOptions,
+        Status,
         TimerIdleState,
         ULRange,
     )
@@ -25,6 +27,7 @@ except ImportError:
     DigitalPortType = None
     FunctionType = None
     ScanOptions = None
+    Status = None
     TimerIdleState = None
     ULRange = None
 
@@ -250,6 +253,55 @@ class USB1208HS(Digilent, Daq):
         self._validate_ai_channel(ai_channel)
         return float(self.ul.v_in(self.board_num, ai_channel, self._ai_ul_range(ai_channel)))
 
+    def read_AI_scan(self, ai_channel, points, rate):
+        """Acquire a finite, hardware-paced scan of one or more analog inputs (int or list[int])."""
+        channels = self._scan_channels(ai_channel)
+        low, high = min(channels), max(channels)
+        width = high - low + 1
+        if isinstance(points, bool) or not isinstance(points, int) or points < 1:
+            raise ValueError("points must be a positive integer")
+        minimum_rate, aggregate_rate = self.ai_sample_rate
+        if not minimum_rate <= rate <= aggregate_rate / width:
+            raise ValueError("Requested rate exceeds the input scan limits")
+        ranges = [self._ai_ul_range(ch) for ch in range(low, high + 1)]
+        if any(value != ranges[0] for value in ranges):
+            raise ValueError("All inputs in the scan span must use the same range")
+        total = points * width
+        if total > 20_000_000:
+            raise ValueError("Scan exceeds 20 million buffered samples; reduce points")
+
+        handle = self.ul.scaled_win_buf_alloc(total)
+        if not handle:
+            raise MemoryError("Could not allocate analog input scan buffer")
+        columns = np.asarray(channels) - low
+        options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
+        idle = False
+        try:
+            actual_rate = self.ul.a_in_scan(
+                self.board_num, low, high, total, int(rate), ranges[0], handle, options
+            )
+            self._last_ai_scan_rate = actual_rate
+            deadline = time.monotonic() + points / actual_rate + 5.0
+            while True:
+                status, _, _ = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                idle = status == Status.IDLE
+                if idle:
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Analog input scan timed out")
+                time.sleep(0.01)
+            buffer = (c_double * total)()
+            self.ul.scaled_win_buf_to_array(handle, buffer, 0, total)
+            values = np.asarray(buffer).reshape(points, width)[:, columns]
+            return self._scan_dataframe(channels, np.arange(points) / actual_rate, values, actual_rate)
+        finally:
+            try:
+                self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
+            except Exception:
+                if not idle:
+                    raise
+            self.ul.win_buf_free(handle)
+
 
     def write_AO(self, ao_channel, data):
         """Write one or more software-paced voltage values to an AO channel."""
@@ -304,6 +356,19 @@ class USB1208HS(Digilent, Daq):
         self._active_memhandle = memhandle
         self._last_ao_scan_rate = actual_rate
         return actual_rate
+
+    def stop_output(self):
+        """Stop any active background AO scan and free its buffer."""
+        try:
+            self.ul.stop_background(self.board_num, FunctionType.AOFUNCTION)
+        except Exception:
+            pass
+        if getattr(self, "_active_memhandle", None):
+            try:
+                self.ul.win_buf_free(self._active_memhandle)
+            except Exception:
+                pass
+            self._active_memhandle = None
 
     def set_dio_direction(self, dio_channel, dio_direction):
         """Configure one DIO line as input (``I``) or output (``O``)."""

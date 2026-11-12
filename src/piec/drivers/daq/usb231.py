@@ -1,3 +1,7 @@
+import time
+from ctypes import c_double
+import numpy as np
+
 from ..digilent import Digilent
 from .daq import Daq
 
@@ -6,6 +10,9 @@ try:
         AnalogInputMode,
         DigitalIODirection,
         DigitalPortType,
+        FunctionType,
+        ScanOptions,
+        Status,
         ULRange,
     )
 except ImportError:
@@ -14,6 +21,9 @@ except ImportError:
     DigitalIODirection = None
     DigitalPortType = None
     AnalogInputMode = None
+    FunctionType = None
+    ScanOptions = None
+    Status = None
 
 class USB231(Digilent, Daq):
     """
@@ -101,6 +111,52 @@ class USB231(Digilent, Daq):
 
     def _ai_ul_range(self, ai_channel):
         return ULRange.BIP10VOLTS
+
+    def read_AI_scan(self, ai_channel, points, rate):
+        """Acquire a finite, hardware-paced scan of one or more analog inputs (int or list[int])."""
+        channels = self._scan_channels(ai_channel)
+        low, high = min(channels), max(channels)
+        width = high - low + 1
+        if isinstance(points, bool) or not isinstance(points, int) or points < 1:
+            raise ValueError("points must be a positive integer")
+        minimum_rate, aggregate_rate = self.ai_sample_rate
+        if not minimum_rate <= rate <= aggregate_rate / width:
+            raise ValueError("Requested rate exceeds the input scan limits")
+        total = points * width
+        if total > 20_000_000:
+            raise ValueError("Scan exceeds 20 million buffered samples; reduce points")
+
+        handle = self.ul.scaled_win_buf_alloc(total)
+        if not handle:
+            raise MemoryError("Could not allocate analog input scan buffer")
+        columns = np.asarray(channels) - low
+        options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
+        idle = False
+        try:
+            actual_rate = self.ul.a_in_scan(
+                self.board_num, low, high, total, int(rate), ULRange.BIP10VOLTS, handle, options
+            )
+            self._last_ai_scan_rate = actual_rate
+            deadline = time.monotonic() + points / actual_rate + 5.0
+            while True:
+                status, _, _ = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                idle = status == Status.IDLE
+                if idle:
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Analog input scan timed out")
+                time.sleep(0.01)
+            buffer = (c_double * total)()
+            self.ul.scaled_win_buf_to_array(handle, buffer, 0, total)
+            values = np.asarray(buffer).reshape(points, width)[:, columns]
+            return self._scan_dataframe(channels, np.arange(points) / actual_rate, values, actual_rate)
+        finally:
+            try:
+                self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)
+            except Exception:
+                if not idle:
+                    raise
+            self.ul.win_buf_free(handle)
 
     def write_AO(self, ao_channel, data):
         """
