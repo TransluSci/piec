@@ -33,5 +33,7 @@ Notebooks live in the repository's ``Measurements/`` directory:
   hysteresis and PUND measurements.
 * `IV sweeps <https://github.com/TransluSci/piec/blob/master/Measurements/DCIV/IV_sweep_testing.ipynb>`_:
   current-voltage measurements.
+* `MOKE <https://github.com/TransluSci/piec/blob/master/Measurements/MOKE/MOKE_testing.ipynb>`_:
+  magneto-optic Kerr effect measurements.
 
 Review each notebook's instrument addresses and settings before running.

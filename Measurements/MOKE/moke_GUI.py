@@ -1,0 +1,693 @@
+"""Generic PIEC MOKE GUI. Run python Measurements/MOKE/moke_GUI.py."""
+from functools import partial
+import json
+import math
+from pathlib import Path
+import queue
+import threading
+import sys
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+from piec.measurement.gui_utils import MeasurementApp
+from piec.measurement.moke import MOKE
+from piec.drivers.field_controller.virtual_field_controller import VirtualFieldController
+from piec.drivers.dmm.virtual_dmm import VirtualDMM
+from piec.drivers.daq.daq import Daq
+from piec.drivers.daq.usb1208hs import USB1208HS
+from piec.drivers.autodetect import autodetect, _safe_close, _resolve_type_string
+from piec.drivers.emulators.daq_to_field_controller import DaqFieldController
+from piec.drivers.emulators.daq_to_dmm import DaqAsDMM
+from piec.drivers.emulators.daq_to_gaussmeter import DaqAsGaussmeter
+from piec.drivers.emulators.source_as_field_controller import SourceAsFieldController
+from piec.simulation.magnetic_material import ArctanMOKE
+
+DAQ_ADDRESS = 'DAQ emulator'
+SOURCE_ADDRESS = 'Source emulator'
+DEFAULT_DAQ_PATHS = {
+    'longitudinal': {'output': 0, 'field_input': 0, 'signal_input': 2},
+    'polar': {'output': 1, 'field_input': 1, 'signal_input': 3},
+}
+DEFAULT_SOURCE = dict(category='sourcemeter', address='VIRTUAL', mode='current', channel=1,
+                      gain=100.0, offset=0.0, minimum=-1.0, maximum=1.0, compliance=10.0)
+GEOMETRIES = ('longitudinal', 'polar', 'transverse')
+DAQ_CHANNELS = {'field_controller': 'output', 'dmm': 'signal_input', 'gaussmeter': 'field_input'}
+
+
+class _QueuedConsole:
+    def __init__(self, events):
+        self.events = events
+
+    def write(self, text):
+        self.events.put(('log', text))
+
+    def flush(self):
+        pass
+
+
+class MOKEApp(MeasurementApp):
+    """Required field source and optical DMM, with optional field measurement.
+
+    Standard address discovery comes from MeasurementApp. DAQ channel adapters
+    are selected explicitly and borrow one connection owned by this GUI.
+    """
+    _instruments = ('field_controller', 'dmm', 'gaussmeter')
+
+    def __init__(self, root, paths=None):
+        self._worker = None
+        self._events = queue.Queue()
+        self._updates = queue.Queue(maxsize=1)
+        self._closing = False
+        self._last_update = None
+        self._owned_daq = None
+        self._owned_source = None
+        self._source_output = None
+        self._setup_window = None
+        paths = DEFAULT_DAQ_PATHS if paths is None else paths
+        self.connection_setup = {'board': '0', 'profiles': {}, 'source': dict(DEFAULT_SOURCE)}
+        for geometry in GEOMETRIES:
+            profile = dict(output=None, field_input=None, signal_input=None,
+                           command_gain=100.0, command_offset=0.0,
+                           monitor_gain=100.0, monitor_offset=0.0)
+            profile.update(paths.get(geometry, {}))
+            self.connection_setup['profiles'][geometry] = profile
+        super().__init__(root, title='PIEC - MOKE', geometry='1500x900')
+        sys.stdout = sys.stderr = _QueuedConsole(self._events)
+        self.save_dir_entry.insert(0, 'scratch')
+        for widget in self.instrument_address_entries.values():
+            widget['values'] = list(widget['values']) + [DAQ_ADDRESS]
+        selector = self.instrument_address_entries['field_controller']
+        selector['values'] = list(selector['values']) + [SOURCE_ADDRESS]
+        self.use_gaussmeter = tk.BooleanVar(root, value=False)
+        self.gaussmeter_toggle = ttk.Checkbutton(
+            self.static_frame, text='Use gaussmeter', variable=self.use_gaussmeter,
+            command=self._update_gaussmeter)
+        self.gaussmeter_toggle.grid(row=2, column=0, columnspan=2, sticky='w', pady=5)
+        self.setup_button = ttk.Button(self.static_frame, text='CONNECTION SETUP...',
+                                        command=self.open_connection_setup)
+        self.setup_button.grid(row=3, column=0, columnspan=3, sticky='ew', pady=5)
+        self.dynamic_frame.configure(text='MOKE SWEEP')
+        self.inputs = {}
+        self._input(self.dynamic_frame, 'Geometry', 'longitudinal', GEOMETRIES, row=0)
+        self._input(self.dynamic_frame, 'Mode', 'stepped', ('stepped', 'continuous'), row=1)
+        for row, (label, default) in enumerate([
+                ('Field amplitude (Oe)', '1000'), ('Cycle period (s)', '1'),
+                ('Cycles to average', '10'), ('Discard initial cycles', '1'),
+                ('Points per cycle / average', '200'), ('Input sample rate (Hz)', '10000'),
+                ('Point dwell (s)', '0.01'), ('Initial endpoint hold (s)', '0'),
+                ('Field tolerance (Oe, optional)', ''), ('Settling timeout (s)', '10')], 2):
+            self._input(self.dynamic_frame, label, default, row=row)
+        self._input(self.plot_config_frame, 'Display', 'Cycle average',
+                    ('Cycle average', 'Latest cycle', 'Live signal'), row=0)
+        self.geometry_note = ttk.Label(self.dynamic_frame, wraplength=470, foreground='#B9C6D1')
+        self.geometry_note.grid(row=12, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        self.inputs['Geometry'].bind('<<ComboboxSelected>>', lambda event: self._update_geometries())
+        for selector in self.instrument_address_entries.values():
+            selector.bind('<<ComboboxSelected>>', lambda event: self._update_geometries(), add='+')
+        self.inputs['Mode'].bind('<<ComboboxSelected>>', lambda event: self._sync_timing())
+        self.inputs['Display'].bind('<<ComboboxSelected>>', lambda event: self._draw())
+        self.status_label = ttk.Label(self.plot_config_frame, text='Ready')
+        self.status_label.grid(row=1, column=0, columnspan=2, sticky='w')
+        self.control_frame = ttk.Frame(self.right_panel)
+        self.control_frame.grid(row=1, column=0, pady=10)
+        self.pause_button = ttk.Button(self.control_frame, text='PAUSE', command=self.toggle_pause)
+        self.pause_button.pack(side='left', padx=5)
+        self.stop_button = ttk.Button(self.control_frame, text='STOP', command=self.stop_measurement)
+        self.stop_button.pack(side='left', padx=5)
+        self.control_frame.grid_remove()
+        self.paused = False
+        self._update_gaussmeter()
+        self._sync_timing()
+        self._poll_id = self.root.after(100, self._poll)
+
+    def _input(self, parent, label, value, options=None, row=0):
+        ttk.Label(parent, text=label + ':').grid(row=row, column=0, sticky='w')
+        widget = (ttk.Combobox(parent, values=options, state='readonly', width=24)
+                  if options is not None else ttk.Entry(parent, width=26))
+        widget.grid(row=row, column=1, sticky='ew', pady=2)
+        if options is not None:
+            widget.set(value)
+        else:
+            widget.insert(0, value)
+        self.inputs[label] = widget
+
+    def _update_gaussmeter(self):
+        enabled = self.use_gaussmeter.get() and self._worker is None
+        self.instrument_address_entries['gaussmeter'].state(['!disabled' if enabled else 'disabled'])
+        if hasattr(self, 'inputs'):
+            self._sync_timing()
+            self._update_geometries()
+
+    def _missing_daq_channels(self, geometry):
+        profile = self.connection_setup['profiles'][geometry]
+        return [DAQ_CHANNELS[role] for role in self._active_roles()
+                if self.instrument_address_entries[role].get() == DAQ_ADDRESS
+                and profile.get(DAQ_CHANNELS[role]) in (None, '')]
+
+    def _update_geometries(self):
+        if self._worker is not None:
+            return
+        selector = self.inputs['Geometry']
+        available = tuple(g for g in GEOMETRIES if not self._missing_daq_channels(g))
+        selector['values'] = available
+        selector.state(['!disabled' if available else 'disabled'])
+        self.run_button.state(['!disabled' if selector.get() in available else 'disabled'])
+        missing = ', '.join(g.title() for g in GEOMETRIES if g not in available)
+        if missing:
+            self.geometry_note.configure(
+                text=f'Unavailable with current DAQ wiring: {missing}. Edit under Connection Setup > DAQ channels.')
+            self.geometry_note.grid()
+        else:
+            self.geometry_note.grid_remove()
+
+    def _sync_timing(self):
+        if not hasattr(self, 'inputs') or 'Mode' not in self.inputs:
+            return
+        continuous = self.inputs['Mode'].get() == 'continuous'
+        for label in ('Cycle period (s)', 'Input sample rate (Hz)'):
+            self.inputs[label].state(['!disabled' if continuous and self._worker is None else 'disabled'])
+        for label in ('Point dwell (s)', 'Field tolerance (Oe, optional)', 'Settling timeout (s)'):
+            enabled = not continuous and self._worker is None
+            if label != 'Point dwell (s)':
+                enabled = enabled and self.use_gaussmeter.get()
+            self.inputs[label].state(['!disabled' if enabled else 'disabled'])
+
+    def _active_roles(self):
+        return ('field_controller', 'dmm') + (('gaussmeter',) if self.use_gaussmeter.get() else ())
+
+    def autodetect_instruments(self):
+        if self._worker is not None:
+            return
+        original = self.instrument_address_entries
+        try:
+            self.instrument_address_entries = {name: original[name] for name in self._active_roles()
+                                              if original[name].get() not in (DAQ_ADDRESS, SOURCE_ADDRESS)}
+            super().autodetect_instruments()
+        finally:
+            self.instrument_address_entries = original
+        if any(original[name].get() == DAQ_ADDRESS for name in self._active_roles()):
+            self._discover_daq()
+        if original['field_controller'].get() == SOURCE_ADDRESS:
+            self._discover_source()
+        self._update_geometries()
+
+    def _discover_daq(self, target=None):
+        device = None
+        try:
+            device = autodetect(address=None, required_type=Daq)
+            if device is None:
+                raise ConnectionError('No DAQ detected')
+            if 'USB-1208HS' not in device.idn():
+                raise ConnectionError('This DAQ setup currently supports the USB-1208HS family')
+            board = str(device.board_num)
+            if target is not None:
+                target.delete(0, tk.END)
+                target.insert(0, board)
+            else:
+                self.connection_setup['board'] = board
+            print(f'Detected shared DAQ: {device.idn()} (board {board})')
+        except Exception as error:
+            messagebox.showerror('DAQ discovery', str(error), parent=self.root)
+        finally:
+            _safe_close(device)
+
+    def open_connection_setup(self):
+        if self._worker is not None:
+            return
+        if self._setup_window is not None and self._setup_window.winfo_exists():
+            self._setup_window.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self._setup_window = window
+        window.title('MOKE Connection Setup')
+        window.transient(self.root)
+        window.grab_set()
+        self.style.configure('MOKE.TNotebook', background='#181818', borderwidth=0)
+        self.style.configure('MOKE.TNotebook.Tab', background='#333F49', foreground='#F3F6FA',
+                             padding=(14, 9), font=('Helvetica', 12, 'bold'))
+        self.style.map('MOKE.TNotebook.Tab',
+                       background=[('selected', '#285477'), ('active', '#405668')],
+                       foreground=[('selected', '#FFFFFF'), ('active', '#FFFFFF')])
+        notebook = ttk.Notebook(window, style='MOKE.TNotebook')
+        notebook.pack(fill='both', expand=True)
+        frame = ttk.Frame(notebook, style='Card.TFrame', padding=15)
+        notebook.add(frame, text='Connections')
+        daq_frame = ttk.Frame(notebook, style='Card.TFrame', padding=15)
+        notebook.add(daq_frame, text='DAQ channels')
+        source_frame = ttk.Frame(notebook, style='Card.TFrame', padding=15)
+        notebook.add(source_frame, text='Source settings')
+        source_widgets = {}
+        definitions = [
+            ('category', 'PIEC source category', ('sourcemeter', 'dc_calibrator')),
+            ('address', 'Source address', ('VIRTUAL', *self.get_visa_resources())),
+            ('mode', 'Output mode', ('current', 'voltage')),
+            ('channel', 'Sourcemeter channel', None),
+            ('gain', 'Calibration (Oe/A or Oe/V)', None), ('offset', 'Field offset (Oe)', None),
+            ('minimum', 'Minimum source output (A or V)', None),
+            ('maximum', 'Maximum source output (A or V)', None),
+            ('compliance', 'SMU compliance (V in current mode; A in voltage mode)', None)]
+        source_settings = {**DEFAULT_SOURCE, **self.connection_setup.get('source', {})}
+        for row, (key, label, options) in enumerate(definitions):
+            ttk.Label(source_frame, text=label).grid(row=row, column=0, sticky='w', pady=3)
+            widget = (ttk.Combobox(source_frame, values=options, state='normal' if key == 'address' else 'readonly')
+                      if options else ttk.Entry(source_frame))
+            if options:
+                widget.set(str(source_settings[key]))
+            else:
+                widget.insert(0, str(source_settings[key]))
+            widget.grid(row=row, column=1, sticky='ew', pady=3)
+            source_widgets[key] = widget
+        ttk.Button(source_frame, text='DISCOVER SOURCE',
+                   command=lambda: self._discover_source(source_widgets)).grid(row=9, column=1, pady=8)
+        ttk.Label(source_frame, text='Used when Field controller is set to Current or voltage source.').grid(
+            row=10, column=0, columnspan=2, sticky='w', pady=8)
+        connection_choices = {'Instrument address': None, 'Shared DAQ channel': DAQ_ADDRESS,
+                              'Current or voltage source': SOURCE_ADDRESS}
+        role_labels = {'field_controller': 'Field controller', 'dmm': 'Optical signal (DMM)',
+                       'gaussmeter': 'Field monitor (optional)'}
+        backends = {}
+        for row, name in enumerate(self._instruments):
+            ttk.Label(frame, text=role_labels[name]).grid(row=row, column=0, sticky='w', padx=(0, 14))
+            options = tuple(connection_choices) if name == 'field_controller' else tuple(connection_choices)[:2]
+            widget = ttk.Combobox(frame, values=options, width=26, state='readonly')
+            selected = self.instrument_address_entries[name].get()
+            widget.set(next((label for label in options if connection_choices[label] == selected),
+                            'Instrument address'))
+            widget.grid(row=row, column=1, sticky='ew', pady=5)
+            backends[name] = widget
+        ttk.Label(frame, text='Instrument address uses the address selected on the main window, including VIRTUAL.\n'
+                  'Shared DAQ channel uses the wiring for the selected geometry under DAQ channels.\n'
+                  'Current or voltage source uses the instrument and calibration under Source settings.').grid(
+                      row=3, column=0, columnspan=2, sticky='w', pady=(14, 0))
+        ttk.Label(daq_frame, text='Shared DAQ: USB-1208HS family, MCC board number').grid(
+            row=0, column=0, columnspan=2, sticky='w', pady=(12, 3))
+        board = ttk.Entry(daq_frame)
+        board.insert(0, self.connection_setup['board'])
+        board.grid(row=1, column=0, sticky='ew')
+        ttk.Button(daq_frame, text='DISCOVER DAQ', command=lambda: self._discover_daq(board)).grid(row=1, column=1)
+        ttk.Label(daq_frame, text='Enter channel numbers for each geometry. Blank means unassigned.').grid(
+            row=2, column=0, columnspan=2, sticky='w', pady=(12, 3))
+        table = ttk.Frame(daq_frame, style='Card.TFrame')
+        table.grid(row=3, column=0, columnspan=3, sticky='ew')
+        keys = ('output', 'signal_input', 'field_input', 'command_gain', 'command_offset',
+                'monitor_gain', 'monitor_offset')
+        labels = ('Geometry', 'Magnet\nAO', 'Photodiode\nAI', 'Field monitor\nAI', 'Command\nOe/V', 'Command\noffset Oe',
+                  'Monitor\nOe/V', 'Monitor\noffset Oe')
+        for col, label in enumerate(labels):
+            ttk.Label(table, text=label).grid(row=0, column=col, padx=3)
+        entries = {}
+        for row, geometry in enumerate(GEOMETRIES, 1):
+            ttk.Label(table, text=geometry.title()).grid(row=row, column=0, sticky='w')
+            entries[geometry] = {}
+            for col, key in enumerate(keys, 1):
+                widget = ttk.Entry(table, width=11)
+                value = self.connection_setup['profiles'][geometry][key]
+                widget.insert(0, '' if value is None else str(value))
+                widget.grid(row=row, column=col, padx=3, pady=3)
+                entries[geometry][key] = widget
+        ttk.Label(daq_frame, text='A geometry becomes available once all channels needed by the selected DAQ roles are assigned.').grid(row=4, column=0, columnspan=3, pady=10)
+        def apply():
+            try:
+                board_number = int(board.get())
+                if board_number < 0:
+                    raise ValueError('MCC board number must be nonnegative')
+                profiles = {}
+                for geometry, widgets in entries.items():
+                    profile = {}
+                    for key, widget in widgets.items():
+                        text = widget.get().strip()
+                        profile[key] = ((int(text) if text else None) if key in keys[:3] else float(text))
+                    if any(profile[key] is not None and profile[key] < 0 for key in keys[:3]):
+                        raise ValueError('Channel numbers must be nonnegative')
+                    if (not all(math.isfinite(profile[key]) for key in keys[3:])
+                            or profile['command_gain'] == 0 or profile['monitor_gain'] == 0):
+                        raise ValueError('DAQ calibrations require finite offsets and nonzero gains')
+                    profiles[geometry] = profile
+                source = {key: widget.get().strip() for key, widget in source_widgets.items()}
+                source['channel'] = int(source['channel'])
+                for key in ('gain', 'offset', 'minimum', 'maximum', 'compliance'):
+                    source[key] = float(source[key])
+                if not source['minimum'] < source['maximum'] or source['channel'] < 1:
+                    raise ValueError('Require increasing source limits and a positive channel')
+                if (not all(math.isfinite(source[k]) for k in ('gain', 'offset', 'minimum', 'maximum', 'compliance'))
+                        or source['gain'] == 0):
+                    raise ValueError('Require finite source settings and nonzero calibration gain')
+                if source['category'] == 'sourcemeter' and source['compliance'] <= 0:
+                    raise ValueError('Sourcemeter compliance must be positive')
+                for name, widget in backends.items():
+                    selector = self.instrument_address_entries[name]
+                    backend = connection_choices[widget.get()]
+                    if backend is not None:
+                        selector.set(backend)
+                    elif selector.get() in (DAQ_ADDRESS, SOURCE_ADDRESS):
+                        selector.set('VIRTUAL')
+                self.connection_setup = {'board': str(board_number), 'profiles': profiles, 'source': source}
+            except Exception as error:
+                messagebox.showerror('Invalid connection setup', str(error), parent=window)
+                return
+            self._update_geometries()
+            window.destroy()
+        actions = ttk.Frame(window, padding=10)
+        actions.pack(fill='x')
+        ttk.Button(actions, text='APPLY', command=apply).pack(side='right', padx=5)
+        ttk.Button(actions, text='CANCEL', command=window.destroy).pack(side='right', padx=5)
+
+    def _discover_source(self, widgets=None):
+        settings = self.connection_setup.get('source', DEFAULT_SOURCE)
+        category = widgets['category'].get() if widgets else settings['category']
+        device = None
+        try:
+            device = autodetect(address=category, required_type=_resolve_type_string(category))
+            if device is None:
+                raise ConnectionError('No matching source detected')
+            address = device.instrument.resource_name
+            if widgets:
+                widgets['address'].set(address)
+            else:
+                self.connection_setup.setdefault('source', dict(DEFAULT_SOURCE))['address'] = address
+            print(f'Detected source: {device.idn()} at {address}')
+        except Exception as error:
+            messagebox.showerror('Source discovery', str(error), parent=self.root)
+        finally:
+            _safe_close(device)
+
+    def save_settings(self):
+        if not super().save_settings():
+            return False
+        try:
+            path = Path(self.get_settings_file_path())
+            settings = json.loads(path.read_text(encoding='utf-8'))
+            settings['moke_connection'] = self.connection_setup
+            path.write_text(json.dumps(settings, indent=4), encoding='utf-8')
+            return True
+        except (OSError, ValueError, TypeError) as error:
+            messagebox.showerror('Save settings', str(error), parent=self.root)
+            return False
+
+    def load_settings(self):
+        try:
+            path = self.get_settings_file_path()
+            if path and Path(path).exists():
+                settings = json.loads(Path(path).read_text(encoding='utf-8'))
+                setup = settings.get('moke_connection')
+                if setup is not None:
+                    if not isinstance(setup, dict) or not all(
+                            isinstance(setup.get('profiles', {}).get(g), dict) for g in GEOMETRIES):
+                        raise ValueError('Invalid saved MOKE connection setup')
+                    setup.setdefault('source', dict(DEFAULT_SOURCE))
+                    self.connection_setup = setup
+        except (OSError, ValueError, TypeError) as error:
+            print(f'Could not load MOKE connection setup: {error}')
+        super().load_settings()
+        self._update_gaussmeter()
+
+    def close_instruments(self):
+        try:
+            super().close_instruments()
+        finally:
+            try:
+                if self._owned_source is not None:
+                    source, self._owned_source = self._owned_source, None
+                    output, self._source_output = self._source_output, None
+                    try:
+                        if output is not None:
+                            output(on=False)
+                    finally:
+                        source.close()
+            finally:
+                if self._owned_daq is not None:
+                    device, self._owned_daq = self._owned_daq, None
+                    device.close()
+
+    def _connect_roles(self, roles, profile):
+        """Use the base class for direct connections; adapt one shared DAQ."""
+        self.close_instruments()
+        try:
+            if any(self.instrument_address_entries[name].get() == DAQ_ADDRESS for name in roles):
+                self._owned_daq = USB1208HS(address=self.connection_setup['board'])
+            for name in roles:
+                if name == 'field_controller' and self.instrument_address_entries[name].get() == SOURCE_ADDRESS:
+                    settings = self.connection_setup['source']
+                    address = settings['address']
+                    if address.upper() == 'VIRTUAL':
+                        address = 'VIRTUAL_' + settings['category']
+                    self._owned_source = autodetect(address=address,
+                                                     required_type=_resolve_type_string(settings['category']))
+                    if self._owned_source is None:
+                        raise ConnectionError('Could not connect to the selected source')
+                    source = self._owned_source
+                    channel, mode = settings['channel'], settings['mode']
+                    if settings['category'] == 'sourcemeter':
+                        if channel not in source.channel:
+                            raise ValueError('Unavailable source channel')
+                        if not math.isfinite(settings['compliance']) or settings['compliance'] <= 0:
+                            raise ValueError('Sourcemeter compliance must be positive and finite')
+                        if mode == 'current':
+                            def setter(value):
+                                source.set_source_current(channel=channel, current=value)
+                        else:
+                            def setter(value):
+                                source.set_source_voltage(channel=channel, voltage=value)
+                    else:
+                        setter = partial(source.set_output, mode=mode)
+                    self.instruments[name] = SourceAsFieldController(
+                        source, setter, settings['gain'], (settings['minimum'], settings['maximum']),
+                        offset=settings['offset'])
+                elif self.instrument_address_entries[name].get() != DAQ_ADDRESS:
+                    self.instruments[name] = super().connect_instrument(name)
+                elif name == 'field_controller':
+                    self.instruments[name] = DaqFieldController(
+                        self._owned_daq, profile['output'], profile['command_gain'], profile['command_offset'])
+                elif name == 'dmm':
+                    self.instruments[name] = DaqAsDMM(self._owned_daq, profile['signal_input'])
+                else:
+                    self.instruments[name] = DaqAsGaussmeter(
+                        self._owned_daq, profile['field_input'], profile['monitor_gain'], profile['monitor_offset'])
+            return self.instruments
+        except Exception:
+            self.close_instruments()
+            raise
+
+    def _configure_acquisition(self, instruments):
+        field, dmm = instruments['field_controller'], instruments['dmm']
+        if isinstance(field, VirtualFieldController):
+            sample = ArctanMOKE()
+            field.mag_sample = sample
+            if isinstance(dmm, VirtualDMM):
+                dmm.set_voltage_reader(sample.get_moke_voltage)
+
+    def run_measurement(self):
+        if self._worker is not None:
+            return
+        try:
+            values = {key: widget.get() for key, widget in self.inputs.items()}
+            amplitude = float(values['Field amplitude (Oe)'])
+            if amplitude <= 0:
+                raise ValueError('Field amplitude must be positive')
+            roles = self._active_roles()
+            profile = self.connection_setup['profiles'][values['Geometry']]
+            if self._missing_daq_channels(values['Geometry']):
+                self._update_geometries()
+                self.status_label.configure(text='Assign the missing channels in Connection Setup.')
+                return
+            if (self.instrument_address_entries['dmm'].get() == DAQ_ADDRESS
+                    and 'gaussmeter' in roles
+                    and self.instrument_address_entries['gaussmeter'].get() == DAQ_ADDRESS
+                    and profile['signal_input'] == profile['field_input']):
+                raise ValueError('Optical signal and field monitor require different inputs')
+            settings = dict(geometry=values['Geometry'], field_min=-amplitude, field_max=amplitude,
+                            cycle_period=float(values['Cycle period (s)']), cycles=int(values['Cycles to average']),
+                            discard_cycles=int(values['Discard initial cycles']),
+                            points_per_cycle=int(values['Points per cycle / average']),
+                            sample_rate=float(values['Input sample rate (Hz)']), mode=values['Mode'],
+                            dwell_time=float(values['Point dwell (s)']),
+                            initial_hold=float(values['Initial endpoint hold (s)']),
+                            field_tolerance=(float(values['Field tolerance (Oe, optional)'])
+                                             if self.use_gaussmeter.get() and values['Mode'] == 'stepped'
+                                             and values['Field tolerance (Oe, optional)'].strip() else None),
+                            settle_timeout=float(values['Settling timeout (s)']),
+                            save_dir=self.save_dir_entry.get(), on_update=self._queue_update)
+            instruments = self._connect_roles(roles, profile)
+            self._configure_acquisition(instruments)
+            self.experiment = MOKE(instruments['field_controller'], instruments['dmm'],
+                                   gaussmeter=instruments.get('gaussmeter'),
+                                   **settings)
+            if self._owned_daq is not None:
+                self.experiment.daq_profile = dict(profile)
+            if self._owned_source is not None:
+                self.experiment.source_settings = dict(self.connection_setup['source'])
+        except Exception as error:
+            self.close_instruments()
+            self.experiment = None
+            messagebox.showerror('MOKE configuration', str(error), parent=self.root)
+            return
+        self._last_update = None
+        self.paused = False
+        self.pause_button.configure(text='PAUSE')
+        self.pause_button.state(['!disabled'])
+        self.stop_button.state(['!disabled'])
+        self.run_button.grid_remove()
+        self.control_frame.grid()
+        self._set_editing(False)
+        self.status_label.configure(text='Running')
+        self._worker = threading.Thread(target=self._acquire, daemon=False)
+        self._worker.start()
+
+    def _set_editing(self, enabled):
+        state = ['!disabled' if enabled else 'disabled']
+        for key, widget in self.inputs.items():
+            if key != 'Display':
+                widget.state(state)
+        for widget in self.instrument_address_entries.values():
+            widget.state(state)
+        self.setup_button.state(state)
+        self.gaussmeter_toggle.state(state)
+        if enabled:
+            self._update_gaussmeter()
+
+    def toggle_pause(self):
+        if self._worker is None or self.experiment is None:
+            return
+        self.paused = not self.paused
+        if self.paused:
+            self.experiment.request_pause()
+            self.status_label.configure(text='Pause requested; waiting for acquisition boundary')
+        else:
+            self.experiment.request_resume()
+            self.status_label.configure(text='Running')
+        self.pause_button.configure(text='RESUME' if self.paused else 'PAUSE')
+
+    def _configure_source(self):
+        source = self._owned_source
+        settings = self.connection_setup['source']
+        channel, mode = settings['channel'], settings['mode']
+        if settings['category'] == 'sourcemeter':
+            self._source_output = partial(source.output, channel=channel)
+            self._source_output(on=False)
+            if mode == 'current':
+                source.configure_current_source(channel=channel, current=0.0,
+                                                voltage_compliance=settings['compliance'])
+            else:
+                source.configure_voltage_source(channel=channel, voltage=0.0,
+                                                current_compliance=settings['compliance'])
+        else:
+            self._source_output = source.output
+            self._source_output(on=False)
+        self.experiment.field_controller.set_field(0.0)
+        self._source_output(on=True)
+
+    def _acquire(self):
+        try:
+            if self._owned_source is not None:
+                self._configure_source()
+            self.experiment.run_experiment()
+            self._events.put(('done', f'{self.experiment.status}: {self.experiment.filename or "no data"}'))
+        except Exception as error:
+            self._events.put(('error', str(error)))
+        finally:
+            try:
+                self.close_instruments()
+            except Exception as error:
+                self._events.put(('error', f'Connection close failed: {error}'))
+            self._events.put(('finished', None))
+
+    def _queue_update(self, update):
+        try:
+            self._updates.get_nowait()
+        except queue.Empty:
+            pass
+        self._updates.put_nowait(update)
+
+    def stop_measurement(self):
+        if self._worker is not None:
+            if self.experiment is not None:
+                self.experiment.request_stop()
+            self.status_label.configure(text='Stopping; saving acquired data and zeroing field…')
+
+    def _poll(self):
+        try:
+            self._last_update = self._updates.get_nowait()
+            self._draw()
+            if self._last_update.get('status') == 'paused' and self.paused:
+                self.status_label.configure(text='Paused')
+        except queue.Empty:
+            pass
+        while True:
+            try:
+                kind, message = self._events.get_nowait()
+            except queue.Empty:
+                break
+            if kind == 'log':
+                self.console.write(message)
+            elif kind == 'finished':
+                self._worker = None
+                self.control_frame.grid_remove()
+                self.run_button.grid()
+                self.run_button.state(['!disabled'])
+                self._set_editing(True)
+                # Experiment output is already zeroed and the owned DAQ closed.
+                # Base on_closing must not attempt another I/O on that device.
+                self.experiment = None
+                if self._closing:
+                    self._finish_close()
+                    return
+            else:
+                self.status_label.configure(text=message)
+                self.console.write(message + '\n')
+                if kind == 'error':
+                    messagebox.showerror('MOKE acquisition failed', message, parent=self.root)
+        self._poll_id = self.root.after(100, self._poll)
+
+    def _draw(self):
+        if self._last_update is None:
+            return
+        choice = self.inputs['Display'].get()
+        key = {'Cycle average': 'average', 'Latest cycle': 'latest', 'Live signal': 'live'}[choice]
+        frame = self._last_update[key]
+        self.ax.clear()
+        if not frame.empty:
+            if key == 'live':
+                self.ax.plot(frame['time (s)'], frame['signal (V)'], color='#4DA6FF', linewidth=1.8)
+            else:
+                x = frame['field (Oe)'].to_numpy()
+                y = frame['signal (V)'].to_numpy()
+                # Close the loop visually when a full cycle is present
+                if len(x) > 2:
+                    x = [*x, x[0]]
+                    y = [*y, y[0]]
+                self.ax.plot(x, y, marker='o', markersize=3.5, color='#4DA6FF', linewidth=2.0)
+        self.ax.grid(True, linestyle='--', alpha=0.3)
+        self.ax.set_xlabel('Time (s)' if key == 'live' else 'Magnetic Field (Oe)')
+        self.ax.set_ylabel('Optical Signal (V)')
+        self.ax.set_title(f"{choice} ({self._last_update['cycles']} averaged cycles)")
+        self.canvas.draw_idle()
+
+    def on_closing(self):
+        if self._worker is not None:
+            self._closing = True
+            self.stop_measurement()
+            return
+        if hasattr(self, '_poll_id'):
+            self.root.after_cancel(self._poll_id)
+        self._finish_close()
+
+    def _finish_close(self):
+        self._closing = False
+        super().on_closing()
+        # The base class leaves the window open when saving settings fails.
+        # Resume polling so a later acquisition still receives updates.
+        try:
+            if self.root.winfo_exists():
+                self._poll_id = self.root.after(100, self._poll)
+        except tk.TclError:
+            pass  # The root was successfully destroyed.
+
+
+def main():
+    root = tk.Tk()
+    MOKEApp(root)
+    root.mainloop()
+
+
+if __name__ == '__main__':
+    main()
