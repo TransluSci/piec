@@ -6,6 +6,7 @@ from piec.measurement.experiment import Experiment
 
 
 class IVSweep(Experiment):
+    # TODO: Update IVSweep examples/GUI to import Resistor (OhmicResistor) directly from piec.simulation.resistor instead of fe_material.
     """
     IV sweep measurement using a sourcemeter.
     Attributes:

@@ -9,6 +9,7 @@ import time
 import pandas as pd
 from piec.measurement.iv_sweep import IVSweep
 from piec.measurement.gui_utils import MeasurementApp
+# TODO: Move this import to `from piec.simulation.resistor import Resistor` once fe_material cleanup is complete.
 from piec.simulation.fe_material import Resistor
 
 

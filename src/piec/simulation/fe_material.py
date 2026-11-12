@@ -28,6 +28,7 @@ class Material(Sample):
         return i, t
 
 
+# TODO: DELETE Resistor from fe_material.py once all callers import from piec.simulation.resistor
 class Resistor(Material):
     def __init__(self, resistance=1e3, *, parameter_dict=None, name="resistor"):
         """Initialize resistance; dictionary values override scalar arguments."""
