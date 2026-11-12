@@ -16,16 +16,16 @@ Each MOKE cycle sweeps the magnetic field along a closed bipolar triangle wavefo
 $$0 \rightarrow +H_{\max} \rightarrow 0 \rightarrow -H_{\min} \rightarrow 0$$
 
 Two acquisition modes are supported:
-1.  **Stepped Mode**: Commands each discrete field point along the triangle cycle, waits `dwell_time` (and optionally verifies that the measured field settles within `field_tolerance` when a gaussmeter is enabled), and records the optical voltage and field.
-2.  **Continuous Mode**: Commands linear field ramps across the triangle vertices (`ramp_field`) while sampling the optical detector and optional gaussmeter at `sample_rate` over `cycle_period` (or uses hardware-paced DAQ waveform output and synchronized analog input scanning when using shared DAQ emulators).
+1.  **Stepped Mode**: Commands each discrete field point (`points_per_cycle` points per cycle) along the triangle waveform via `set_field()`, waits `dwell_time` (and optionally verifies that the measured field settles within `field_tolerance` when a gaussmeter is enabled), and records the optical voltage and field.
+2.  **Continuous Mode**: Acquires `round(cycle_period * sample_rate)` raw samples per cycle along the triangle waveform—either via timed `set_field()` steps with direct instruments or via hardware-paced DAQ waveform output (`write_AO_scan`) and synchronized analog input scanning (`read_AI_scan`) when using shared DAQ emulators—and interpolates each completed cycle onto the `points_per_cycle` grid for cycle averaging.
 
-When multiple cycles are requested (`cycles > 1`, after optional `discard_cycles`), completed cycles are averaged point-by-point around the full closed hysteresis loop and saved alongside the raw cycle data.
+When multiple cycles are requested (`cycles >= 1`, after optional `discard_cycles`), completed cycles are averaged point-by-point around the full closed hysteresis loop and saved alongside the raw cycle data.
 
 ## Hardware Setup
 
 Every MOKE experiment uses two primary instruments and one optional field monitor:
 
-1.  **Field Controller (`field_controller`)**: Sets or ramps the applied magnetic field in Oersted (Oe) (`FieldController` or `VirtualFieldController`).
+1.  **Field Controller (`field_controller`)**: Sets the applied magnetic field in Oersted (Oe) (`FieldController` or `VirtualFieldController`).
 2.  **Digital Multimeter (`dmm`)**: Measures the optical signal voltage from the photodiode or balanced photodetector bridge (`DMM` or `VirtualDMM`).
 3.  **Gaussmeter (`gaussmeter`, Optional)**: Measures the actual magnetic field in Oersted (`Gaussmeter` or `VirtualGaussmeter`). When omitted (`None`), the measurement records the field controller's calibrated setpoint estimate.
 
@@ -46,11 +46,10 @@ The codebase is structured around the `MOKE` measurement class and the 3-level `
 *   **Inherits from**: `Experiment`
 *   **Role**: Coordinates the field controller, optical DMM, and optional gaussmeter across stepped or continuous triangle sweeps, computes cycle averages, and safely zeroes the field on completion or interruption.
 *   **Key Methods**:
-    *   `run_stepped()`: Steps through the bipolar triangle field sequence (`0 -> +H_max -> 0 -> -H_min -> 0`), enforces dwell/settling times, and records each point.
-    *   `run_continuous()`: Runs timed continuous triangle cycles (either via `field_controller.ramp_field()` or synchronized hardware DAQ scans when `DaqFieldController` and `DaqAsDMM` share a DAQ instance).
-    *   `analyze()`: Computes the point-by-point cycle average across all included completed cycles and writes both raw and `_average.csv` files.
-    *   `shut_off()`: Commands `0.0 Oe` (and stops any active waveform output) in a `finally` block so the magnet returns to zero setpoint after a run, pause/stop, or error.
-    *   `run_experiment()`: Main entry point that runs `capture_data()` and `analyze()`.
+    *   `run_experiment(save=True)`: Main public entry point that validates parameters, runs stepped (`_stepped()`) or continuous (`_continuous()` / `_daq_continuous()`) acquisition, zeroes the field in a `finally` block, and saves the data.
+    *   `save_data()`: Writes the raw cycle data CSV and, when at least one cycle is completed, the cycle-averaged `_average.csv` file with experiment and instrument metadata.
+    *   `safe_close()`: Commands `0.0 Oe` on the field controller without resetting shared input hardware.
+    *   `request_pause()`, `request_resume()`, `request_stop()`: Thread-safe controls used by the GUI to pause, resume, or stop an active acquisition.
 
 ### `MagneticMaterial` & `ArctanMOKE` Simulation
 *   **Location**: `src/piec/simulation/magnetic_material/`
@@ -102,7 +101,7 @@ python Measurements/MOKE/moke_GUI.py
 *   **Geometry**: `longitudinal`, `polar`, or `transverse` (saved in measurement metadata).
 *   **Acquisition Mode**: `stepped` (discrete field points with `Dwell Time (s)`) or `continuous` (timed triangle sweep with `Cycle Period (s)` and `Sample Rate (Hz)`).
 *   **Field Min / Field Max (Oe)**: Lower and upper magnetic field limits for the bipolar triangle cycle.
-*   **Points / Cycle**: Number of samples recorded per complete cycle.
+*   **Points / Cycle**: Number of field steps per cycle in `stepped` mode, and the number of points in the phase-interpolated cycle average in `continuous` mode (where raw samples per cycle are determined by `Cycle Period * Sample Rate`).
 *   **Cycles & Discard Cycles**: Number of measured hysteresis loops to average and number of initial conditioning loops to exclude from the average.
 
 ### 3. Running a Measurement
@@ -116,5 +115,5 @@ python Measurements/MOKE/moke_GUI.py
 *   **Standard Instrument Abstraction**: Built directly around `FieldController`, `DMM`, and optional `Gaussmeter` interfaces, with drop-in DAQ and source emulators when needed.
 *   **Stepped & Continuous Bipolar Triangle Sweeps**: Consistent `0 -> +H_max -> 0 -> -H_min -> 0` waveform across both stepped and continuous modes.
 *   **Ideal Virtual Simulation**: Uses the Level-3 `ArctanMOKE` model (`piec.simulation.magnetic_material`) for clean, noiseless hysteresis loops in simulation mode.
-*   **Cycle Averaging & CSV Export**: Automatically saves both raw multi-cycle data and point-by-point cycle-averaged hysteresis loops with full instrument and sample metadata.
+*   **Cycle Averaging & CSV Export**: Automatically saves both raw multi-cycle data and point-by-point cycle-averaged hysteresis loops with full experiment and instrument metadata.
 *   **Safe Shutdown**: Always returns the magnetic field setpoint to zero after completion or abort.
