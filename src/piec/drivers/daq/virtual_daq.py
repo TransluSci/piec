@@ -331,7 +331,7 @@ class VirtualDaq(VirtualInstrument, Daq):
         """
         return self.state['ai_values'].get(ai_channel, 0.0)
 
-    def read_AI_scan(self, ai_channel, points, rate):
+    def read_AI_scan(self, ai_channel, points, rate, *, on_chunk=None, stop_event=None):
         """
         Acquire a finite scan of one or more analog inputs.
         Use the device clock where available. A software fallback must
@@ -341,6 +341,10 @@ class VirtualDaq(VirtualInstrument, Daq):
                 unique channels from the model's `ai_channel` capability.
             points (int): Number of samples to acquire per channel.
             rate (float): Requested sample rate in Hz per channel.
+            on_chunk (callable, optional): Keyword-only callback invoked with
+                incremental scan DataFrames while the scan is in progress.
+            stop_event (threading.Event, optional): Keyword-only event checked
+                while polling the scan buffer to stop acquisition early.
         Returns:
             data (pandas.DataFrame): 'Time' in seconds from scan start,
                 followed by voltage columns in volts. One channel, including
@@ -352,13 +356,32 @@ class VirtualDaq(VirtualInstrument, Daq):
         channels = self._scan_channels(ai_channel)
         if isinstance(points, bool) or not isinstance(points, int) or points < 1:
             raise ValueError('points must be a positive integer')
+        if on_chunk is not None and not callable(on_chunk):
+            raise TypeError('on_chunk must be callable when provided')
+        if stop_event is not None and not callable(getattr(stop_event, 'is_set', None)):
+            raise TypeError('stop_event must provide an is_set() method when provided')
         low, high = self.ai_sample_rate
         if not np.isfinite(rate) or rate <= 0 or (low is not None and rate < low) or (high is not None and rate > high):
             raise ValueError(f'Input scan rate must be between {low} and {high}')
         warn_for_large_simulation_points(points * len(channels), label="virtual DAQ scan")
         time = np.arange(points) / rate
         values = np.sin(2 * np.pi * 10 * time)
-        return self._scan_dataframe(channels, time, np.repeat(values[:, None], len(channels), axis=1), rate)
+        scan = self._scan_dataframe(channels, time, np.repeat(values[:, None], len(channels), axis=1), rate)
+        if on_chunk is not None:
+            chunk_size = max(1, int(round(rate * 0.05)))
+            emitted = 0
+            for start in range(0, len(scan), chunk_size):
+                if stop_event is not None and stop_event.is_set():
+                    break
+                chunk = scan.iloc[start:start + chunk_size].copy()
+                chunk.attrs['sample_rate'] = rate
+                on_chunk(chunk)
+                emitted += len(chunk)
+            if stop_event is not None and stop_event.is_set():
+                trimmed = scan.iloc[:emitted].copy()
+                trimmed.attrs['sample_rate'] = rate
+                return trimmed
+        return scan
 
     def read_DI(self, dio_channel):
         """

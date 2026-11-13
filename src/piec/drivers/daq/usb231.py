@@ -112,13 +112,33 @@ class USB231(MCC, Daq):
     def _ai_ul_range(self, ai_channel):
         return ULRange.BIP10VOLTS
 
-    def read_AI_scan(self, ai_channel, points, rate):
-        """Acquire a finite, hardware-paced scan of one or more analog inputs (int or list[int])."""
+    def read_AI_scan(self, ai_channel, points, rate, *, on_chunk=None, stop_event=None):
+        """
+        Acquire a finite, hardware-paced scan of one or more analog inputs.
+
+        args:
+            ai_channel (int or list[int]): One channel or a nonempty list of
+                unique channels from `self.ai_channel`.
+            points (int): Number of samples to acquire per channel.
+            rate (float): Requested sample rate in Hz per channel.
+            on_chunk (callable, optional): Keyword-only callback invoked with
+                incremental scan DataFrames while the background scan is running.
+            stop_event (threading.Event, optional): Keyword-only event checked
+                while polling the scan buffer to stop acquisition early.
+        Returns:
+            data (pandas.DataFrame): 'Time' in seconds from scan start, followed
+                by 'Voltage' (single channel) or 'AI<n>' columns (multiple channels).
+                `data.attrs['sample_rate']` holds the actual per-channel rate in Hz.
+        """
         channels = self._scan_channels(ai_channel)
         low, high = min(channels), max(channels)
         width = high - low + 1
         if isinstance(points, bool) or not isinstance(points, int) or points < 1:
             raise ValueError("points must be a positive integer")
+        if on_chunk is not None and not callable(on_chunk):
+            raise TypeError("on_chunk must be callable when provided")
+        if stop_event is not None and not callable(getattr(stop_event, "is_set", None)):
+            raise TypeError("stop_event must provide an is_set() method when provided")
         minimum_rate, aggregate_rate = self.ai_sample_rate
         if not minimum_rate <= rate <= aggregate_rate / width:
             raise ValueError("Requested rate exceeds the input scan limits")
@@ -132,6 +152,8 @@ class USB231(MCC, Daq):
         columns = np.asarray(channels) - low
         options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
         idle = False
+        sent_points = 0
+        last_emit = time.monotonic()
         try:
             actual_rate = self.ul.a_in_scan(
                 self.board_num, low, high, total, int(rate), ULRange.BIP10VOLTS, handle, options
@@ -139,17 +161,36 @@ class USB231(MCC, Daq):
             self._last_ai_scan_rate = actual_rate
             deadline = time.monotonic() + points / actual_rate + 5.0
             while True:
-                status, _, _ = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
+                status, cur_count, _ = self.ul.get_status(self.board_num, FunctionType.AIFUNCTION)
                 idle = status == Status.IDLE
-                if idle:
+                stopped = stop_event is not None and stop_event.is_set()
+                cur_points = min(points, max(0, int(cur_count) // width))
+                if on_chunk is not None and cur_points > sent_points:
+                    now = time.monotonic()
+                    if idle or stopped or (now - last_emit) >= 0.05:
+                        n_new = cur_points - sent_points
+                        count = n_new * width
+                        chunk_buf = (c_double * count)()
+                        self.ul.scaled_win_buf_to_array(handle, chunk_buf, sent_points * width, count)
+                        chunk_vals = np.asarray(chunk_buf).reshape(n_new, width)[:, columns]
+                        chunk_times = np.arange(sent_points, cur_points) / actual_rate
+                        on_chunk(self._scan_dataframe(channels, chunk_times, chunk_vals, actual_rate))
+                        sent_points = cur_points
+                        last_emit = now
+                if idle or stopped:
                     break
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Analog input scan timed out")
                 time.sleep(0.01)
-            buffer = (c_double * total)()
-            self.ul.scaled_win_buf_to_array(handle, buffer, 0, total)
-            values = np.asarray(buffer).reshape(points, width)[:, columns]
-            return self._scan_dataframe(channels, np.arange(points) / actual_rate, values, actual_rate)
+            n_read = sent_points if (stop_event is not None and stop_event.is_set() and on_chunk is not None) else (
+                cur_points if (stop_event is not None and stop_event.is_set()) else points
+            )
+            if n_read <= 0:
+                return self._scan_dataframe(channels, np.empty(0), np.empty((0, len(channels))), actual_rate)
+            buffer = (c_double * (n_read * width))()
+            self.ul.scaled_win_buf_to_array(handle, buffer, 0, n_read * width)
+            values = np.asarray(buffer).reshape(n_read, width)[:, columns]
+            return self._scan_dataframe(channels, np.arange(n_read) / actual_rate, values, actual_rate)
         finally:
             try:
                 self.ul.stop_background(self.board_num, FunctionType.AIFUNCTION)

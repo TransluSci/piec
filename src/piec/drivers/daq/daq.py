@@ -71,16 +71,29 @@ class Daq(Instrument):
     def read_AI(self, ai_channel):
         """Read one analog-input value in volts."""
 
-    def read_AI_scan(self, ai_channel: Union[int, list[int]], points, rate):
+    def read_AI_scan(self, ai_channel: Union[int, list[int]], points, rate, *, on_chunk=None, stop_event=None):
         """
         Acquire a finite scan of one or more analog inputs.
         Use the device clock where available. A software fallback must
         document its timing and keep channel readings in the same scan.
+
+        Drivers that support reading from an in-progress hardware scan buffer
+        should poll the buffer, check ``stop_event.is_set()``, and invoke
+        ``on_chunk(chunk_df)`` with incremental scan DataFrames. Drivers whose
+        hardware only returns data after the full scan completes must still
+        accept ``*, on_chunk=None, stop_event=None`` and call
+        ``if on_chunk is not None: on_chunk(data)`` once before returning ``data``.
+
         args:
             ai_channel (int or list[int]): One channel or a nonempty list of
                 unique channels from the model's `ai_channel` capability.
             points (int): Number of samples to acquire per channel.
             rate (float): Requested sample rate in Hz per channel.
+            on_chunk (callable, optional): Keyword-only callback invoked with
+                incremental scan DataFrames while the scan is in progress (or
+                once with the full DataFrame on hardware without mid-scan streaming).
+            stop_event (threading.Event, optional): Keyword-only event checked
+                while polling the scan buffer to stop acquisition early.
         Returns:
             data (pandas.DataFrame): 'Time' in seconds from scan start,
                 followed by voltage columns in volts. One channel, including

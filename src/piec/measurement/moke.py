@@ -362,33 +362,65 @@ class MOKE(Experiment):
             )
             samples_per_cycle = max(20, int(round(self.actual_cycle_period * self.sample_rate)))
             total_points = samples_per_cycle * total_cycles
-            scan = daq.read_AI_scan(channels, total_points, self.sample_rate)
-            self.actual_sample_rate = scan.attrs.get('sample_rate', self.sample_rate)
-            times = scan['Time'].to_numpy()
-            signal = scan.iloc[:, 1].to_numpy()
-            indices = np.arange(len(times))
             ao_fields = getattr(self.field_controller, '_last_ao_fields', None)
-            if ao_fields is not None and len(ao_fields) > 0:
-                ao_idx = ((indices % samples_per_cycle) * len(ao_fields)) // samples_per_cycle
-                requested = np.asarray(ao_fields, dtype=float)[ao_idx]
-            else:
-                phase = (indices % samples_per_cycle) * (4.0 / samples_per_cycle)
-                requested = np.interp(phase, np.arange(5), vertices)
-            field = (self.gaussmeter.field_from_voltage(scan.iloc[:, 2].to_numpy())
-                     if self.gaussmeter is not None else requested)
-            frame = pd.DataFrame({
-                'time (s)': times,
-                'requested field (Oe)': requested,
-                'field (Oe)': field,
-                'signal (V)': signal,
-                'cycle': indices // samples_per_cycle,
-                'included': (indices // samples_per_cycle) >= self.discard_cycles,
-            }, index=indices)
-            self._received = len(frame)
-            self._chunks.append(frame)
-            for c in range(len(frame) // samples_per_cycle):
-                self._accept_cycle(frame.iloc[c * samples_per_cycle:(c + 1) * samples_per_cycle])
-            self._notify()
+            pending_parts = []
+            pending_len = 0
+
+            def handle_chunk(chunk_df):
+                nonlocal pending_len
+                if chunk_df is None or chunk_df.empty:
+                    return
+                self.actual_sample_rate = chunk_df.attrs.get('sample_rate', self.sample_rate)
+                n = len(chunk_df)
+                times = chunk_df['Time'].to_numpy()
+                signal = chunk_df.iloc[:, 1].to_numpy()
+                indices = np.arange(self._received, self._received + n)
+                if ao_fields is not None and len(ao_fields) > 0:
+                    ao_idx = ((indices % samples_per_cycle) * len(ao_fields)) // samples_per_cycle
+                    requested = np.asarray(ao_fields, dtype=float)[ao_idx]
+                else:
+                    phase = (indices % samples_per_cycle) * (4.0 / samples_per_cycle)
+                    requested = np.interp(phase, np.arange(5), vertices)
+                field = (self.gaussmeter.field_from_voltage(chunk_df.iloc[:, 2].to_numpy())
+                         if self.gaussmeter is not None else requested)
+                cycle_nums = indices // samples_per_cycle
+                frame = pd.DataFrame({
+                    'time (s)': times,
+                    'requested field (Oe)': requested,
+                    'field (Oe)': field,
+                    'signal (V)': signal,
+                    'cycle': cycle_nums,
+                    'included': cycle_nums >= self.discard_cycles,
+                }, index=indices)
+                self._received += n
+                self._chunks.append(frame)
+
+                pos = 0
+                while pos < len(frame):
+                    need = samples_per_cycle - pending_len
+                    take = min(need, len(frame) - pos)
+                    pending_parts.append(frame.iloc[pos:pos + take])
+                    pending_len += take
+                    pos += take
+                    if pending_len == samples_per_cycle:
+                        cycle_df = pending_parts[0] if len(pending_parts) == 1 else pd.concat(pending_parts)
+                        self._accept_cycle(cycle_df)
+                        pending_parts.clear()
+                        pending_len = 0
+
+                current_cycle = (
+                    (pending_parts[0] if len(pending_parts) == 1 else pd.concat(pending_parts))
+                    if pending_parts else None
+                )
+                self._notify(current_cycle)
+
+            daq.read_AI_scan(
+                channels,
+                total_points,
+                self.sample_rate,
+                on_chunk=handle_chunk,
+                stop_event=self._cancel,
+            )
         finally:
             self.field_controller.stop_ramp()
 
