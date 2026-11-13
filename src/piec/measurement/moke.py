@@ -6,6 +6,7 @@ import pandas as pd
 
 from .experiment import Experiment
 from ..analysis.utilities import create_measurement_filename, metadata_and_data_to_csv
+from ..drivers.daq.daq import Daq
 
 
 def _triangle_cycle_fields(field_min, field_max, points_per_cycle):
@@ -29,9 +30,9 @@ class MOKE(Experiment):
 
     def __init__(self, field_controller, dmm, gaussmeter=None, *, geometry='longitudinal', gaussmeter_channel=1,
                  field_min=-1000.0, field_max=1000.0, cycles=1, points_per_cycle=200,
-                 discard_cycles=0, dwell_time=0.01, field_tolerance=None,
+                 discard_cycles=0, dwell_time=0.001, field_tolerance=None,
                  settle_timeout=10.0, initial_hold=0.0, mode='stepped',
-                 cycle_period=1.0, sample_rate=10000,
+                 cycle_period=0.2, sample_rate=10000,
                  save_dir='scratch', on_update=None):
         self.field_controller, self.dmm, self.gaussmeter = field_controller, dmm, gaussmeter
         self.geometry = geometry.lower()
@@ -61,7 +62,8 @@ class MOKE(Experiment):
         if self.gaussmeter is not None and getattr(self.gaussmeter, 'daq', None) is not fc_daq:
             return None
         if not (callable(getattr(self.field_controller, 'start_triangle_waveform', None))
-                and callable(getattr(fc_daq, 'read_AI_scan', None))):
+                and callable(getattr(fc_daq, 'read_AI_scan', None))
+                and getattr(type(fc_daq), 'write_AO_scan', None) is not getattr(Daq, 'write_AO_scan', None)):
             return None
         return fc_daq
 
@@ -108,6 +110,7 @@ class MOKE(Experiment):
         self.data = pd.DataFrame()
         self._latest = pd.DataFrame()
         self._average = pd.DataFrame()
+        self._live_cycles = []
         self._chunks = []
         self._received = 0
         self._paused_seconds = 0.0
@@ -115,6 +118,7 @@ class MOKE(Experiment):
         self.acquired_cycles = 0
         self._cycle_grid = _triangle_cycle_fields(self.field_min, self.field_max, self.points_per_cycle)
         self._phase_grid = np.linspace(0.0, 1.0, self.points_per_cycle, endpoint=False)
+        self._sum_time = np.zeros(self.points_per_cycle)
         self._sum_field = np.zeros(self.points_per_cycle)
         self._sum_sig = np.zeros(self.points_per_cycle)
         self._sum2_sig = np.zeros(self.points_per_cycle)
@@ -141,7 +145,7 @@ class MOKE(Experiment):
         if self._pause.is_set() and not self._cancel.is_set():
             before = time.monotonic()
             self.status = 'paused'
-            self._notify(pd.DataFrame())
+            self._notify()
             while self._pause.is_set() and not self._cancel.wait(0.05):
                 pass
             self._paused_seconds += time.monotonic() - before
@@ -152,31 +156,94 @@ class MOKE(Experiment):
         """Zero only the selected source; do not reset shared input hardware."""
         self.field_controller.set_field(0.0)
 
-    def _notify(self, live):
+    def _downsample_partial(self, frame):
+        """Downsample an in-progress cycle using the same bin size as full cycles."""
+        if frame is None or frame.empty or self.mode != 'continuous':
+            return frame
+        samples_per_cycle = max(20, int(round((self.actual_cycle_period if hasattr(self, 'actual_cycle_period')
+                                               else self.cycle_period) * self.sample_rate)))
+        bin_size = max(1, samples_per_cycle // self.points_per_cycle)
+        if bin_size <= 1 or len(frame) < bin_size:
+            return frame
+        n_bins = len(frame) // bin_size
+        trimmed = frame.iloc[:n_bins * bin_size]
+        edges = np.arange(0, n_bins * bin_size, bin_size)
+        cols = ('time (s)', 'requested field (Oe)', 'field (Oe)', 'signal (V)')
+        data = {
+            col: np.add.reduceat(trimmed[col].to_numpy(dtype=float), edges) / bin_size
+            for col in cols if col in trimmed
+        }
+        data['cycle'] = int(trimmed['cycle'].iloc[0])
+        data['included'] = bool(trimmed['included'].iloc[0])
+        return pd.DataFrame(data)
+
+    def _notify(self, current_cycle=None):
         if self._on_update:
-            self._on_update({'live': live.copy(), 'latest': self.latest_cycle,
-                             'average': self.average_data, 'cycles': self.completed_cycles,
+            partial = self._downsample_partial(current_cycle) if current_cycle is not None else None
+            parts = list(self._live_cycles)
+            if partial is not None and not partial.empty:
+                parts.append(partial)
+            live = pd.concat(parts) if parts else pd.DataFrame()
+            latest = self.latest_cycle
+            if latest.empty and partial is not None and not partial.empty:
+                latest = partial.copy()
+            average = self.average_data
+            if average.empty and not latest.empty:
+                average = latest.copy()
+            self._on_update({'live': live, 'latest': latest,
+                             'average': average, 'cycles': self.completed_cycles,
                              'status': self.status})
+
+    def _downsample_cycle(self, frame, index):
+        """Downsample one raw cycle onto points_per_cycle by block-averaging bins."""
+        n = len(frame)
+        included = index >= self.discard_cycles
+        if n < 4:
+            out = frame.copy()
+            out['cycle'] = index
+            out['included'] = included
+            return out
+        cols = ('time (s)', 'requested field (Oe)', 'field (Oe)', 'signal (V)')
+        if n == self.points_per_cycle:
+            data = {col: frame[col].to_numpy(dtype=float, copy=True) for col in cols if col in frame}
+        elif n > self.points_per_cycle:
+            edges = np.linspace(0, n, self.points_per_cycle + 1, dtype=int)
+            counts = np.diff(edges)
+            data = {
+                col: np.add.reduceat(frame[col].to_numpy(dtype=float), edges[:-1]) / counts
+                for col in cols if col in frame
+            }
+        else:
+            sample_phase = np.linspace(0.0, 1.0, n, endpoint=False)
+            data = {
+                col: np.interp(self._phase_grid, sample_phase, frame[col].to_numpy(dtype=float))
+                for col in cols if col in frame
+            }
+        data['cycle'] = index
+        data['included'] = included
+        return pd.DataFrame(data)
 
     def _accept_cycle(self, frame):
         """Record one completed 0 -> +H -> 0 -> -H -> 0 cycle and update the closed-loop average."""
         index = self.acquired_cycles
         self.acquired_cycles += 1
-        frame = frame.copy()
-        frame['cycle'] = index
-        frame['included'] = index >= self.discard_cycles
-        self._latest = frame
-        if index < self.discard_cycles or len(frame) < 4:
+        downsampled = self._downsample_cycle(frame, index)
+        self._latest = downsampled
+        self._live_cycles.append(downsampled)
+        if index < self.discard_cycles or len(downsampled) < self.points_per_cycle:
             return
-        sample_phase = np.linspace(0.0, 1.0, len(frame), endpoint=False)
-        interp_field = np.interp(self._phase_grid, sample_phase, frame['field (Oe)'].to_numpy())
-        interp_sig = np.interp(self._phase_grid, sample_phase, frame['signal (V)'].to_numpy())
+        rel_time = downsampled['time (s)'].to_numpy() - float(frame['time (s)'].iloc[0])
+        interp_field = downsampled['field (Oe)'].to_numpy()
+        interp_sig = downsampled['signal (V)'].to_numpy()
         valid = np.isfinite(interp_field) & np.isfinite(interp_sig)
+        self._sum_time[valid] += rel_time[valid]
         self._sum_field[valid] += interp_field[valid]
         self._sum_sig[valid] += interp_sig[valid]
         self._sum2_sig[valid] += interp_sig[valid] ** 2
         self._count[valid] += 1
         self.completed_cycles += 1
+        mean_time = np.divide(self._sum_time, self._count,
+                              out=np.zeros_like(self._sum_time), where=self._count > 0)
         mean_field = np.divide(self._sum_field, self._count,
                                out=self._cycle_grid.copy(), where=self._count > 0)
         mean_sig = np.divide(self._sum_sig, self._count,
@@ -184,6 +251,8 @@ class MOKE(Experiment):
         variance = np.divide(self._sum2_sig - self._count * np.nan_to_num(mean_sig) ** 2,
                              self._count - 1, out=np.full(self._count.shape, np.nan), where=self._count > 1)
         self._average = pd.DataFrame({
+            'time (s)': mean_time,
+            'requested field (Oe)': self._cycle_grid.copy(),
             'field (Oe)': mean_field,
             'signal (V)': mean_sig,
             'signal std (V)': np.sqrt(np.maximum(variance, 0.0)),
@@ -191,15 +260,25 @@ class MOKE(Experiment):
         })
 
     def _wait_interval(self, duration):
-        remaining = duration
-        while remaining > 0:
+        if duration <= 0:
+            return self._wait_if_paused()
+        deadline = time.perf_counter() + duration
+        paused_seconds = self._paused_seconds
+        while True:
             if self._wait_if_paused():
                 return True
-            before = time.monotonic()
-            if self._cancel.wait(min(0.05, remaining)):
-                return True
-            remaining -= time.monotonic() - before
-        return self._wait_if_paused()
+            deadline += self._paused_seconds - paused_seconds
+            paused_seconds = self._paused_seconds
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                return False
+            if remaining > 0.002:
+                if self._cancel.wait(min(0.05, remaining - 0.002)):
+                    return True
+            else:
+                if self._cancel.is_set():
+                    return True
+                time.sleep(0)
 
     def _settled_field(self, requested):
         if self._wait_interval(self.dwell_time):
@@ -222,37 +301,51 @@ class MOKE(Experiment):
 
     def _stepped(self):
         fields = self._cycle_grid
-        start = time.monotonic()
+        elapsed = 0.0
         total_cycles = self.cycles + self.discard_cycles
+        next_update = time.perf_counter() + 0.06
         for cycle_idx in range(total_cycles):
             rows = []
-            for i, requested in enumerate(fields):
-                if self._wait_if_paused():
-                    break
-                self.field_controller.set_field(float(requested))
-                field = self._settled_field(requested)
-                if field is None:
-                    break
-                signal = float(self.dmm.get_voltage())
-                if not np.isfinite(signal):
-                    raise ValueError('Nonfinite optical reading')
-                rows.append({
-                    'time (s)': time.monotonic() - start,
-                    'requested field (Oe)': float(requested),
-                    'field (Oe)': field,
-                    'signal (V)': signal,
-                    'cycle': cycle_idx,
-                    'included': cycle_idx >= self.discard_cycles,
-                })
-                frame = pd.DataFrame([rows[-1]], index=[self._received])
-                self._chunks.append(frame)
-                self._received += 1
-                if i % max(1, len(fields) // 10) == 0:
-                    self._notify(pd.DataFrame(rows))
+            frame = pd.DataFrame()
+            try:
+                for i, requested in enumerate(fields):
+                    if self._wait_if_paused():
+                        break
+                    t0 = time.perf_counter()
+                    self.field_controller.set_field(float(requested))
+                    io_set = time.perf_counter() - t0
+                    field = self._settled_field(requested)
+                    if field is None:
+                        break
+                    t1 = time.perf_counter()
+                    signal = float(self.dmm.get_voltage())
+                    io_read = time.perf_counter() - t1
+                    if not np.isfinite(signal):
+                        raise ValueError('Nonfinite optical reading')
+                    elapsed += self.dwell_time + io_set + io_read
+                    rows.append({
+                        'time (s)': elapsed,
+                        'requested field (Oe)': float(requested),
+                        'field (Oe)': field,
+                        'signal (V)': signal,
+                        'cycle': cycle_idx,
+                        'included': cycle_idx >= self.discard_cycles,
+                    })
+                    now = time.perf_counter()
+                    if self._on_update and now >= next_update:
+                        self._notify(pd.DataFrame(rows))
+                        next_update = time.perf_counter() + 0.06
+            finally:
+                if rows:
+                    frame = pd.DataFrame(rows, index=range(self._received, self._received + len(rows)))
+                    self._received += len(frame)
+                    self._chunks.append(frame)
             if len(rows) == len(fields):
-                frame = pd.DataFrame(rows, index=range(self._received - len(rows), self._received))
                 self._accept_cycle(frame)
-                self._notify(frame)
+                self._notify()
+                next_update = time.perf_counter() + 0.06
+            elif not frame.empty:
+                self._notify()
             if self._cancel.is_set():
                 break
 
@@ -261,21 +354,26 @@ class MOKE(Experiment):
         channels = [self.dmm.ai_channel]
         if self.gaussmeter is not None:
             channels.append(self.gaussmeter.ai_channel)
-        samples_per_cycle = max(20, int(round(self.cycle_period * self.sample_rate)))
         total_cycles = self.cycles + self.discard_cycles
-        total_points = samples_per_cycle * total_cycles
+        vertices = np.array([0.0, self.field_max, 0.0, self.field_min, 0.0])
         try:
             self.actual_cycle_period = self.field_controller.start_triangle_waveform(
-                self.field_min, self.field_max, self.cycle_period, sample_rate=self.sample_rate
+                self.field_min, self.field_max, self.cycle_period
             )
+            samples_per_cycle = max(20, int(round(self.actual_cycle_period * self.sample_rate)))
+            total_points = samples_per_cycle * total_cycles
             scan = daq.read_AI_scan(channels, total_points, self.sample_rate)
             self.actual_sample_rate = scan.attrs.get('sample_rate', self.sample_rate)
             times = scan['Time'].to_numpy()
             signal = scan.iloc[:, 1].to_numpy()
             indices = np.arange(len(times))
-            phase = (indices % samples_per_cycle) * (4.0 / samples_per_cycle)
-            vertices = np.array([0.0, self.field_max, 0.0, self.field_min, 0.0])
-            requested = np.interp(phase, np.arange(5), vertices)
+            ao_fields = getattr(self.field_controller, '_last_ao_fields', None)
+            if ao_fields is not None and len(ao_fields) > 0:
+                ao_idx = ((indices % samples_per_cycle) * len(ao_fields)) // samples_per_cycle
+                requested = np.asarray(ao_fields, dtype=float)[ao_idx]
+            else:
+                phase = (indices % samples_per_cycle) * (4.0 / samples_per_cycle)
+                requested = np.interp(phase, np.arange(5), vertices)
             field = (self.gaussmeter.field_from_voltage(scan.iloc[:, 2].to_numpy())
                      if self.gaussmeter is not None else requested)
             frame = pd.DataFrame({
@@ -290,7 +388,7 @@ class MOKE(Experiment):
             self._chunks.append(frame)
             for c in range(len(frame) // samples_per_cycle):
                 self._accept_cycle(frame.iloc[c * samples_per_cycle:(c + 1) * samples_per_cycle])
-            self._notify(frame)
+            self._notify()
         finally:
             self.field_controller.stop_ramp()
 
@@ -299,44 +397,67 @@ class MOKE(Experiment):
         if daq is not None:
             self._daq_continuous(daq)
             return
-        run_start = time.monotonic()
+        elapsed = 0.0
         samples_per_cycle = max(20, int(round(self.cycle_period * self.sample_rate)))
         cycle_fields = _triangle_cycle_fields(self.field_min, self.field_max, samples_per_cycle)
         dt = self.cycle_period / samples_per_cycle
+        next_update = time.perf_counter() + 0.06
         for cycle_idx in range(self.cycles + self.discard_cycles):
             if self._wait_if_paused():
                 break
             rows = []
-            cycle_start = time.monotonic()
-            for i, requested in enumerate(cycle_fields):
-                if self._cancel.is_set():
-                    break
-                self.field_controller.set_field(float(requested))
-                field = (float(self.gaussmeter.get_field(channel=self.gaussmeter_channel))
-                         if self.gaussmeter is not None else float(requested))
-                signal = float(self.dmm.get_voltage())
-                if not np.isfinite([field, signal]).all():
-                    raise ValueError('Nonfinite reading during continuous sweep')
-                rows.append({
-                    'time (s)': time.monotonic() - run_start,
-                    'requested field (Oe)': float(requested),
-                    'field (Oe)': field,
-                    'signal (V)': signal,
-                    'cycle': cycle_idx,
-                    'included': cycle_idx >= self.discard_cycles,
-                })
-                target_time = cycle_start + (i + 1) * dt
-                wait = target_time - time.monotonic()
-                if wait > 0 and self._cancel.wait(wait):
-                    break
-            if len(rows) == len(cycle_fields) and not self._cancel.is_set():
-                frame = pd.DataFrame(rows, index=range(self._received, self._received + len(rows)))
-                self._received += len(frame)
-                self._chunks.append(frame)
-                self.actual_cycle_period = frame['time (s)'].iloc[-1] - frame['time (s)'].iloc[0] + dt
-                self.actual_sample_rate = len(frame) / self.actual_cycle_period
-                self._accept_cycle(frame)
-                self._notify(frame)
+            frame = pd.DataFrame()
+            cycle_start = time.perf_counter()
+            try:
+                for i, requested in enumerate(cycle_fields):
+                    if self._cancel.is_set():
+                        break
+                    t0 = time.perf_counter()
+                    self.field_controller.set_field(float(requested))
+                    field = (float(self.gaussmeter.get_field(channel=self.gaussmeter_channel))
+                             if self.gaussmeter is not None else float(requested))
+                    signal = float(self.dmm.get_voltage())
+                    io_time = time.perf_counter() - t0
+                    if not np.isfinite([field, signal]).all():
+                        raise ValueError('Nonfinite reading during continuous sweep')
+                    elapsed += max(dt, io_time)
+                    rows.append({
+                        'time (s)': elapsed,
+                        'requested field (Oe)': float(requested),
+                        'field (Oe)': field,
+                        'signal (V)': signal,
+                        'cycle': cycle_idx,
+                        'included': cycle_idx >= self.discard_cycles,
+                    })
+                    now = time.perf_counter()
+                    if self._on_update and now >= next_update:
+                        t_notify = time.perf_counter()
+                        self._notify(pd.DataFrame(rows))
+                        cycle_start += time.perf_counter() - t_notify
+                        next_update = time.perf_counter() + 0.06
+                    target_time = cycle_start + (i + 1) * dt
+                    wait = target_time - time.perf_counter()
+                    if wait > 0.002:
+                        if self._cancel.wait(wait - 0.002):
+                            break
+                    while time.perf_counter() < target_time:
+                        if self._cancel.is_set():
+                            break
+                        time.sleep(0)
+                    if self._cancel.is_set():
+                        break
+            finally:
+                if rows:
+                    frame = pd.DataFrame(rows, index=range(self._received, self._received + len(rows)))
+                    self._received += len(frame)
+                    self._chunks.append(frame)
+            if not frame.empty:
+                if len(frame) == len(cycle_fields) and not self._cancel.is_set():
+                    self.actual_cycle_period = frame['time (s)'].iloc[-1] - frame['time (s)'].iloc[0] + dt
+                    self.actual_sample_rate = len(frame) / self.actual_cycle_period
+                    self._accept_cycle(frame)
+                self._notify()
+                next_update = time.perf_counter() + 0.06
 
     def _finalize_data(self):
         self.data = pd.concat(self._chunks) if self._chunks else pd.DataFrame()

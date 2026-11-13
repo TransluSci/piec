@@ -207,6 +207,16 @@ class VirtualDaq(VirtualInstrument, Daq):
         elif len(data) > 0:
             self.state['ao_values'][ao_channel] = float(data[-1])
 
+    def write_AO_scan(self, ao_channel, data, sample_rate):
+        """Simulate a continuous hardware-paced analog output waveform."""
+        if len(data) > 0:
+            self.state['ao_values'][ao_channel] = float(data[-1])
+        self.state['ao_sample_rate'][ao_channel] = float(sample_rate)
+
+    def stop_output(self):
+        """Stop simulated continuous analog output."""
+        pass
+
     # --- Digital I/O Methods ---
 
     def set_DI_channel(self, dio_channel):

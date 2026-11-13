@@ -156,7 +156,8 @@ class USB231(MCC, Daq):
             except Exception:
                 if not idle:
                     raise
-            self.ul.win_buf_free(handle)
+            finally:
+                self.ul.win_buf_free(handle)
 
     def write_AO(self, ao_channel, data):
         """
@@ -185,6 +186,68 @@ class USB231(MCC, Daq):
         except Exception as e:
             print(f"USB231 Error writing AO{ao_channel}: {e}")
             raise
+
+    def write_AO_scan(self, ao_channel, data, sample_rate):
+        """Start continuous hardware-paced waveform output on one AO channel (Manual: up to 5 kS/s)."""
+        if ao_channel not in self.ao_channel:
+            raise ValueError(f"AO channel {ao_channel} is invalid; valid channels are {self.ao_channel}")
+        values = [float(value) for value in data]
+        if not values:
+            raise ValueError("data must contain at least one voltage value")
+        if any(value < -10.0 or value > 10.0 for value in values):
+            raise ValueError("analog-output values must be within +/-10 V")
+        low_rate, high_rate = self.ao_sample_rate
+        if not low_rate <= sample_rate <= high_rate:
+            raise ValueError(f"sample_rate must be between {low_rate} and {high_rate:,} S/s")
+
+        self.stop_output()
+        memhandle = self.ul.scaled_win_buf_alloc(len(values))
+        if not memhandle:
+            raise MemoryError("Universal Library could not allocate the AO scan buffer")
+
+        try:
+            source = (c_double * len(values))(*values)
+            self.ul.scaled_win_array_to_buf(source, memhandle, 0, len(values))
+            options = (
+                ScanOptions.BACKGROUND
+                | ScanOptions.CONTINUOUS
+                | ScanOptions.SCALEDATA
+            )
+            actual_rate = self.ul.a_out_scan(
+                self.board_num,
+                ao_channel,
+                ao_channel,
+                len(values),
+                int(sample_rate),
+                ULRange.BIP10VOLTS,
+                memhandle,
+                options,
+            )
+        except Exception:
+            self.ul.win_buf_free(memhandle)
+            raise
+
+        self._active_memhandle = memhandle
+        self._last_ao_scan_rate = actual_rate
+        return actual_rate
+
+    def stop_output(self):
+        """Stop any active background AO scan and free its buffer."""
+        try:
+            self.ul.stop_background(self.board_num, FunctionType.AOFUNCTION)
+        except Exception:
+            pass
+        if getattr(self, "_active_memhandle", None):
+            try:
+                self.ul.win_buf_free(self._active_memhandle)
+            except Exception:
+                pass
+            self._active_memhandle = None
+
+    def close(self):
+        """Stop any background AO scan before releasing the board."""
+        self.stop_output()
+        super().close()
 
     def set_input_mode(self, ai_mode):
         """

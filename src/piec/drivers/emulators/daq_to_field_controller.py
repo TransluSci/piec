@@ -5,16 +5,18 @@ from ..field_controller import FieldController
 
 
 class DaqFieldController(FieldController):
-    def __init__(self, daq_instance, ao_channel, gain=100.0, offset=0.0, output_limits=(-10, 10)):
+    def __init__(self, daq_instance, ao_channel, gain=100.0, offset=0.0, output_limits=(-10, 10),
+                 ao_sample_rate=1000.0):
         self._initialize_common_state(check_params=False, verbose=False)
         if ao_channel not in daq_instance.ao_channel:
             raise ValueError(f'Unavailable analog output: {ao_channel}')
         low, high = output_limits
         if not any(vmin <= low < high <= vmax for vmin, vmax in daq_instance.ao_range):
             raise ValueError('Output limits exceed the DAQ voltage range')
-        if not np.isfinite([low, high, gain, offset]).all() or gain == 0:
-            raise ValueError('Require finite output limits, nonzero gain and finite offset')
+        if not np.isfinite([low, high, gain, offset, ao_sample_rate]).all() or gain == 0 or ao_sample_rate <= 0:
+            raise ValueError('Require finite output limits, nonzero gain, finite offset, and positive AO sample rate')
         self.daq, self.ao_channel = daq_instance, ao_channel
+        self.ao_sample_rate = float(ao_sample_rate)
         self._field_setpoint = None
         self._ramp_end = None
         self.gain, self.offset = gain, offset
@@ -47,7 +49,9 @@ class DaqFieldController(FieldController):
         if not np.isfinite([field_min, field_max, cycle_period]).all() or field_min >= field_max or cycle_period <= 0:
             raise ValueError('Require finite increasing field limits and positive cycle period')
         low_rate, high_rate = self.daq.ao_sample_rate
-        rate = min(high_rate, 10_000) if sample_rate is None else float(sample_rate)
+        rate = self.ao_sample_rate if sample_rate is None else float(sample_rate)
+        if not np.isfinite(rate) or rate <= 0:
+            raise ValueError('AO sample rate must be positive')
         rate = float(np.clip(rate, low_rate, high_rate))
         points = max(8, int(round(cycle_period * rate)))
         if points >= 1_000_000:
@@ -71,6 +75,9 @@ class DaqFieldController(FieldController):
             actual_rate = int(round(rate))
         if not np.isfinite(actual_rate) or actual_rate <= 0:
             raise ValueError('DAQ returned an invalid waveform output rate')
+        self._last_ao_sample_rate = float(actual_rate)
+        self._last_ao_points = int(points)
+        self._last_ao_fields = fields
         return points / actual_rate
 
     def stop_ramp(self):

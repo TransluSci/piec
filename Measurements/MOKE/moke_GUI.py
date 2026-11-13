@@ -8,14 +8,15 @@ import threading
 import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
+import numpy as np
+import pandas as pd
 
 from piec.measurement.gui_utils import MeasurementApp
 from piec.measurement.moke import MOKE
 from piec.drivers.field_controller.virtual_field_controller import VirtualFieldController
 from piec.drivers.dmm.virtual_dmm import VirtualDMM
 from piec.drivers.daq.daq import Daq
-from piec.drivers.daq.usb1208hs import USB1208HS
-from piec.drivers.autodetect import autodetect, _safe_close, _resolve_type_string
+from piec.drivers.autodetect import autodetect, _open_mcc_driver, _safe_close, _resolve_type_string
 from piec.drivers.emulators.daq_to_field_controller import DaqFieldController
 from piec.drivers.emulators.daq_to_dmm import DaqAsDMM
 from piec.drivers.emulators.daq_to_gaussmeter import DaqAsGaussmeter
@@ -24,6 +25,12 @@ from piec.simulation.magnetic_material import ArctanMOKE
 
 DAQ_ADDRESS = 'DAQ emulator'
 SOURCE_ADDRESS = 'Source emulator'
+DEFAULT_DAQ_AI_MODE = 'DIFF'
+DAQ_AI_MODES = ('DIFF', 'SE')
+DAQ_AI_CHOICES = {
+    'DIFF': ('Unassigned', *(f'AI{i} (AIN{2*i} − AIN{2*i+1})' for i in range(4))),
+    'SE': ('Unassigned', *(f'AIN{i} (AGND ref.)' for i in range(8))),
+}
 DEFAULT_DAQ_PATHS = {
     'longitudinal': {'output': 0, 'field_input': 0, 'signal_input': 2},
     'polar': {'output': 1, 'field_input': 1, 'signal_input': 3},
@@ -64,11 +71,13 @@ class MOKEApp(MeasurementApp):
         self._source_output = None
         self._setup_window = None
         paths = DEFAULT_DAQ_PATHS if paths is None else paths
-        self.connection_setup = {'board': '0', 'profiles': {}, 'source': dict(DEFAULT_SOURCE)}
+        self.connection_setup = {'board': '0', 'ai_mode': DEFAULT_DAQ_AI_MODE,
+                                 'ao_sample_rate': 1000.0,
+                                 'profiles': {}, 'source': dict(DEFAULT_SOURCE)}
         for geometry in GEOMETRIES:
             profile = dict(output=None, field_input=None, signal_input=None,
-                           command_gain=100.0, command_offset=0.0,
-                           monitor_gain=100.0, monitor_offset=0.0)
+                           command_gain=1000.0, command_offset=0.0,
+                           monitor_gain=1000.0, monitor_offset=0.0)
             profile.update(paths.get(geometry, {}))
             self.connection_setup['profiles'][geometry] = profile
         super().__init__(root, title='PIEC - MOKE', geometry='1500x900')
@@ -86,28 +95,25 @@ class MOKEApp(MeasurementApp):
         self.setup_button = ttk.Button(self.static_frame, text='CONNECTION SETUP...',
                                         command=self.open_connection_setup)
         self.setup_button.grid(row=3, column=0, columnspan=3, sticky='ew', pady=5)
-        self.dynamic_frame.configure(text='MOKE SWEEP')
         self.inputs = {}
-        self._input(self.dynamic_frame, 'Geometry', 'longitudinal', GEOMETRIES, row=0)
-        self._input(self.dynamic_frame, 'Mode', 'stepped', ('stepped', 'continuous'), row=1)
-        for row, (label, default) in enumerate([
-                ('Field amplitude (Oe)', '1000'), ('Cycle period (s)', '1'),
-                ('Cycles to average', '10'), ('Discard initial cycles', '1'),
-                ('Points per cycle / average', '200'), ('Input sample rate (Hz)', '10000'),
-                ('Point dwell (s)', '0.01'), ('Initial endpoint hold (s)', '0'),
-                ('Field tolerance (Oe, optional)', ''), ('Settling timeout (s)', '10')], 2):
-            self._input(self.dynamic_frame, label, default, row=row)
+        self._input(self.static_frame, 'Geometry', 'longitudinal', GEOMETRIES, row=4)
+        self._input(self.static_frame, 'Mode', 'stepped', ('stepped', 'continuous'), row=5)
+        self.geometry_note = ttk.Label(self.static_frame, wraplength=470, foreground='#B9C6D1')
+        self.geometry_note.grid(row=6, column=0, columnspan=3, sticky='w', pady=(4, 0))
+        plot_axes = ('field (Oe)', 'time (s)', 'requested field (Oe)', 'signal (V)')
         self._input(self.plot_config_frame, 'Display', 'Cycle average',
-                    ('Cycle average', 'Latest cycle', 'Live signal'), row=0)
-        self.geometry_note = ttk.Label(self.dynamic_frame, wraplength=470, foreground='#B9C6D1')
-        self.geometry_note.grid(row=12, column=0, columnspan=2, sticky='w', pady=(4, 0))
+                    ('Cycle average', 'Most recent cycle', 'Live signal'), row=0)
+        self._input(self.plot_config_frame, 'X-axis', 'field (Oe)', plot_axes, row=1)
+        self._input(self.plot_config_frame, 'Y-axis', 'signal (V)', plot_axes, row=2)
         self.inputs['Geometry'].bind('<<ComboboxSelected>>', lambda event: self._update_geometries())
         for selector in self.instrument_address_entries.values():
             selector.bind('<<ComboboxSelected>>', lambda event: self._update_geometries(), add='+')
-        self.inputs['Mode'].bind('<<ComboboxSelected>>', lambda event: self._sync_timing())
-        self.inputs['Display'].bind('<<ComboboxSelected>>', lambda event: self._draw())
+        self.inputs['Mode'].bind('<<ComboboxSelected>>', self.update_dynamic_inputs)
+        self.inputs['Display'].bind('<<ComboboxSelected>>', self._on_display_change)
+        self.inputs['X-axis'].bind('<<ComboboxSelected>>', lambda event: self._draw())
+        self.inputs['Y-axis'].bind('<<ComboboxSelected>>', lambda event: self._draw())
         self.status_label = ttk.Label(self.plot_config_frame, text='Ready')
-        self.status_label.grid(row=1, column=0, columnspan=2, sticky='w')
+        self.status_label.grid(row=3, column=0, columnspan=2, sticky='w', pady=(4, 0))
         self.control_frame = ttk.Frame(self.right_panel)
         self.control_frame.grid(row=1, column=0, pady=10)
         self.pause_button = ttk.Button(self.control_frame, text='PAUSE', command=self.toggle_pause)
@@ -117,7 +123,6 @@ class MOKEApp(MeasurementApp):
         self.control_frame.grid_remove()
         self.paused = False
         self._update_gaussmeter()
-        self._sync_timing()
         self._poll_id = self.root.after(100, self._poll)
 
     def _input(self, parent, label, value, options=None, row=0):
@@ -131,11 +136,54 @@ class MOKEApp(MeasurementApp):
             widget.insert(0, value)
         self.inputs[label] = widget
 
+    def update_dynamic_inputs(self, event=None):
+        if not hasattr(self, 'inputs') or 'Mode' not in self.inputs:
+            return
+        self._cache_dynamic_inputs()
+        for widget in self.dynamic_frame.winfo_children():
+            widget.destroy()
+        for key in list(self.inputs):
+            if key not in ('Geometry', 'Mode', 'Display', 'X-axis', 'Y-axis'):
+                self.inputs.pop(key, None)
+        mode = self.inputs['Mode'].get()
+        self.dynamic_frame.configure(text='CONTINUOUS INPUTS' if mode == 'continuous' else 'STEPPED INPUTS')
+        if mode == 'continuous':
+            fields = [
+                ('Field amplitude (Oe)', '1000'),
+                ('Cycle period (s)', '0.2'),
+                ('Cycles to average', '10'),
+                ('Discard initial cycles', '1'),
+                ('Points per cycle / average', '200'),
+                ('Input sample rate (Hz)', '10000'),
+                ('Initial endpoint hold (s)', '0'),
+            ]
+        else:
+            fields = [
+                ('Field amplitude (Oe)', '1000'),
+                ('Cycles to average', '10'),
+                ('Discard initial cycles', '1'),
+                ('Points per cycle / average', '200'),
+                ('Point dwell (s)', '0.001'),
+                ('Initial endpoint hold (s)', '0'),
+            ]
+            if self.use_gaussmeter.get():
+                fields.extend([
+                    ('Field tolerance (Oe, optional)', ''),
+                    ('Settling timeout (s)', '10'),
+                ])
+        for row, (label, default) in enumerate(fields):
+            self._input(self.dynamic_frame, label, default, row=row)
+        self._apply_saved_dynamic()
+        if self._worker is not None:
+            for key, widget in self.inputs.items():
+                if key not in ('Display', 'X-axis', 'Y-axis'):
+                    widget.state(['disabled'])
+
     def _update_gaussmeter(self):
         enabled = self.use_gaussmeter.get() and self._worker is None
         self.instrument_address_entries['gaussmeter'].state(['!disabled' if enabled else 'disabled'])
         if hasattr(self, 'inputs'):
-            self._sync_timing()
+            self.update_dynamic_inputs()
             self._update_geometries()
 
     def _missing_daq_channels(self, geometry):
@@ -160,18 +208,6 @@ class MOKEApp(MeasurementApp):
         else:
             self.geometry_note.grid_remove()
 
-    def _sync_timing(self):
-        if not hasattr(self, 'inputs') or 'Mode' not in self.inputs:
-            return
-        continuous = self.inputs['Mode'].get() == 'continuous'
-        for label in ('Cycle period (s)', 'Input sample rate (Hz)'):
-            self.inputs[label].state(['!disabled' if continuous and self._worker is None else 'disabled'])
-        for label in ('Point dwell (s)', 'Field tolerance (Oe, optional)', 'Settling timeout (s)'):
-            enabled = not continuous and self._worker is None
-            if label != 'Point dwell (s)':
-                enabled = enabled and self.use_gaussmeter.get()
-            self.inputs[label].state(['!disabled' if enabled else 'disabled'])
-
     def _active_roles(self):
         return ('field_controller', 'dmm') + (('gaussmeter',) if self.use_gaussmeter.get() else ())
 
@@ -194,18 +230,9 @@ class MOKEApp(MeasurementApp):
     def _discover_daq(self, target=None):
         device = None
         try:
-            device = autodetect(address=None, required_type=Daq)
-            if device is None:
-                raise ConnectionError('No DAQ detected')
-            if 'USB-1208HS' not in device.idn():
-                raise ConnectionError('This DAQ setup currently supports the USB-1208HS family')
-            board = str(device.board_num)
-            if target is not None:
-                target.delete(0, tk.END)
-                target.insert(0, board)
-            else:
-                self.connection_setup['board'] = board
-            print(f'Detected shared DAQ: {device.idn()} (board {board})')
+            board = int(target.get() if target is not None else self.connection_setup['board'])
+            device = _open_mcc_driver(Daq, board)
+            print(f'Detected shared DAQ: {device.idn()} (board {device.board_num})')
         except Exception as error:
             messagebox.showerror('DAQ discovery', str(error), parent=self.root)
         finally:
@@ -279,46 +306,79 @@ class MOKEApp(MeasurementApp):
                   'Shared DAQ channel uses the wiring for the selected geometry under DAQ channels.\n'
                   'Current or voltage source uses the instrument and calibration under Source settings.').grid(
                       row=3, column=0, columnspan=2, sticky='w', pady=(14, 0))
-        ttk.Label(daq_frame, text='Shared DAQ: USB-1208HS family, MCC board number').grid(
+        ttk.Label(daq_frame, text='Shared DAQ: MCC board number (e.g. USB-1208HS, USB-231)').grid(
             row=0, column=0, columnspan=2, sticky='w', pady=(12, 3))
         board = ttk.Entry(daq_frame)
         board.insert(0, self.connection_setup['board'])
         board.grid(row=1, column=0, sticky='ew')
         ttk.Button(daq_frame, text='DISCOVER DAQ', command=lambda: self._discover_daq(board)).grid(row=1, column=1)
-        ttk.Label(daq_frame, text='Enter channel numbers for each geometry. Blank means unassigned.').grid(
-            row=2, column=0, columnspan=2, sticky='w', pady=(12, 3))
+        ttk.Label(daq_frame, text='Analog input mode').grid(row=2, column=0, sticky='w', pady=(8, 0))
+        ai_mode = ttk.Combobox(daq_frame, values=DAQ_AI_MODES, state='readonly', width=10)
+        ai_mode.set(self.connection_setup['ai_mode'])
+        ai_mode.grid(row=2, column=1, sticky='w', pady=(8, 0))
+        ttk.Label(daq_frame, text='AO sample rate (Hz)').grid(row=3, column=0, sticky='w', pady=(6, 0))
+        ao_rate = ttk.Entry(daq_frame, width=12)
+        ao_rate.insert(0, str(self.connection_setup.get('ao_sample_rate', 1000.0)))
+        ao_rate.grid(row=3, column=1, sticky='w', pady=(6, 0))
+        ttk.Label(daq_frame, text='Select the photodiode and field monitor inputs for each geometry.').grid(
+            row=4, column=0, columnspan=2, sticky='w', pady=(12, 3))
         table = ttk.Frame(daq_frame, style='Card.TFrame')
-        table.grid(row=3, column=0, columnspan=3, sticky='ew')
+        table.grid(row=5, column=0, columnspan=3, sticky='ew')
         keys = ('output', 'signal_input', 'field_input', 'command_gain', 'command_offset',
                 'monitor_gain', 'monitor_offset')
+        input_keys = ('signal_input', 'field_input')
         labels = ('Geometry', 'Magnet\nAO', 'Photodiode\nAI', 'Field monitor\nAI', 'Command\nOe/V', 'Command\noffset Oe',
                   'Monitor\nOe/V', 'Monitor\noffset Oe')
         for col, label in enumerate(labels):
             ttk.Label(table, text=label).grid(row=0, column=col, padx=3)
         entries = {}
+        input_choices = DAQ_AI_CHOICES[ai_mode.get()]
         for row, geometry in enumerate(GEOMETRIES, 1):
             ttk.Label(table, text=geometry.title()).grid(row=row, column=0, sticky='w')
             entries[geometry] = {}
             for col, key in enumerate(keys, 1):
-                widget = ttk.Entry(table, width=11)
                 value = self.connection_setup['profiles'][geometry][key]
-                widget.insert(0, '' if value is None else str(value))
+                if key in input_keys:
+                    widget = ttk.Combobox(table, values=input_choices, state='readonly', width=21)
+                    selection = value + 1 if value is not None else 0
+                    widget.current(selection if 0 <= selection < len(input_choices) else 0)
+                else:
+                    widget = ttk.Entry(table, width=11)
+                    widget.insert(0, '' if value is None else str(value))
                 widget.grid(row=row, column=col, padx=3, pady=3)
                 entries[geometry][key] = widget
-        ttk.Label(daq_frame, text='A geometry becomes available once all channels needed by the selected DAQ roles are assigned.').grid(row=4, column=0, columnspan=3, pady=10)
+
+        def update_ai_choices(event):
+            choices = DAQ_AI_CHOICES[ai_mode.get()]
+            for widgets in entries.values():
+                for key in input_keys:
+                    widget = widgets[key]
+                    selection = widget.current()
+                    widget.configure(values=choices)
+                    widget.current(selection if 0 <= selection < len(choices) else 0)
+
+        ai_mode.bind('<<ComboboxSelected>>', update_ai_choices)
+        ttk.Label(daq_frame, text='A geometry becomes available once all channels needed by the selected DAQ roles are assigned.').grid(row=6, column=0, columnspan=3, pady=10)
         def apply():
             try:
                 board_number = int(board.get())
                 if board_number < 0:
                     raise ValueError('MCC board number must be nonnegative')
+                ao_sample_rate = float(ao_rate.get())
+                if not math.isfinite(ao_sample_rate) or ao_sample_rate <= 0:
+                    raise ValueError('DAQ AO sample rate must be positive and finite')
                 profiles = {}
                 for geometry, widgets in entries.items():
                     profile = {}
                     for key, widget in widgets.items():
-                        text = widget.get().strip()
-                        profile[key] = ((int(text) if text else None) if key in keys[:3] else float(text))
-                    if any(profile[key] is not None and profile[key] < 0 for key in keys[:3]):
-                        raise ValueError('Channel numbers must be nonnegative')
+                        if key in input_keys:
+                            selection = widget.current()
+                            profile[key] = selection - 1 if selection > 0 else None
+                        else:
+                            text = widget.get().strip()
+                            profile[key] = (int(text) if text else None) if key == 'output' else float(text)
+                    if profile['output'] is not None and profile['output'] < 0:
+                        raise ValueError('Output channel numbers must be nonnegative')
                     if (not all(math.isfinite(profile[key]) for key in keys[3:])
                             or profile['command_gain'] == 0 or profile['monitor_gain'] == 0):
                         raise ValueError('DAQ calibrations require finite offsets and nonzero gains')
@@ -341,7 +401,9 @@ class MOKEApp(MeasurementApp):
                         selector.set(backend)
                     elif selector.get() in (DAQ_ADDRESS, SOURCE_ADDRESS):
                         selector.set('VIRTUAL')
-                self.connection_setup = {'board': str(board_number), 'profiles': profiles, 'source': source}
+                self.connection_setup = {'board': str(board_number), 'ai_mode': ai_mode.get(),
+                                         'ao_sample_rate': ao_sample_rate,
+                                         'profiles': profiles, 'source': source}
             except Exception as error:
                 messagebox.showerror('Invalid connection setup', str(error), parent=window)
                 return
@@ -395,10 +457,15 @@ class MOKEApp(MeasurementApp):
                             isinstance(setup.get('profiles', {}).get(g), dict) for g in GEOMETRIES):
                         raise ValueError('Invalid saved MOKE connection setup')
                     setup.setdefault('source', dict(DEFAULT_SOURCE))
+                    setup.setdefault('ao_sample_rate', 1000.0)
+                    if setup.setdefault('ai_mode', DEFAULT_DAQ_AI_MODE) not in DAQ_AI_MODES:
+                        raise ValueError('Invalid saved DAQ analog input mode')
                     self.connection_setup = setup
         except (OSError, ValueError, TypeError) as error:
             print(f'Could not load MOKE connection setup: {error}')
         super().load_settings()
+        if self.inputs.get('Display') is not None and self.inputs['Display'].get() == 'Latest cycle':
+            self.inputs['Display'].set('Most recent cycle')
         self._update_gaussmeter()
 
     def close_instruments(self):
@@ -424,7 +491,8 @@ class MOKEApp(MeasurementApp):
         self.close_instruments()
         try:
             if any(self.instrument_address_entries[name].get() == DAQ_ADDRESS for name in roles):
-                self._owned_daq = USB1208HS(address=self.connection_setup['board'])
+                self._owned_daq = _open_mcc_driver(Daq, int(self.connection_setup['board']))
+                self._owned_daq.set_input_mode(self.connection_setup['ai_mode'])
             for name in roles:
                 if name == 'field_controller' and self.instrument_address_entries[name].get() == SOURCE_ADDRESS:
                     settings = self.connection_setup['source']
@@ -457,7 +525,8 @@ class MOKEApp(MeasurementApp):
                     self.instruments[name] = super().connect_instrument(name)
                 elif name == 'field_controller':
                     self.instruments[name] = DaqFieldController(
-                        self._owned_daq, profile['output'], profile['command_gain'], profile['command_offset'])
+                        self._owned_daq, profile['output'], profile['command_gain'], profile['command_offset'],
+                        ao_sample_rate=float(self.connection_setup.get('ao_sample_rate', 1000.0)))
                 elif name == 'dmm':
                     self.instruments[name] = DaqAsDMM(self._owned_daq, profile['signal_input'])
                 else:
@@ -495,17 +564,20 @@ class MOKEApp(MeasurementApp):
                     and self.instrument_address_entries['gaussmeter'].get() == DAQ_ADDRESS
                     and profile['signal_input'] == profile['field_input']):
                 raise ValueError('Optical signal and field monitor require different inputs')
+            mode = values['Mode']
             settings = dict(geometry=values['Geometry'], field_min=-amplitude, field_max=amplitude,
-                            cycle_period=float(values['Cycle period (s)']), cycles=int(values['Cycles to average']),
+                            cycle_period=float(values.get('Cycle period (s)', 0.2)),
+                            cycles=int(values['Cycles to average']),
                             discard_cycles=int(values['Discard initial cycles']),
                             points_per_cycle=int(values['Points per cycle / average']),
-                            sample_rate=float(values['Input sample rate (Hz)']), mode=values['Mode'],
-                            dwell_time=float(values['Point dwell (s)']),
+                            sample_rate=float(values.get('Input sample rate (Hz)', 10000)),
+                            mode=mode,
+                            dwell_time=float(values.get('Point dwell (s)', 0.001)),
                             initial_hold=float(values['Initial endpoint hold (s)']),
                             field_tolerance=(float(values['Field tolerance (Oe, optional)'])
-                                             if self.use_gaussmeter.get() and values['Mode'] == 'stepped'
-                                             and values['Field tolerance (Oe, optional)'].strip() else None),
-                            settle_timeout=float(values['Settling timeout (s)']),
+                                             if self.use_gaussmeter.get() and mode == 'stepped'
+                                             and values.get('Field tolerance (Oe, optional)', '').strip() else None),
+                            settle_timeout=float(values.get('Settling timeout (s)', 10)),
                             save_dir=self.save_dir_entry.get(), on_update=self._queue_update)
             instruments = self._connect_roles(roles, profile)
             self._configure_acquisition(instruments)
@@ -513,7 +585,7 @@ class MOKEApp(MeasurementApp):
                                    gaussmeter=instruments.get('gaussmeter'),
                                    **settings)
             if self._owned_daq is not None:
-                self.experiment.daq_profile = dict(profile)
+                self.experiment.daq_profile = dict(profile, ai_mode=self.connection_setup['ai_mode'])
             if self._owned_source is not None:
                 self.experiment.source_settings = dict(self.connection_setup['source'])
         except Exception as error:
@@ -536,7 +608,7 @@ class MOKEApp(MeasurementApp):
     def _set_editing(self, enabled):
         state = ['!disabled' if enabled else 'disabled']
         for key, widget in self.inputs.items():
-            if key != 'Display':
+            if key not in ('Display', 'X-axis', 'Y-axis'):
                 widget.state(state)
         for widget in self.instrument_address_entries.values():
             widget.state(state)
@@ -636,31 +708,58 @@ class MOKEApp(MeasurementApp):
                 self.console.write(message + '\n')
                 if kind == 'error':
                     messagebox.showerror('MOKE acquisition failed', message, parent=self.root)
-        self._poll_id = self.root.after(100, self._poll)
+        self._poll_id = self.root.after(60, self._poll)
+
+    def _on_display_change(self, event=None):
+        choice = self.inputs['Display'].get()
+        x_widget = self.inputs.get('X-axis')
+        if x_widget is not None:
+            if choice == 'Live signal' and x_widget.get() == 'field (Oe)':
+                x_widget.set('time (s)')
+            elif choice != 'Live signal' and x_widget.get() == 'time (s)':
+                x_widget.set('field (Oe)')
+        self._draw()
 
     def _draw(self):
         if self._last_update is None:
             return
         choice = self.inputs['Display'].get()
-        key = {'Cycle average': 'average', 'Latest cycle': 'latest', 'Live signal': 'live'}[choice]
-        frame = self._last_update[key]
-        self.ax.clear()
-        if not frame.empty:
-            if key == 'live':
-                self.ax.plot(frame['time (s)'], frame['signal (V)'], color='#4DA6FF', linewidth=1.8)
-            else:
-                x = frame['field (Oe)'].to_numpy()
-                y = frame['signal (V)'].to_numpy()
-                # Close the loop visually when a full cycle is present
-                if len(x) > 2:
-                    x = [*x, x[0]]
-                    y = [*y, y[0]]
-                self.ax.plot(x, y, marker='o', markersize=3.5, color='#4DA6FF', linewidth=2.0)
-        self.ax.grid(True, linestyle='--', alpha=0.3)
-        self.ax.set_xlabel('Time (s)' if key == 'live' else 'Magnetic Field (Oe)')
-        self.ax.set_ylabel('Optical Signal (V)')
-        self.ax.set_title(f"{choice} ({self._last_update['cycles']} averaged cycles)")
-        self.canvas.draw_idle()
+        key = {
+            'Cycle average': 'average',
+            'Most recent cycle': 'latest',
+            'Latest cycle': 'latest',
+            'Live signal': 'live',
+        }.get(choice, 'average')
+        frame = self._last_update.get(key, pd.DataFrame())
+        x_col = self.inputs['X-axis'].get()
+        y_col = self.inputs['Y-axis'].get()
+        mode_sig = (choice, x_col, y_col)
+        title_text = f"{choice}: {y_col} vs {x_col} ({self._last_update['cycles']} averaged cycles)"
+        if getattr(self, '_plot_sig', None) != mode_sig or not hasattr(self, '_trace_line'):
+            self.ax.clear()
+            self.ax.grid(True, linestyle='--', alpha=0.3)
+            self.ax.set_xlabel(x_col)
+            self.ax.set_ylabel(y_col)
+            self._title_artist = self.ax.set_title(title_text)
+            (self._trace_line,) = self.ax.plot([], [], color='#4DA6FF', linewidth=1.8)
+            self._plot_sig = mode_sig
+            self.fig.set_tight_layout(True)
+        else:
+            self._title_artist.set_text(title_text)
+        if not frame.empty and x_col in frame.columns and y_col in frame.columns:
+            x = frame[x_col].to_numpy()
+            y = frame[y_col].to_numpy()
+            # Close the loop visually when plotting a single/averaged cycle against field
+            if key != 'live' and 'field' in x_col and len(x) > 2:
+                x = np.append(x, x[0])
+                y = np.append(y, y[0])
+            self._trace_line.set_data(x, y)
+            self.ax.relim()
+            self.ax.autoscale_view()
+        else:
+            self._trace_line.set_data([], [])
+        self.canvas.draw()
+        self.fig.set_tight_layout(False)
 
     def on_closing(self):
         if self._worker is not None:

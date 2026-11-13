@@ -300,7 +300,8 @@ class USB1208HS(MCC, Daq):
             except Exception:
                 if not idle:
                     raise
-            self.ul.win_buf_free(handle)
+            finally:
+                self.ul.win_buf_free(handle)
 
 
     def write_AO(self, ao_channel, data):

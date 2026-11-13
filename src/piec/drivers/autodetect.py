@@ -150,10 +150,14 @@ def _dynamic_driver_scan(verbose=False):
 
     return found_registry
 
-def _setup_mcc_device(target_identifier=None, board_num=0, verbose=False):
+def _setup_mcc_device(target_identifier=None, board_num=0, verbose=False, *, product_names=None):
     if not MCC_AVAILABLE or ul is None: return False
     ul.ignore_instacal()
     devices = ul.get_daq_device_inventory(InterfaceType.ANY)
+    if product_names is not None:
+        devices = [device for device in devices if device.product_name in product_names]
+        if len(devices) > 1:
+            raise ConnectionError('Multiple matching MCC DAQs found. Connect only the DAQ for this setup.')
     if not devices: return False
 
     target_device = devices[0] 
@@ -170,9 +174,77 @@ def _setup_mcc_device(target_identifier=None, board_num=0, verbose=False):
             print(f"MCC: Configured {target_device.product_name} as Board {board_num}")
         return target_device.product_name
     except Exception as e:
+        if product_names is not None:
+            raise
         if verbose:
             print(f"MCC Config Error: {e}")
         return None
+
+
+def _mcc_daq_driver_map():
+    """Return ``{product_name: driver_class}`` for all MCC ``Daq`` drivers."""
+    from .daq.daq import Daq
+    daq_dir = Path(__file__).parent / "daq"
+    mapping = {}
+    for file_path in daq_dir.glob("*.py"):
+        if file_path.stem.startswith("_") or file_path.stem in ("daq", "virtual_daq"):
+            continue
+        try:
+            module = importlib.import_module(f"piec.drivers.daq.{file_path.stem}")
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if (
+                    obj.__module__ == module.__name__
+                    and issubclass(obj, Daq)
+                    and issubclass(obj, MCC)
+                    and getattr(obj, "AUTODETECT_ID", None)
+                ):
+                    ids = obj.AUTODETECT_ID
+                    if isinstance(ids, str):
+                        ids = (ids,)
+                    for product_name in ids:
+                        if product_name:
+                            mapping[product_name] = obj
+        except Exception:
+            continue
+    return mapping
+
+
+def _open_mcc_driver(driver_class=None, board_num=0):
+    """Register a matching MCC device and return its open driver.
+
+    If ``driver_class`` is omitted or is the base :class:`Daq` interface, any
+    supported MCC ``Daq`` driver (e.g. :class:`USB1208HS`, :class:`USB231`) is
+    matched from the connected MCC inventory.
+    """
+    from .daq.daq import Daq
+    if isinstance(driver_class, int):
+        board_num = driver_class
+        driver_class = None
+
+    if driver_class is None or driver_class is Daq:
+        daq_map = _mcc_daq_driver_map()
+        product_names = tuple(daq_map.keys())
+        matched_name = _setup_mcc_device(board_num=board_num, product_names=product_names)
+        if not matched_name:
+            raise ConnectionError(f'No supported MCC DAQ found for board {board_num}')
+        resolved_class = daq_map[matched_name]
+    else:
+        raw_ids = getattr(driver_class, 'AUTODETECT_ID', ())
+        product_names = (raw_ids,) if isinstance(raw_ids, str) else tuple(raw_ids)
+        matched_name = _setup_mcc_device(board_num=board_num, product_names=product_names)
+        if not matched_name:
+            raise ConnectionError(f'No {driver_class.__name__} found for MCC board {board_num}')
+        resolved_class = driver_class
+
+    try:
+        return resolved_class(address=board_num)
+    except Exception:
+        try:
+            ul.release_daq_device(board_num)
+        except Exception as error:
+            print(f'MCC: Could not release board {board_num}: {error}')
+        raise
+
 
 def _get_real_close(target):
     """Return a real close method without triggering dynamic ``__getattr__``."""

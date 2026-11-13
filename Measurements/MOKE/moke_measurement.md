@@ -17,7 +17,7 @@ $$0 \rightarrow +H_{\max} \rightarrow 0 \rightarrow -H_{\min} \rightarrow 0$$
 
 Two acquisition modes are supported:
 1.  **Stepped Mode**: Commands each discrete field point (`points_per_cycle` points per cycle) along the triangle waveform via `set_field()`, waits `dwell_time` (and optionally verifies that the measured field settles within `field_tolerance` when a gaussmeter is enabled), and records the optical voltage and field.
-2.  **Continuous Mode**: Acquires `round(cycle_period * sample_rate)` raw samples per cycle along the triangle waveform—either via timed `set_field()` steps with direct instruments or via hardware-paced DAQ waveform output (`write_AO_scan`) and synchronized analog input scanning (`read_AI_scan`) when using shared DAQ emulators—and interpolates each completed cycle onto the `points_per_cycle` grid for cycle averaging.
+2.  **Continuous Mode**: Acquires `round(cycle_period * sample_rate)` raw input samples per cycle along the triangle waveform—either via timed `set_field()` steps with direct instruments or via hardware-paced DAQ waveform output (`write_AO_scan` at `ao_sample_rate`) and synchronized analog input scanning (`read_AI_scan` at `sample_rate`) when using shared DAQ emulators—and block-averages (downsamples) each completed cycle onto the `points_per_cycle` grid for cycle averaging.
 
 When multiple cycles are requested (`cycles >= 1`, after optional `discard_cycles`), completed cycles are averaged point-by-point around the full closed hysteresis loop and saved alongside the raw cycle data.
 
@@ -32,10 +32,25 @@ Every MOKE experiment uses two primary instruments and one optional field monito
 ### Optional DAQ and Source Emulators
 
 For setups where an electromagnet power supply and photodetector are driven through a multi-channel DAQ board (such as an MCC `USB1208HS` or `USB231`) or a standard sourcemeter/calibrator rather than standalone field controllers, PIEC provides emulator adapters in `piec.drivers.emulators`:
-*   `DaqFieldController(daq, ao_channel, gain=100.0, offset=0.0)`: Wraps a DAQ analog output channel as a `FieldController` (with hardware-paced triangle waveform output via `write_AO_scan` in continuous mode).
+*   `DaqFieldController(daq, ao_channel, gain=100.0, offset=0.0, ao_sample_rate=1000.0)`: Wraps a DAQ analog output channel as a `FieldController` (with hardware-paced triangle waveform output via `write_AO_scan` at `ao_sample_rate` in continuous mode).
 *   `DaqAsDMM(daq, ai_channel)`: Wraps a DAQ analog input channel as a `DMM`.
 *   `DaqAsGaussmeter(daq, ai_channel, gain=100.0, offset=0.0)`: Wraps a DAQ analog input channel connected to a Hall probe or field monitor output as a `Gaussmeter`.
 *   `SourceAsFieldController(source_instrument, set_value, gain=..., offset=0.0)`: Wraps a DC calibrator or sourcemeter output as a `FieldController`.
+
+### Shared MCC DAQ lab wiring (USB-1208HS / USB-231)
+
+The MOKE GUI defaults to **DIFF** for the shared DAQ in both stepped and continuous modes. Under **Connection Setup → DAQ channels**, use the logical AI numbers shown below. Each differential voltage is the positive terminal voltage minus the negative terminal voltage.
+
+The input dropdowns show the fixed terminal pairs in **DIFF** and the individual AIN terminals in **SE**. Select **Unassigned** for unused inputs. Switching to **DIFF** clears any selections above logical AI3.
+
+| Geometry | Magnet output | Field monitor | Photodiode |
+|---|---|---|---|
+| Longitudinal | AO0 | AI0 (AIN0 − AIN1) | AI2 (AIN4 − AIN5) |
+| Polar | AO1 | AI1 (AIN2 − AIN3) | AI3 (AIN6 − AIN7) |
+
+In a notebook, call `daq.set_input_mode("DIFF")` after connecting the DAQ (`USB1208HS` or `USB231`) and before creating the DAQ adapters. For single-ended wiring, select **SE** in the GUI or pass `"SE"` to `set_input_mode()`. In SE mode, logical AI3 reads AIN3 relative to AGND.
+
+For continuous shared-DAQ runs, `DaqFieldController` configures the output waveform clock (`ao_sample_rate`, default `1,000 Hz` under **Connection Setup → DAQ channels**), while `MOKE` configures the input acquisition clock (`sample_rate`, default `10,000 Hz`). With the default `0.2 s` cycle period, `ao_sample_rate=1000` on `DaqFieldController`, `sample_rate=10000`, and `points_per_cycle=200` on `MOKE`, each cycle generates `200` AO points (`50` per quarter-cycle), acquires `2,000` raw AI samples per channel, and averages onto `200` points per cycle ($10\times$ downsample).
 
 ## Software Architecture
 
@@ -98,16 +113,15 @@ python Measurements/MOKE/moke_GUI.py
 *   **Connection Setup... (Optional Emulators)**: Open **Connection Setup...** to map roles to shared DAQ channels (`DaqFieldController`, `DaqAsDMM`, `DaqAsGaussmeter`) or a current/voltage source (`SourceAsFieldController`) when not using standalone instruments.
 
 ### 2. Measurement Parameters
-*   **Geometry**: `longitudinal`, `polar`, or `transverse` (saved in measurement metadata).
-*   **Acquisition Mode**: `stepped` (discrete field points with `Dwell Time (s)`) or `continuous` (timed triangle sweep with `Cycle Period (s)` and `Sample Rate (Hz)`).
-*   **Field Min / Field Max (Oe)**: Lower and upper magnetic field limits for the bipolar triangle cycle.
-*   **Points / Cycle**: Number of field steps per cycle in `stepped` mode, and the number of points in the phase-interpolated cycle average in `continuous` mode (where raw samples per cycle are determined by `Cycle Period * Sample Rate`).
-*   **Cycles & Discard Cycles**: Number of measured hysteresis loops to average and number of initial conditioning loops to exclude from the average.
+*   **Geometry & Mode (Static Setup)**: Select `longitudinal`, `polar`, or `transverse` geometry and `stepped` or `continuous` acquisition mode. The input panel dynamically switches between **STEPPED INPUTS** (`Point dwell (s)`, plus `Field tolerance (Oe)` and `Settling timeout (s)` when **Use gaussmeter** is enabled) and **CONTINUOUS INPUTS** (`Cycle period (s)` and `Input sample rate (Hz)`).
+*   **Field amplitude (Oe)**: Symmetric magnetic field amplitude ($\pm H_{\max}$) for the bipolar triangle cycle (`0 -> +H_max -> 0 -> -H_max -> 0`).
+*   **Points per cycle / average**: Number of field steps per cycle in `stepped` mode, and the number of block-averaged (downsampled) points per cycle in `continuous` mode (where raw input samples per cycle are determined by `Cycle period * Input sample rate`).
+*   **Cycles to average & Discard initial cycles**: Number of steady-state hysteresis loops to average and number of initial conditioning loops to exclude from the average.
 
 ### 3. Running a Measurement
 1.  **Configure**: Set the sweep parameters and select a **Save Directory**.
 2.  **Start**: Click **Run** to begin acquisition.
-3.  **Monitor**: Switch between **Cycle average**, **Latest cycle**, and **Live signal** views in real time.
+3.  **Monitor & Plot Configuration**: Switch between **Cycle average**, **Most recent cycle**, and **Live signal** views in real time, and select any combination of **X-axis** and **Y-axis** arrays (`field (Oe)`, `time (s)`, `requested field (Oe)`, `signal (V)`) during or after acquisition.
 4.  **Control**: Use **Pause/Resume** or **Stop** at any time; stopping safely returns the field controller to `0.0 Oe` and saves the collected data.
 
 ## Features Summary
