@@ -112,8 +112,17 @@ class MOKEApp(MeasurementApp):
         self.inputs['Display'].bind('<<ComboboxSelected>>', self._on_display_change)
         self.inputs['X-axis'].bind('<<ComboboxSelected>>', lambda event: self._draw())
         self.inputs['Y-axis'].bind('<<ComboboxSelected>>', lambda event: self._draw())
-        self.status_label = ttk.Label(self.plot_config_frame, text='Ready')
-        self.status_label.grid(row=3, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        self.saveplots_entry = tk.BooleanVar(value=False)
+        self.save_plots_checkbox = ttk.Checkbutton(
+            self.plot_config_frame,
+            text='Save Plots?',
+            variable=self.saveplots_entry,
+            onvalue=True,
+            offvalue=False,
+        )
+        self.save_plots_checkbox.grid(row=3, column=0, columnspan=2, sticky='w', pady=4)
+        self.status_label = ttk.Label(self.plot_config_frame, text='Ready', wraplength=470)
+        self.status_label.grid(row=4, column=0, columnspan=2, sticky='w', pady=(4, 0))
         self.control_frame = ttk.Frame(self.right_panel)
         self.control_frame.grid(row=1, column=0, pady=10)
         self.pause_button = ttk.Button(self.control_frame, text='PAUSE', command=self.toggle_pause)
@@ -704,6 +713,15 @@ class MOKEApp(MeasurementApp):
                     self._finish_close()
                     return
             else:
+                if kind == 'done' and self.saveplots_entry.get() and self.experiment and self.experiment.filename:
+                    try:
+                        self._last_update = self._updates.get_nowait()
+                        self._draw()
+                    except queue.Empty:
+                        pass
+                    plot_path = Path(self.experiment.filename).with_suffix('.png')
+                    self.fig.savefig(plot_path, dpi=300, bbox_inches='tight')
+                    self.console.write(f'Saved plot: {plot_path}\n')
                 self.status_label.configure(text=message)
                 self.console.write(message + '\n')
                 if kind == 'error':
