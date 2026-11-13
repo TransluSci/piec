@@ -192,6 +192,8 @@ class MOKE(Experiment):
                 average = latest.copy()
             self._on_update({'live': live, 'latest': latest,
                              'average': average, 'cycles': self.completed_cycles,
+                             'has_completed_latest': not self.latest_cycle.empty,
+                             'field_source': self.field_source,
                              'status': self.status})
 
     def _downsample_cycle(self, frame, index):

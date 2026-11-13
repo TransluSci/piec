@@ -13,6 +13,7 @@ import pandas as pd
 
 from piec.measurement.gui_utils import MeasurementApp
 from piec.measurement.moke import MOKE
+from piec.analysis.moke import analyze_moke_dataframe, plot_moke_loop
 from piec.drivers.field_controller.virtual_field_controller import VirtualFieldController
 from piec.drivers.dmm.virtual_dmm import VirtualDMM
 from piec.drivers.daq.daq import Daq
@@ -120,9 +121,61 @@ class MOKEApp(MeasurementApp):
             onvalue=True,
             offvalue=False,
         )
-        self.save_plots_checkbox.grid(row=3, column=0, columnspan=2, sticky='w', pady=4)
+        self.save_plots_checkbox.grid(row=3, column=0, sticky='w', pady=4)
+        self.save_kerr_entry = tk.BooleanVar(value=False)
+        self.save_kerr_checkbox = ttk.Checkbutton(
+            self.plot_config_frame,
+            text='Save Kerr plot?',
+            variable=self.save_kerr_entry,
+            onvalue=True,
+            offvalue=False,
+        )
+        self.save_kerr_checkbox.grid(row=3, column=1, sticky='w', pady=4)
         self.status_label = ttk.Label(self.plot_config_frame, text='Ready', wraplength=470)
         self.status_label.grid(row=4, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        self.right_panel.rowconfigure(2, weight=0)
+        self.right_panel.rowconfigure(3, weight=1)
+        self.log_frame.grid(row=3, column=0, sticky='nsew', pady=(6, 0))
+        self.log_text.configure(height=6)
+        self.analysis_frame = ttk.LabelFrame(
+            self.right_panel, text='LOOP ANALYSIS', style='Card.TLabelframe', padding=(10, 6)
+        )
+        self.analysis_frame.grid(row=2, column=0, sticky='ew', pady=(0, 6))
+        for col in (1, 3, 5):
+            self.analysis_frame.columnconfigure(col, weight=1)
+        self._analysis_vars = {}
+        readout_defs = [
+            (0, 0, 'hc', 'Hc:'),
+            (0, 2, 'loop_center', 'Loop center:'),
+            (0, 4, 'squareness', 'Mr / Ms:'),
+            (1, 0, 'crossings', 'H+ / H-:'),
+            (1, 2, 'amplitude', 'MOKE amp:'),
+            (1, 4, 'source', 'Field source:'),
+        ]
+        for r, c, key, label_text in readout_defs:
+            ttk.Label(self.analysis_frame, text=label_text).grid(row=r, column=c, sticky='w', padx=(0, 6), pady=3)
+            var = tk.StringVar(value='—')
+            box = tk.Label(
+                self.analysis_frame,
+                textvariable=var,
+                bg='#1B2026',
+                fg='#F3F6FA',
+                relief='sunken',
+                bd=1,
+                font=('Consolas', 10, 'bold'),
+                anchor='center',
+                padx=8,
+                pady=3,
+                width=18,
+            )
+            box.grid(row=r, column=c + 1, sticky='ew', padx=(0, 14 if c < 4 else 0), pady=3)
+            self._analysis_vars[key] = var
+        self.analysis_note_var = tk.StringVar(value='Waiting for completed loop')
+        ttk.Label(
+            self.analysis_frame,
+            textvariable=self.analysis_note_var,
+            foreground='#B9C6D1',
+        ).grid(row=2, column=0, columnspan=6, sticky='w', pady=(4, 0))
         self.control_frame = ttk.Frame(self.right_panel)
         self.control_frame.grid(row=1, column=0, pady=10)
         self.pause_button = ttk.Button(self.control_frame, text='PAUSE', command=self.toggle_pause)
@@ -603,6 +656,7 @@ class MOKEApp(MeasurementApp):
             messagebox.showerror('MOKE configuration', str(error), parent=self.root)
             return
         self._last_update = None
+        self._reset_analysis_readout('Waiting for completed loop')
         self.paused = False
         self.pause_button.configure(text='PAUSE')
         self.pause_button.state(['!disabled'])
@@ -713,16 +767,47 @@ class MOKEApp(MeasurementApp):
                     self._finish_close()
                     return
             else:
-                if kind == 'done' and self.saveplots_entry.get() and self.experiment and self.experiment.filename:
+                if kind == 'done' and self.experiment and self.experiment.filename:
                     try:
                         self._last_update = self._updates.get_nowait()
                         self._draw()
                     except queue.Empty:
                         pass
-                    plot_path = Path(self.experiment.filename).with_suffix('.png')
-                    self.fig.savefig(plot_path, dpi=300, bbox_inches='tight')
-                    self.console.write(f'Saved plot: {plot_path}\n')
-                self.status_label.configure(text=message)
+                    if self.saveplots_entry.get():
+                        plot_path = Path(self.experiment.filename).with_suffix('.png')
+                        self.fig.savefig(plot_path, dpi=300, bbox_inches='tight')
+                        self.console.write(f'Saved plot: {plot_path}\n')
+                    if self.save_kerr_entry.get():
+                        loop_df = None
+                        if self._last_update:
+                            if (self._last_update.get('cycles', 0) >= 1
+                                    and not self._last_update.get('average', pd.DataFrame()).empty):
+                                loop_df = self._last_update['average']
+                            elif self._last_update.get('has_completed_latest', False):
+                                loop_df = self._last_update.get('latest')
+                        if loop_df is not None and not loop_df.empty:
+                            geom = self.inputs['Geometry'].get()
+                            colors = {'polar': '#1f4e78', 'longitudinal': '#b83b3b', 'transverse': '#2e7d5b'}
+                            kerr_path = str(Path(self.experiment.filename).with_suffix('')) + '_kerr.png'
+                            analysis = analyze_moke_dataframe(loop_df, field_source=self.experiment.field_source)
+                            plot_moke_loop(
+                                loop_df['field (Oe)'].to_numpy(),
+                                loop_df['signal (V)'].to_numpy(),
+                                analysis=analysis,
+                                title=f'{geom.capitalize()} MOKE',
+                                color=colors.get(geom, '#1f4e78'),
+                                save_path=kerr_path,
+                                show=False,
+                            )
+                            self.console.write(f'Saved Kerr plot: {kerr_path}\n')
+                        else:
+                            self.console.write('Skipped Kerr plot: no completed loop acquired\n')
+                short_status = (
+                    f'{self.experiment.status}: {Path(self.experiment.filename).name}'
+                    if kind == 'done' and self.experiment and self.experiment.filename
+                    else message
+                )
+                self.status_label.configure(text=short_status)
                 self.console.write(message + '\n')
                 if kind == 'error':
                     messagebox.showerror('MOKE acquisition failed', message, parent=self.root)
@@ -778,6 +863,60 @@ class MOKEApp(MeasurementApp):
             self._trace_line.set_data([], [])
         self.canvas.draw()
         self.fig.set_tight_layout(False)
+        self._update_analysis_readout(choice)
+
+    def _reset_analysis_readout(self, note):
+        for var in self._analysis_vars.values():
+            var.set('—')
+        self.analysis_note_var.set(note)
+
+    def _update_analysis_readout(self, choice):
+        if self._last_update is None:
+            return
+        if choice == 'Cycle average':
+            if self._last_update.get('cycles', 0) < 1:
+                self._reset_analysis_readout('Cycle average: waiting for first included cycle')
+                return
+            frame = self._last_update.get('average', pd.DataFrame())
+            scope = f"Cycle average ({self._last_update['cycles']} cycles)"
+        elif choice in ('Most recent cycle', 'Latest cycle'):
+            if not self._last_update.get('has_completed_latest', False):
+                self._reset_analysis_readout('Latest loop: waiting for completed loop')
+                return
+            frame = self._last_update.get('latest', pd.DataFrame())
+            scope = 'Latest completed loop'
+        else:
+            return
+
+        if frame is None or frame.empty:
+            self._reset_analysis_readout(f'{scope}: no data')
+            return
+
+        result = analyze_moke_dataframe(frame, field_source=self._last_update.get('field_source'))
+        reasons = result['reasons']
+        self._analysis_vars['hc'].set(f"{result['hc_oe']:.2f} Oe" if result['hc_oe'] is not None else 'N/A')
+        self._analysis_vars['loop_center'].set(
+            f"{result['loop_center_oe']:.2f} Oe" if result['loop_center_oe'] is not None else 'N/A'
+        )
+        self._analysis_vars['squareness'].set(
+            f"{result['squareness']:.3f}" if result['squareness'] is not None else 'N/A'
+        )
+        if result['h_increasing_oe'] is not None and result['h_decreasing_oe'] is not None:
+            self._analysis_vars['crossings'].set(
+                f"{result['h_increasing_oe']:.1f} / {result['h_decreasing_oe']:.1f} Oe"
+            )
+        else:
+            self._analysis_vars['crossings'].set('N/A')
+        self._analysis_vars['amplitude'].set(
+            f"{result['amplitude_v'] * 1e3:.2f} mV" if result['amplitude_v'] is not None else 'N/A'
+        )
+        self._analysis_vars['source'].set('Commanded' if result['uses_commanded_field'] else 'Measured')
+
+        unique_reasons = list(dict.fromkeys(reasons.values()))
+        if unique_reasons:
+            self.analysis_note_var.set(f"{scope} — {unique_reasons[0]}")
+        else:
+            self.analysis_note_var.set(scope)
 
     def on_closing(self):
         if self._worker is not None:

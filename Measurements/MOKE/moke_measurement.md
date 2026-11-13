@@ -122,7 +122,15 @@ python Measurements/MOKE/moke_GUI.py
 1.  **Configure**: Set the sweep parameters and select a **Save Directory**.
 2.  **Start**: Click **Run** to begin acquisition.
 3.  **Monitor & Plot Configuration**: Switch between **Cycle average**, **Most recent cycle**, and **Live signal** views in real time, and select any combination of **X-axis** and **Y-axis** arrays (`field (Oe)`, `time (s)`, `requested field (Oe)`, `signal (V)`) during or after acquisition.
-4.  **Control**: Use **Pause/Resume** or **Stop** at any time; stopping safely returns the field controller to `0.0 Oe` and saves the collected data.
+4.  **Save Plots**: Check **Save Plots?** to export the displayed GUI figure (`<filename>.png`), and/or **Save Kerr plot?** to export a baseline-subtracted Nature-style Kerr signal plot (`<filename>_kerr.png`, $\Delta V$ in mV vs. field in Oe).
+5.  **Loop Analysis Readout**: The **LOOP ANALYSIS** panel updates as complete loops arrive (analyzing **Cycle average** or **Most recent cycle** depending on the selected **Display**). It reports:
+    *   **Hc (Oe)**: Coercivity, $|H_{\text{increasing}} - H_{\text{decreasing}}| / 2$, from the optical midpoint crossings on each branch.
+    *   **Loop center (Oe)**: $(H_{\text{increasing}} + H_{\text{decreasing}}) / 2$ (reported as a horizontal shift rather than assuming exchange bias).
+    *   **H+ / H- (Oe)**: Increasing- and decreasing-field midpoint crossings.
+    *   **MOKE amp (mV)**: Saturated MOKE amplitude, $|S_{\text{pos}} - S_{\text{neg}}| / 2$, using the outer 15% of the field span at both extremes (canceling any DC photodiode baseline).
+    *   **Mr / Ms**: Squareness, $|S_{\text{inc}}(0) - S_{\text{dec}}(0)| / (2 \times \text{MOKE amp})$, interpolated at zero applied field ($H = 0\text{ Oe}$).
+    *   **Field source**: **`Measured`** when **Use gaussmeter** is enabled (using the measured field monitor), or **`Commanded`** when no gaussmeter is used (using the field controller's calibrated setpoint estimate).
+6.  **Control**: Use **Pause/Resume** or **Stop** at any time; stopping safely returns the field controller to `0.0 Oe` and saves the collected data.
 
 ## Features Summary
 
