@@ -89,7 +89,7 @@ DEFAULTS = {
 
 class IVSweepApp(MeasurementApp):
     _instruments = ('sourcemeter',)
-    _default_sample = staticmethod(lambda: Resistor(resistance=1000.0))
+    _default_sample = Resistor
 
     def __init__(self, root):
         super().__init__(root, title="IV Sweep Measurement GUI", geometry="1600x900")

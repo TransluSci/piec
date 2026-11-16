@@ -14,8 +14,6 @@ import pandas as pd
 from piec.measurement.gui_utils import MeasurementApp
 from piec.measurement.moke import MOKE
 from piec.analysis.moke import analyze_moke_dataframe, plot_moke_loop
-from piec.drivers.field_controller.virtual_field_controller import VirtualFieldController
-from piec.drivers.dmm.virtual_dmm import VirtualDMM
 from piec.drivers.daq.daq import Daq
 from piec.drivers.autodetect import autodetect, _open_mcc_driver, _safe_close, _resolve_type_string
 from piec.drivers.emulators.daq_to_field_controller import DaqFieldController
@@ -600,11 +598,6 @@ class MOKEApp(MeasurementApp):
             self.close_instruments()
             raise
 
-    def _configure_acquisition(self, instruments):
-        field = instruments['field_controller']
-        if isinstance(field, VirtualFieldController) and field.sample is None:
-            field.sample = ArctanMOKE()
-
     def run_measurement(self):
         if self._worker is not None:
             return
@@ -640,7 +633,6 @@ class MOKEApp(MeasurementApp):
                             settle_timeout=float(values.get('Settling timeout (s)', 10)),
                             save_dir=self.save_dir_entry.get(), on_update=self._queue_update)
             instruments = self._connect_roles(roles, profile)
-            self._configure_acquisition(instruments)
             self.experiment = MOKE(instruments['field_controller'], instruments['dmm'],
                                    gaussmeter=instruments.get('gaussmeter'),
                                    **settings)

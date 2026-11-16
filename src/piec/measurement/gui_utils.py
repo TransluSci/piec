@@ -222,20 +222,6 @@ class MeasurementApp:
         default = self._default_sample
         if default is not None:
             return default() if callable(default) else default
-
-        roles = set(self._instrument_types.values())
-        if 'sourcemeter' in roles:
-            from piec.simulation.resistor.ohmic_resistor import OhmicResistor
-            return OhmicResistor(resistance=1000.0)
-        if 'field_controller' in roles:
-            from piec.simulation.magnetic.moke.arctan_moke import ArctanMOKE
-            return ArctanMOKE()
-        if 'stepper_motor' in roles or 'lockin' in roles:
-            from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
-            return CosSquaredAMR()
-        if 'awg' in roles and 'oscilloscope' in roles:
-            from piec.simulation.fe_material.landau_ferroelectric import LandauFerroelectric
-            return LandauFerroelectric()
         return None
 
     def open_simulation_hub(self):

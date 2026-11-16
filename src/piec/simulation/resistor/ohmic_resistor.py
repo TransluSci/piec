@@ -46,9 +46,11 @@ class OhmicResistor(ResistiveMaterial):
         return i * self.resistance, t
 
     def apply_waveform(self, v, t):
-        """Apply voltage waveform ``v(t)`` and record the voltage response across the resistor."""
+        """Apply voltage waveform ``v(t)`` and record the voltage across a 50 Ω sense termination."""
         p = getattr(self, 'prep_points', 0)
-        self.output_voltage = np.array(v[p:])
+        v_active = np.asarray(v[p:], dtype=float)
+        current, _ = self.voltage_response(v_active, t)
+        self.output_voltage = np.asarray(current, dtype=float) * 50.0
         self.t = np.array(t[p:]) - (t[p] if len(t) > p else 0.0)
 
     def get_waveform(self):

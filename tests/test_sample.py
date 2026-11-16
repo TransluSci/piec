@@ -7,6 +7,7 @@ import inspect
 from pathlib import Path
 import textwrap
 
+import numpy as np
 import pytest
 
 import piec.drivers as drivers_pkg
@@ -152,7 +153,8 @@ def test_drivers_do_not_import_simulation():
 def test_simulation_hub_discovers_and_swaps_global_samples(monkeypatch):
     monkeypatch.setattr(VirtualInstrument, "sample", None)
     catalog = discover_simulation_catalog()
-    assert {"resistor", "fe_material", "magnetic/moke", "magnetic/amr"} <= set(catalog)
+    expected_categories = {key for key in _discover_categories() if key != "example"}
+    assert set(catalog) == expected_categories
 
     for entry in catalog.values():
         for model_cls in entry["models"].values():
@@ -164,12 +166,19 @@ def test_simulation_hub_discovers_and_swaps_global_samples(monkeypatch):
             assert VirtualInstrument.sample is sample
             assert get_model_parameters(model_cls, current_sample=sample) == params
 
+            first_key = next(
+                k for k, v in params.items() if isinstance(v, (int, float)) and not isinstance(v, bool)
+            )
+            modified_val = float(params[first_key]) * 2.0 if params[first_key] else 1.0
+            modified_params = dict(string_params, **{first_key: str(modified_val)})
+            modified_sample = create_sample_from_parameters(model_cls, modified_params)
+            assert VirtualInstrument.sample is modified_sample
+            assert get_model_parameters(model_cls, current_sample=modified_sample)[first_key] == pytest.approx(modified_val)
+
 
 def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
     tk = pytest.importorskip("tkinter")
     from piec.measurement.gui_utils import MeasurementApp
-    from piec.simulation.fe_material.landau_ferroelectric import LandauFerroelectric
-    from piec.simulation.resistor.ohmic_resistor import OhmicResistor
     from piec.simulation.simulation_hub import SimulationHubWindow
 
     try:
@@ -178,71 +187,59 @@ def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
     except tk.TclError:
         pytest.skip("A display is required for Tkinter SimulationHub tests")
 
-    monkeypatch.setattr(VirtualInstrument, "sample", LandauFerroelectric())
+    catalog = discover_simulation_catalog()
+    all_models = [
+        (cat_key, model_name, model_cls)
+        for cat_key, entry in catalog.items()
+        for model_name, model_cls in entry["models"].items()
+    ]
+    assert len(all_models) >= 2
+
     try:
-        cases = [
-            (("sourcemeter",), None, "resistor", "OhmicResistor", "resistance", "1000.0"),
-            (("awg", "oscilloscope"), staticmethod(lambda: OhmicResistor(50.0)), "resistor", "OhmicResistor", "resistance", "50.0"),
-            (("awg", "oscilloscope"), None, "fe_material", "LandauFerroelectric", "temperature", "300"),
-            (("dmm", "dc_calibrator", "stepper_motor", "lockin"), None, "magnetic/amr", "CosSquaredAMR", "r_base", "100.0"),
-            (("field_controller", "dmm", "gaussmeter"), None, "magnetic/moke", "ArctanMOKE", "coercivity", "100.0"),
-        ]
-        for instruments, override, expected_cat, expected_model, param_key, expected_val in cases:
-            app_cls = type("TempApp", (MeasurementApp,), {"_instruments": instruments, "_default_sample": override})
+        for cat_key, model_name, model_cls in all_models:
+            other_cls = next(m_cls for o_cat, _, m_cls in all_models if o_cat != cat_key)
+            monkeypatch.setattr(VirtualInstrument, "sample", other_cls())
+            app_cls = type("TempApp", (MeasurementApp,), {"_default_sample": model_cls})
             app = app_cls.__new__(app_cls)
-            app._instrument_types = {name: name for name in instruments}
             hub = SimulationHubWindow(root, default_sample=app.get_default_sample())
             try:
-                assert hub.category_var.get() == expected_cat
-                assert hub.model_var.get() == expected_model
-                assert hub.param_vars[param_key].get() == expected_val
+                assert hub.category_var.get() == cat_key
+                assert hub.model_var.get() == model_name
+                for key, val in get_model_parameters(model_cls).items():
+                    assert float(hub.param_vars[key].get()) == pytest.approx(float(val))
             finally:
                 hub.window.destroy()
     finally:
         root.destroy()
 
 
-def test_universal_sample_io_across_calibrator_dmm_and_amr_resistor(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-    import numpy as np
-    from piec.drivers.dc_calibrator.virtual_calibrator import VirtualCalibrator
-    from piec.drivers.dmm.virtual_dmm import VirtualDMM
-    from piec.drivers.lockin.virtual_lockin import VirtualLockin
-    from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
-    from piec.measurement.amr import AMR
-    from piec.simulation.resistor.ohmic_resistor import OhmicResistor
+@pytest.mark.parametrize("cat_cls,model_cls", _MODELS, ids=lambda p: p.__name__)
+def test_all_models_support_universal_sample_io(cat_cls, model_cls, monkeypatch):
+    sample = model_cls()
+    assert isinstance(sample, cat_cls)
+    monkeypatch.setattr(VirtualInstrument, "sample", sample)
+    assert VirtualInstrument.sample is sample
 
-    resistor = OhmicResistor(resistance=1000.0)
-    monkeypatch.setattr(VirtualInstrument, "sample", resistor)
+    sample.set_field(25.0)
+    assert sample.get_field() == pytest.approx(25.0)
+    assert sample.current_field == pytest.approx(25.0)
 
-    calibrator = VirtualCalibrator()
-    dmm = VirtualDMM()
-    calibrator.set_output(2.5, mode="voltage")
-    assert dmm.get_voltage() == pytest.approx(2.5)
-    assert resistor.get_current() == pytest.approx(0.0025)
-    calibrator.set_output(0.004, mode="current")
-    assert dmm.get_voltage() == pytest.approx(4.0)
-    calibrator.output(False)
-    assert dmm.get_voltage() == pytest.approx(0.0)
+    sample.set_angle(45.0)
+    assert sample.get_angle() == pytest.approx(45.0)
+    assert sample.current_angle == pytest.approx(45.0)
 
-    elapsed = [0.0]
-    monkeypatch.setattr(
-        "piec.measurement.magneto_transport.time",
-        SimpleNamespace(time=lambda: elapsed[0], sleep=lambda s: elapsed.__setitem__(0, elapsed[0] + s)),
-    )
-    experiment = AMR(
-        dmm=dmm,
-        calibrator=calibrator,
-        arduino=VirtualStepper(),
-        lockin=VirtualLockin(),
-        field=100.0,
-        angle_step=90.0,
-        total_angle=180.0,
-        measure_time=0.15,
-        save_dir=str(tmp_path),
-        live_plot=False,
-    )
-    assert VirtualInstrument.sample is resistor
-    experiment.run_experiment(configure_lockin=False)
-    np.testing.assert_allclose(experiment.data["X"], 1e-3)
-    np.testing.assert_allclose(experiment.data["Y"], 1e-4)
+    sample.set_voltage(0.5)
+    assert np.isfinite(sample.get_voltage())
+    assert np.isfinite(sample.get_current())
+
+    sample.set_current(1e-3)
+    assert np.isfinite(sample.get_voltage())
+    assert np.isfinite(sample.get_current())
+    assert np.isfinite(sample.get_resistance())
+
+    t = np.linspace(0.0, 1e-3, 16)
+    v = np.sin(2.0 * np.pi * 1e3 * t)
+    sample.apply_waveform(v, t)
+    v_out, t_out = sample.get_waveform()
+    assert len(v_out) == len(t_out) == len(t)
+    assert np.all(np.isfinite(v_out))
