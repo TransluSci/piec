@@ -30,6 +30,14 @@ class Experiment:
         for name in self._instruments:
             getattr(self, name).initialize()
 
+    def _ensure_virtual_sample(self, factory):
+        """Assign a fallback sample when virtual drivers have no global sample."""
+        instruments = [getattr(self, name, None) for name in self._instruments]
+        if any(getattr(inst, '_is_virtual_driver', False) is True for inst in instruments):
+            from piec.drivers.virtual_instrument import VirtualInstrument
+            if VirtualInstrument.sample is None:
+                VirtualInstrument.sample = factory()
+
     def _update_metadata(self):
         """Refresh measurement parameters, instrument IDs, and timestamp."""
         params = {

@@ -61,7 +61,13 @@ class MagnetoTransport(Experiment):
         self._ax = None
         self._in_jupyter = self._is_jupyter()
         super().__init__(save_dir=save_dir)
+        self._ensure_virtual_sample(self._default_virtual_sample)
         #self._initialize() #checks communication
+
+    @staticmethod
+    def _default_virtual_sample():
+        from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
+        return CosSquaredAMR()
 
     def initialize(self):
         """

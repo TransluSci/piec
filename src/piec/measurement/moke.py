@@ -52,6 +52,12 @@ class MOKE(Experiment):
         self._validate()
         self._reset_data()
         super().__init__(save_dir=save_dir)
+        self._ensure_virtual_sample(self._default_virtual_sample)
+
+    @staticmethod
+    def _default_virtual_sample():
+        from piec.simulation.magnetic.moke.arctan_moke import ArctanMOKE
+        return ArctanMOKE()
 
     def _shared_daq(self):
         """Return the shared DAQ instance when field_controller and dmm use the same board."""

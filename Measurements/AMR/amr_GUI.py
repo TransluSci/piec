@@ -10,6 +10,7 @@ import os
 from piec.measurement.amr import AMR
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.gui_utils import MeasurementApp
+from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
 
 import threading
 
@@ -28,6 +29,7 @@ DEFAULTS = {
 
 class AMRApp(MeasurementApp):
     _instruments = ('dmm', 'dc_calibrator', 'stepper_motor', 'lockin')
+    _default_sample = CosSquaredAMR
 
     def __init__(self, root):
         super().__init__(root, title="AMR Measurement GUI", geometry="1600x900")
@@ -136,9 +138,7 @@ class AMRApp(MeasurementApp):
         DEFAULTS["initialize_lockin"] = initialize_lockin
 
         try:
-            instruments = self.connect_instruments(
-                virtual_options={'dc_calibrator': {'voltage_callibration': float(DEFAULTS['voltage_calibration'])}},
-            )
+            instruments = self.connect_instruments()
         except Exception as error:
             print(f"Could not connect instruments: {error}")
             return

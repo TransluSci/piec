@@ -48,6 +48,12 @@ class DiscreteWaveform(Experiment):
         self.osc = osc
         self.voltage_channel = voltage_channel
         super().__init__(save_dir=save_dir)
+        self._ensure_virtual_sample(self._default_virtual_sample)
+
+    @staticmethod
+    def _default_virtual_sample():
+        from piec.simulation.fe_material.landau_ferroelectric import LandauFerroelectric
+        return LandauFerroelectric(name="virtual_fe_sample")
 
     def initialize_awg(self):
         """

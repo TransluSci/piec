@@ -22,7 +22,7 @@ from piec.drivers.emulators.daq_to_field_controller import DaqFieldController
 from piec.drivers.emulators.daq_to_dmm import DaqAsDMM
 from piec.drivers.emulators.daq_to_gaussmeter import DaqAsGaussmeter
 from piec.drivers.emulators.source_as_field_controller import SourceAsFieldController
-from piec.simulation.magnetic_material import ArctanMOKE
+from piec.simulation.magnetic.moke.arctan_moke import ArctanMOKE
 
 DAQ_ADDRESS = 'DAQ emulator'
 SOURCE_ADDRESS = 'Source emulator'
@@ -60,6 +60,7 @@ class MOKEApp(MeasurementApp):
     are selected explicitly and borrow one connection owned by this GUI.
     """
     _instruments = ('field_controller', 'dmm', 'gaussmeter')
+    _default_sample = ArctanMOKE
 
     def __init__(self, root, paths=None):
         self._worker = None
@@ -600,12 +601,9 @@ class MOKEApp(MeasurementApp):
             raise
 
     def _configure_acquisition(self, instruments):
-        field, dmm = instruments['field_controller'], instruments['dmm']
-        if isinstance(field, VirtualFieldController):
-            sample = ArctanMOKE()
-            field.mag_sample = sample
-            if isinstance(dmm, VirtualDMM):
-                dmm.set_voltage_reader(sample.get_moke_voltage)
+        field = instruments['field_controller']
+        if isinstance(field, VirtualFieldController) and field.sample is None:
+            field.sample = ArctanMOKE()
 
     def run_measurement(self):
         if self._worker is not None:
