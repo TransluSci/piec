@@ -18,11 +18,8 @@ class VirtualFieldController(VirtualInstrument, FieldController):
         value = float(field)
         if not np.isfinite(value) or not self.field[0] <= value <= self.field[1]:
             raise ValueError('Requested field exceeds virtual field limits')
-        update = getattr(type(self.mag_sample), 'set_field', None)
-        if update is None:
-            self.mag_sample.current_field = value
-        else:
-            self.mag_sample.set_field(value)
+        if self.sample is not None:
+            self.sample.set_field(value)
 
     def reset(self):
         self.set_field(0.0)

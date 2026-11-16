@@ -3,9 +3,9 @@ from piec.drivers.virtual_instrument import VirtualInstrument
 
 
 class VirtualDMM(VirtualInstrument, DMM):
-    """Virtual DMM with configurable state and an optional voltage reader."""
+    """Virtual DMM with configurable state measuring ``VirtualInstrument.sample``."""
 
-    def __init__(self, address="VIRTUAL", voltage_reader=None, **kwargs):
+    def __init__(self, address="VIRTUAL", **kwargs):
         super().__init__(address=address, **kwargs)
         self.state = {
             "sense_func": "VOLT",
@@ -15,17 +15,9 @@ class VirtualDMM(VirtualInstrument, DMM):
             "autorange": True,
             "integration_time": 1.0,
         }
-        self._voltage_reader = None
-        self.set_voltage_reader(voltage_reader)
 
     def idn(self):
         return "Virtual DMM"
-
-    def set_voltage_reader(self, voltage_reader):
-        """Inject a no-argument callable representing the connected voltage."""
-        if voltage_reader is not None and not callable(voltage_reader):
-            raise TypeError("voltage_reader must be callable or None")
-        self._voltage_reader = voltage_reader
 
     def set_sense_function(self, sense_func):
         sense_func = str(sense_func).upper()
@@ -60,22 +52,15 @@ class VirtualDMM(VirtualInstrument, DMM):
     def get_voltage(self, ac=False):
         self.state["sense_func"] = "VOLT"
         self.state["coupling"] = "AC" if ac else "DC"
-        if self._voltage_reader is not None:
-            return float(self._voltage_reader())
-        if self.mag_sample:
-            # In AMR.set_field, actual_field = actual_voltage * self.voltage_callibration
-            # So actual_voltage should be field / voltage_callibration.
-            # We don't have voltage_callibration here, but we can assume the ratio.
-            # Or just return current_field / 10000.0
-            return self.mag_sample.current_field / 10000.0
+        if self.sample is not None:
+            return float(self.sample.get_voltage())
         return 0.0015
 
     def quick_read(self):
         return self.get_voltage(ac=self.state["coupling"] == "AC")
 
     def reset(self):
-        voltage_reader = self._voltage_reader
-        self.__init__(voltage_reader=voltage_reader)
+        self.__init__()
 
     def clear(self):
         return None
