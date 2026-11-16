@@ -1,70 +1,38 @@
-"""
-Ferroelectric Material Simulation Module
-
-Classes:
-    Material: Base class for all materials
-    Resistor: Simulates ohmic resistance
-    Dielectric: Simulates linear dielectric response
-    Ferroelectric: Simulates ferroelectric behavior with hysteresis
-"""
-
+"""Level-3 Landau-Devonshire ferroelectric simulation model."""
 import numpy as np
 from scipy.optimize import fsolve
-from piec.simulation.sample import Sample
+from .fe_material import FerroelectricMaterial
 
 EPSILON_0 = 8.854e-12  # F/m
 
-
-class Material(Sample):
-    def __init__(self, parameter_dict=None, name="pass_through"):
-        super().__init__(parameter_dict=parameter_dict, name=name)
-
-    def voltage_response(self, v, t):
-        """Return the response to an applied voltage and its time coordinate."""
-        return v, t
-
-    def current_response(self, i, t):
-        """Return the response to an applied current and its time coordinate."""
-        return i, t
-
-
-# TODO: DELETE Resistor from fe_material.py once all callers import from piec.simulation.resistor
-class Resistor(Material):
-    def __init__(self, resistance=1e3, *, parameter_dict=None, name="resistor"):
-        """Initialize resistance; dictionary values override scalar arguments."""
-        super().__init__(parameter_dict=parameter_dict, name=name)
-        self.resistance = self.parameter_dict.setdefault('resistance', resistance)
-        self.output_voltage = np.array([])
-        self.t = np.array([])
-        self.prep_points = 0
-
-    def voltage_response(self, v, t):
-        """Return current produced by an applied voltage."""
-        return v / self.resistance, t
-
-    def current_response(self, i, t):
-        """Return voltage produced by an applied current."""
-        return i * self.resistance, t
-
-    def apply_waveform(self, v, t):
-        """Apply voltage waveform and record the voltage response across the resistor."""
-        p = getattr(self, 'prep_points', 0)
-        self.output_voltage = np.array(v[p:])
-        self.t = np.array(t[p:]) - (t[p] if len(t) > p else 0.0)
-
-    def get_voltage_response(self):
-        """Return (output_voltage, time) as measured across the resistor."""
-        return self.output_voltage, self.t
+# Calibrated SRO / PZT(52/48) / Pt default parameters
+# (Pr ~ 49 uC/cm^2, Ec ~ 61 MV/m, Vc(20 nm) ~ 1.2 V)
+DEFAULT_FE_MATERIAL = {
+    'ferroelectric': {
+        'a0': 5.362e5,              # J*m/(C^2*K)
+        'b': -1.287e9,              # J*m^5/C^4
+        'c': 5.0e9,                 # J*m^9/C^6
+        'T0': 673.0,                # K
+        'Q12': -0.046,              # m^4/C^2
+        's11': 14.1e-12,            # m^2/N
+        's12': -4.56e-12,           # m^2/N
+        'lattice_a': 0.395e-9,      # m
+        'film_thickness': 20e-9,    # m
+        'epsilon_r': 50,
+        'leakage_resistance': 10e12,  # Ohm
+    },
+    'substrate': {
+        'lattice_a': 0.395e-9,      # m
+    },
+    'electrode': {
+        'screening_lambda': 0.05e-9,  # m
+        'permittivity_e': 1e6,
+        'area': 1.0e-10,            # m^2
+    },
+}
 
 
-class Dielectric(Material):
-    def __init__(self, permittivity=8.85e-12, *, parameter_dict=None, name="dielectric"):
-        """Initialize permittivity; dictionary values override scalar arguments."""
-        super().__init__(parameter_dict=parameter_dict, name=name)
-        self.permittivity = self.parameter_dict.setdefault('permittivity', permittivity)
-
-
-class Ferroelectric(Material):
+class LandauFerroelectric(FerroelectricMaterial):
     """
     Simulates a ferroelectric material using Landau-Devonshire theory.
 
@@ -84,15 +52,22 @@ class Ferroelectric(Material):
         c_tilde = c
     """
 
-    def __init__(self, parameter_dict, temperature=300, *, name=None):
+    def __init__(self, parameter_dict=None, temperature=300, *, name=None):
         super().__init__(parameter_dict=parameter_dict, name=name)
         self.temperature = temperature
-        self.output_voltage = None
-        self.t = None
+        self.output_voltage = np.array([])
+        self.t = np.array([])
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _resolve_sections(self):
+        """Return ``(ferroelectric, substrate, electrode)`` merged with module defaults."""
+        fe = {**DEFAULT_FE_MATERIAL['ferroelectric'], **self.parameter_dict.get('ferroelectric', {})}
+        sub = {**DEFAULT_FE_MATERIAL['substrate'], **self.parameter_dict.get('substrate', {})}
+        elec = {**DEFAULT_FE_MATERIAL['electrode'], **self.parameter_dict.get('electrode', {})}
+        return fe, sub, elec
 
     def _compute_renormalized_coefficients(self, temperature=None):
         """Return (a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s).
@@ -102,14 +77,12 @@ class Ferroelectric(Material):
         """
         if temperature is None:
             temperature = self.temperature
-        fe  = self.parameter_dict['ferroelectric']
-        sub = self.parameter_dict['substrate']
-        elec = self.parameter_dict['electrode']
+        fe, sub, elec = self._resolve_sections()
         d = fe['film_thickness']
 
         eta_m = (sub['lattice_a'] - fe['lattice_a']) / fe['lattice_a']
         a_strain = -4 * fe['Q12'] * eta_m / (fe['s11'] + fe['s12'])
-        a_depol  = elec['screening_lambda'] / (EPSILON_0 * elec['permittivity_e'] * d)
+        a_depol = elec['screening_lambda'] / (EPSILON_0 * elec['permittivity_e'] * d)
 
         a_tilde = fe['a0'] * (temperature - fe['T0']) + a_strain + a_depol
         b_tilde = fe['b'] + 4 * fe['Q12'] ** 2 / (fe['s11'] + fe['s12'])
@@ -141,8 +114,8 @@ class Ferroelectric(Material):
         symmetric ±Vc pair.
         """
         coeffs = [5 * c_tilde, 3 * b_tilde, a_tilde]
-        roots  = np.roots(coeffs)
-        P_sw   = [np.sqrt(np.real(r)) for r in roots if np.isreal(r) and np.real(r) > 0]
+        roots = np.roots(coeffs)
+        P_sw = [np.sqrt(np.real(r)) for r in roots if np.isreal(r) and np.real(r) > 0]
         if not P_sw:
             return -np.inf, np.inf  # no switching (paraelectric or 2nd-order)
         Vc = min(abs(landau_V(p)) for p in P_sw)
@@ -178,7 +151,7 @@ class Ferroelectric(Material):
         on_upper_branch = P_current > 0
 
         for i in range(1, len(V_applied_path)):
-            V_now  = V_applied_path[i]
+            V_now = V_applied_path[i]
             V_prev = V_applied_path[i - 1]
             going_up = V_now > V_prev
 
@@ -218,31 +191,31 @@ class Ferroelectric(Material):
         a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s = \
             self._compute_renormalized_coefficients()
 
-        fe    = self.parameter_dict['ferroelectric']
+        fe, _, _ = self._resolve_sections()
         gamma = fe['kinetic_damping']
-        dt    = t[1] - t[0]  # assumes uniform timestep
-        P_max = 2 * P_s      # physical clamp bound
+        dt = t[1] - t[0]  # assumes uniform timestep
+        P_max = 2 * P_s    # physical clamp bound
 
         def rate(P, V_target):
             return (V_target - landau_V(P)) / gamma
 
         P_loop = np.zeros_like(v)
-        dP_dt  = np.zeros_like(v)
+        dP_dt = np.zeros_like(v)
 
         P_current = fsolve(residual, x0=-P_s, args=(v[0],))[0]
         P_loop[0] = P_current
-        dP_dt[0]  = rate(P_current, v[0])
+        dP_dt[0] = rate(P_current, v[0])
 
         for i in range(1, len(v)):
             V_target = v[i]
-            k1 = rate(P_current,             V_target)
-            k2 = rate(P_current + 0.5*dt*k1, V_target)
-            k3 = rate(P_current + 0.5*dt*k2, V_target)
-            k4 = rate(P_current +     dt*k3,  V_target)
-            avg_rate   = (k1 + 2*k2 + 2*k3 + k4) / 6.0
-            P_current  = np.clip(P_current + dt * avg_rate, -P_max, P_max)
-            P_loop[i]  = P_current
-            dP_dt[i]   = avg_rate
+            k1 = rate(P_current, V_target)
+            k2 = rate(P_current + 0.5 * dt * k1, V_target)
+            k3 = rate(P_current + 0.5 * dt * k2, V_target)
+            k4 = rate(P_current + dt * k3, V_target)
+            avg_rate = (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
+            P_current = np.clip(P_current + dt * avg_rate, -P_max, P_max)
+            P_loop[i] = P_current
+            dP_dt[i] = avg_rate
 
         return P_loop, dP_dt
 
@@ -263,19 +236,18 @@ class Ferroelectric(Material):
         Returns:
             tuple: (P_total, P_without_leakage) both in C/m².
         """
-        fe   = self.parameter_dict['ferroelectric']
-        elec = self.parameter_dict['electrode']
-        d        = fe['film_thickness']
+        fe, _, elec = self._resolve_sections()
+        d = fe['film_thickness']
         epsilon_r = fe['epsilon_r']
-        area     = elec['area']
-        R_leak   = fe['leakage_resistance']
+        area = elec['area']
+        R_leak = fe['leakage_resistance']
 
         P_dielectric = EPSILON_0 * (epsilon_r - 1) * V_applied_path / d
 
         if t is not None and len(t) > 1:
             delta_t = t[1] - t[0]
         else:
-            freq    = frequency if frequency is not None else 1e6
+            freq = frequency if frequency is not None else 1e6
             delta_t = 1.0 / (freq * len(V_applied_path))
 
         leakage_integral = np.cumsum(V_applied_path) * delta_t
@@ -285,8 +257,42 @@ class Ferroelectric(Material):
         return P_total, P_dielectric + P_ideal_loop
 
     # ------------------------------------------------------------------
-    # Main entry point called by the virtual AWG
+    # Level-2 Contract Implementations
     # ------------------------------------------------------------------
+
+    def set_voltage(self, v):
+        """Apply DC voltage ``v`` (V) and compute leakage current."""
+        self._voltage = float(v)
+        self._current = float(self.voltage_response(self._voltage)[0])
+
+    def set_current(self, i):
+        """Apply DC current ``i`` (A) and compute leakage voltage drop."""
+        self._current = float(i)
+        self._voltage = float(self.current_response(self._current)[0])
+
+    def get_voltage(self):
+        """Return terminal voltage in Volts."""
+        return float(self._voltage)
+
+    def get_current(self):
+        """Return DC leakage current in Amperes."""
+        return float(self._current)
+
+    def voltage_response(self, v, t=0.0):
+        """Return ``(current_A, time_s)`` from DC leakage resistance."""
+        fe, _, _ = self._resolve_sections()
+        r_leak = fe.get('leakage_resistance')
+        if r_leak is not None and r_leak > 0:
+            return v / r_leak, t
+        return v, t
+
+    def current_response(self, i, t=0.0):
+        """Return ``(voltage_V, time_s)`` from DC leakage resistance."""
+        fe, _, _ = self._resolve_sections()
+        r_leak = fe.get('leakage_resistance')
+        if r_leak is not None and r_leak > 0:
+            return i * r_leak, t
+        return i, t
 
     def apply_waveform(self, v, t):
         """
@@ -299,21 +305,20 @@ class Ferroelectric(Material):
         branch-tracking path is used.
         """
         self.t = t
-        fe   = self.parameter_dict['ferroelectric']
-        elec = self.parameter_dict['electrode']
+        fe, _, elec = self._resolve_sections()
         area = elec['area']
-        d    = fe['film_thickness']
+        d = fe['film_thickness']
         epsilon_r = fe['epsilon_r']
-        R_leak    = fe['leakage_resistance']
+        R_leak = fe['leakage_resistance']
 
         if 'kinetic_damping' in fe:
             # --- frequency-dependent path ---
             P_ideal, dP_ideal_dt = self._run_kinetic_simulation(v, t)
 
             # Analytical derivatives for parasitic contributions (no gradient needed)
-            dV_dt             = np.gradient(v, t)
-            dP_dielectric_dt  = EPSILON_0 * (epsilon_r - 1) / d * dV_dt
-            dP_leak_dt        = v / (area * R_leak)
+            dV_dt = np.gradient(v, t)
+            dP_dielectric_dt = EPSILON_0 * (epsilon_r - 1) / d * dV_dt
+            dP_leak_dt = v / (area * R_leak)
 
             dP_total_dt = dP_ideal_dt + dP_dielectric_dt + dP_leak_dt
             self.output_voltage = dP_total_dt * 50.0 * area
@@ -329,8 +334,8 @@ class Ferroelectric(Material):
 
         # 1. Gaussian bandwidth filter.
         #    Fixed time-constant: higher-frequency loops get more smearing.
-        dt     = t[1] - t[0]
-        sigma  = 5e-9                          # Gaussian width (s)
+        dt = t[1] - t[0]
+        sigma = 5e-9                           # Gaussian width (s)
         n_half = max(1, int(3 * sigma / dt))   # 3-sigma half-width
         if n_half > 1:
             x = np.arange(-n_half, n_half + 1) * dt
@@ -343,9 +348,14 @@ class Ferroelectric(Material):
         #    cumulative integration in the analysis doesn't drift.
         if 0 < n_prep < len(self.output_voltage):
             active = self.output_voltage[n_prep:]
-            active -= np.mean(active)          # modifies slice in-place
-            self.output_voltage[:n_prep] = 0.0 # clean quiet baseline
+            active -= np.mean(active)           # modifies slice in-place
+            self.output_voltage[:n_prep] = 0.0  # clean quiet baseline
 
-    def get_voltage_response(self):
-        """Return (output_voltage, time) as measured across the 50 Ω resistor."""
+    def get_waveform(self):
+        """Return ``(output_voltage, time)`` measured across the 50 Ω sense resistor."""
         return self.output_voltage, self.t
+
+    get_voltage_response = get_waveform
+
+
+Ferroelectric = LandauFerroelectric
