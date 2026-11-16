@@ -19,8 +19,7 @@ from piec.analysis.utilities import standard_csv_to_metadata_and_data
 
 
 def test_pund_full_pipeline_preserves_metadata(tmp_path, monkeypatch):
-    monkeypatch.setattr(VirtualInstrument, '_shared_fe_sample', None)
-    monkeypatch.setattr(VirtualInstrument, '_shared_mag_sample', None)
+    monkeypatch.setattr(VirtualInstrument, 'sample', None)
     experiment = ThreePulsePund(
         awg=VirtualAwg(), osc=VirtualScope(),
         reset_amp=2.0, p_u_amp=1.5,
@@ -88,27 +87,22 @@ class TestVirtualDriverInit:
             assert instrument.instrument is instrument
 
     def test_existing_virtual_drivers_see_replaced_shared_sample(self):
-        original_sample = VirtualInstrument._shared_fe_sample
+        original_sample = VirtualInstrument.sample
 
         try:
             replacement = object()
-            VirtualInstrument.set_virtual_sample(replacement)
+            VirtualInstrument.sample = replacement
 
             assert self.awg.sample is replacement
             assert self.scope.sample is replacement
-            assert self.awg.virtual_sample is replacement
-            assert self.scope.virtual_sample is replacement
 
             replacement_from_property = object()
-            self.awg.virtual_sample = replacement_from_property
+            self.awg.sample = replacement_from_property
 
             assert self.awg.sample is replacement_from_property
             assert self.scope.sample is replacement_from_property
         finally:
-            VirtualInstrument.set_virtual_sample(original_sample)
-
-    def test_virtual_drivers_share_magnetic_sample(self):
-        assert self.awg.mag_sample is self.scope.mag_sample
+            VirtualInstrument.sample = original_sample
 
 
 class TestHysteresisLoopInit:
