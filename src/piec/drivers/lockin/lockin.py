@@ -138,18 +138,11 @@ class Lockin(Instrument):
         if lp_filter_slope is not None: self.set_filter_slope(lp_filter_slope)
 
     def get_X_Y(self):
-        """Legacy alias for quick_read."""
-        return self.quick_read()
+        """Return ``(X, Y)`` from ``read_data()``."""
+        data = self.read_data()
+        return data['X'], data['Y']
 
     #data acquisition and output
-    def quick_read(self):
-        """
-        Quick read function that returns the default data (X and Y typically)
-
-        Returns:
-            tuple: (X, Y) data from the lockin
-        """
-
     def read_data(self):
         """
         Reads the data from the lockin, For a lockin this is typically X, Y, R and Theta

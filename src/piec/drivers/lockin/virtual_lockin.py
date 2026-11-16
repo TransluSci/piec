@@ -65,31 +65,25 @@ class VirtualLockin(VirtualInstrument, Lockin):
     def auto_phase(self):
         self.state['phase'] = 0.0
 
-    def quick_read(self) -> tuple[float, float]:
-        """Simulation of SNAP? 1,2"""
-        if hasattr(self, 'mag_sample') and self.mag_sample:
-            v = self.mag_sample.get_voltage_response()
-            return (float(v), float(v / 10))
-        return (0.0001, 0.0002)
-
     def read_data(self) -> dict[str, float]:
         """Simulation of SNAP? 1,2,3,4"""
-        x, y = self.quick_read()
+        if self.sample is not None:
+            x = float(self.sample.get_resistance()) * 1e-6
+            y = x / 10.0
+        else:
+            x, y = 0.0001, 0.0002
         r = (x**2 + y**2)**0.5
         theta = float(self.state.get('phase', 0.0))
         return {'X': x, 'Y': y, 'R': r, 'Theta': theta}
 
     def get_X(self) -> float:
-        x, _ = self.quick_read()
-        return x
+        return self.read_data()['X']
 
     def get_Y(self) -> float:
-        _, y = self.quick_read()
-        return y
+        return self.read_data()['Y']
 
     def get_R(self) -> float:
-        x, y = self.quick_read()
-        return (x**2 + y**2)**0.5
+        return self.read_data()['R']
 
     def get_theta(self) -> float:
-        return float(self.state.get('phase', 0.0))
+        return self.read_data()['Theta']
