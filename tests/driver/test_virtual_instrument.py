@@ -15,30 +15,31 @@ from piec.drivers.virtual_instrument import (
     warn_for_large_simulation_input,
     warn_for_large_simulation_points,
 )
-from piec.simulation.fe_material import Ferroelectric
-from piec.simulation.magnetic_material import MagneticSample
 
 
 class TestVirtualInstrumentBase:
     """Test shared base properties, simulation point coercion, and policy warnings."""
 
-    def test_shared_samples_initialized(self):
+    def test_shared_sample_starts_unassigned_and_shares(self, monkeypatch):
+        monkeypatch.setattr(VirtualInstrument, "sample", None)
         vi = VirtualInstrument()
-        assert vi.sample is not None
-        assert isinstance(vi.sample, Ferroelectric)
-        assert vi.mag_sample is not None
-        assert isinstance(vi.mag_sample, MagneticSample)
-        assert vi.virtual_sample is vi.sample
+        other = VirtualInstrument()
+        assert vi.sample is None
+        assert other.sample is None
 
-    def test_set_virtual_sample(self):
-        old_sample = VirtualInstrument._shared_fe_sample
-        new_sample = MagicMock(spec=Ferroelectric)
-        try:
-            VirtualInstrument.set_virtual_sample(new_sample)
-            vi = VirtualInstrument()
-            assert vi.sample is new_sample
-        finally:
-            VirtualInstrument.set_virtual_sample(old_sample)
+        custom_sample = MagicMock()
+        vi.sample = custom_sample
+        assert other.sample is custom_sample
+        assert VirtualInstrument.sample is custom_sample
+
+    def test_class_sample_updates_existing_and_new_instances(self, monkeypatch):
+        monkeypatch.setattr(VirtualInstrument, "sample", None)
+        vi = VirtualInstrument()
+        new_sample = MagicMock()
+        VirtualInstrument.sample = new_sample
+        assert VirtualInstrument.sample is new_sample
+        assert vi.sample is new_sample
+        assert VirtualInstrument().sample is new_sample
 
     def test_coerce_simulation_points(self):
         assert coerce_simulation_points(None, default=5000) == 5000

@@ -357,7 +357,9 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         Returns:
             pandas.DataFrame: DataFrame containing 'Time' and 'Voltage' columns
         """
-        voltages, times = self.sample.get_voltage_response()
+        if self.sample is None:
+            return pd.DataFrame({'Time': [], 'Voltage': []})
+        voltages, times = self.sample.get_waveform()
         return pd.DataFrame({'Time': times, 'Voltage': voltages})
 
     def toggle_acquisition(self, run=True):

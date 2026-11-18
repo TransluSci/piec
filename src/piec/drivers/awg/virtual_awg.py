@@ -112,11 +112,10 @@ class VirtualAwg(VirtualInstrument, Awg):
             prep_points = 20
             v = np.concatenate([np.zeros(prep_points), v])
             t = np.linspace(0, duration * len(v) / (len(v) - prep_points), len(v))
-            self.sample.prep_points = prep_points
-
-            print("Applying waveform to virtual sample...")
-
-            self.sample.apply_waveform(v, t)
+            if self.sample is not None:
+                self.sample.prep_points = prep_points
+                print("Applying waveform to virtual sample...")
+                self.sample.apply_waveform(v, t)
         else: 
             pass
         # Simulate writing a command to the instrument

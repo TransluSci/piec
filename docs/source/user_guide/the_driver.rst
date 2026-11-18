@@ -137,6 +137,16 @@ address ``'VIRTUAL'`` to a concrete model class:
    awg = Keysight81150a('VIRTUAL')
    print(awg.channel)  # Model capabilities with VirtualAwg behavior
 
+Virtual instruments share one global ``sample`` across all instances; assign
+any ``Sample`` model via ``.sample`` so sources and meters act on the same
+simulated device:
+
+.. code-block:: python
+
+   from piec.simulation.resistor.ohmic_resistor import Resistor
+
+   awg.sample = Resistor(resistance=1000.0)  # shared with scope.sample, etc.
+
 Using a driver
 --------------
 

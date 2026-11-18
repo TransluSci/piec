@@ -247,15 +247,6 @@ class SRS830(Scpi, Lockin):
         i = self._slope_map[filter_slope]
         self.instrument.write(f"OFSL {i}")
 
-    def quick_read(self) -> tuple[float, float]:
-        """
-        Quick read (X, Y).
-        SCPI Command: SNAP? 1,2
-        """
-        response = self.instrument.query("SNAP? 1,2")
-        x_str, y_str = response.split(',')
-        return (float(x_str), float(y_str))
-
     def read_data(self) -> dict[str, float]:
         """
         Reads X, Y, R, and Theta.

@@ -54,6 +54,7 @@ class ConsoleRedirector:
 class MeasurementApp:
     # Driver category names (or aliases such as "scope" and "calibrator").
     _instruments = ()
+    _default_sample = None
 
     def __init__(self, root, title="Measurement GUI", geometry="1200x700", icon_path=None):
         self.root = root
@@ -64,6 +65,7 @@ class MeasurementApp:
         self._instrument_types = {}
         self._manual_drivers = {}
         self._driver_registry = None
+        self._simulation_hub_window = None
         for name in self._instruments:
             category = _resolve_type_string(name)
             if category is None:
@@ -213,6 +215,28 @@ class MeasurementApp:
         controls.grid(row=1, column=2, sticky='new')
         ttk.Button(controls, text='REFRESH', command=self.refresh_instruments).pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(controls, text='AUTODETECT', command=self.autodetect_instruments).pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(controls, text='SIMULATION HUB', command=self.open_simulation_hub).pack(fill=tk.X, padx=5, pady=5)
+
+    def get_default_sample(self):
+        """Return the default ``Sample`` instance configured for this GUI."""
+        default = self._default_sample
+        if default is not None:
+            return default() if callable(default) else default
+        return None
+
+    def open_simulation_hub(self):
+        """Open or focus the Simulation Hub window for configuring the global sample."""
+        from piec.simulation.simulation_hub import SimulationHubWindow
+
+        if self._simulation_hub_window is not None and self._simulation_hub_window.window.winfo_exists():
+            self._simulation_hub_window.window.lift()
+            self._simulation_hub_window._refresh_status()
+            return self._simulation_hub_window
+        self._simulation_hub_window = SimulationHubWindow(
+            self.root,
+            default_sample=self.get_default_sample(),
+        )
+        return self._simulation_hub_window
 
     def refresh_instruments(self):
         """Rescan addresses without discarding the user's current selections."""
