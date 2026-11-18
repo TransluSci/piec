@@ -50,16 +50,6 @@ def _coerce_value(value, reference=None):
     return numeric
 
 
-def _nested_get(mapping, dotted_key, default=inspect._empty):
-    """Read a value from a nested dictionary using a dotted key."""
-    cursor = mapping
-    for part in dotted_key.split("."):
-        if not isinstance(cursor, dict) or part not in cursor:
-            return default
-        cursor = cursor[part]
-    return cursor
-
-
 def _nested_set(mapping, dotted_key, value):
     """Assign a value inside a nested dictionary using a dotted key."""
     parts = dotted_key.split(".")
@@ -69,11 +59,8 @@ def _nested_set(mapping, dotted_key, value):
     cursor[parts[-1]] = value
 
 
-def discover_simulation_catalog(include_example=False):
+def discover_simulation_catalog():
     """Discover Level-2 simulation categories and Level-3 models recursively.
-
-    Args:
-        include_example (bool): Include template models under ``example/``.
 
     Returns:
         dict[str, dict]: Mapping ``category_key -> {'category_class', 'models'}``.
@@ -84,8 +71,6 @@ def discover_simulation_catalog(include_example=False):
             continue
         rel_parts = cat_dir.relative_to(SIMULATION_PATH).parts
         if any(part.startswith("_") for part in rel_parts):
-            continue
-        if not include_example and "example" in rel_parts:
             continue
         if not (cat_dir / f"{cat_dir.name}.py").is_file():
             continue
@@ -115,58 +100,20 @@ def discover_simulation_catalog(include_example=False):
 
 
 def get_model_parameters(model_cls, current_sample=None):
-    """Extract editable constructor and nested dictionary parameters for ``model_cls``."""
-    params = {}
-    sig = inspect.signature(model_cls.__init__)
-    for param_name, param in sig.parameters.items():
-        if param_name in {"self", "parameter_dict", "name"}:
-            continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-            continue
-        if param.default is not inspect.Parameter.empty:
-            params[param_name] = param.default
-
-    module = inspect.getmodule(model_cls)
-    if module is not None:
-        for attr_name, attr_val in vars(module).items():
-            if attr_name.startswith("DEFAULT_") and isinstance(attr_val, dict):
-                for key, val in _flatten_dict(attr_val).items():
-                    params.setdefault(key, val)
-
-    if current_sample is not None and isinstance(current_sample, model_cls):
-        active_dict = getattr(current_sample, "parameter_dict", {}) or {}
-        for key, default in list(params.items()):
-            if "." in key:
-                current_val = _nested_get(active_dict, key, default)
-                params[key] = current_val
-            elif hasattr(current_sample, key):
-                params[key] = getattr(current_sample, key)
-            elif key in active_dict:
-                params[key] = active_dict[key]
-    return params
+    """Return flattened ``parameter_dict`` entries for ``model_cls`` or ``current_sample``."""
+    sample = current_sample if isinstance(current_sample, model_cls) else model_cls()
+    return _flatten_dict(sample.parameter_dict)
 
 
 def create_sample_from_parameters(model_cls, params, name=None, set_global=True):
     """Instantiate ``model_cls`` from flat/dotted parameters and update global sample."""
     defaults = get_model_parameters(model_cls)
-    init_sig = inspect.signature(model_cls.__init__).parameters
-    kwargs = {}
     parameter_dict = {}
-
     for key, raw_value in params.items():
-        coerced = _coerce_value(raw_value, defaults.get(key))
-        if "." in key:
-            _nested_set(parameter_dict, key, coerced)
-        else:
-            if key in init_sig:
-                kwargs[key] = coerced
-            parameter_dict[key] = coerced
-
-    if "parameter_dict" in init_sig:
-        kwargs["parameter_dict"] = parameter_dict
-    if name and "name" in init_sig:
+        _nested_set(parameter_dict, key, _coerce_value(raw_value, defaults.get(key)))
+    kwargs = {"parameter_dict": parameter_dict}
+    if name:
         kwargs["name"] = name
-
     sample = model_cls(**kwargs)
     if set_global:
         VirtualInstrument.sample = sample
@@ -174,16 +121,29 @@ def create_sample_from_parameters(model_cls, params, name=None, set_global=True)
 
 
 class SimulationHubWindow:
-    """Interactive Tkinter window for choosing and parameterizing virtual samples."""
+    """Interactive Tkinter window for choosing and parameterizing virtual samples.
 
-    def __init__(self, parent=None, include_example=False, default_sample=None):
+    Args:
+        parent: Parent Tk widget, or ``None`` to open standalone.
+        default_sample: Sample (or class/factory) to preselect and filter by.
+    """
+
+    def __init__(self, parent=None, default_sample=None):
         self._owns_root = parent is None
         self.window = tk.Tk() if self._owns_root else tk.Toplevel(parent)
         self.window.title("PIEC Simulation Hub")
         self.window.geometry("540x620")
 
-        self.catalog = discover_simulation_catalog(include_example=include_example)
+        full_catalog = discover_simulation_catalog()
         self._default_sample = self._resolve_default_sample(default_sample)
+        if self._default_sample is not None:
+            matched = {
+                cat_key: entry for cat_key, entry in full_catalog.items()
+                if isinstance(self._default_sample, entry["category_class"])
+            }
+            self.catalog = matched or full_catalog
+        else:
+            self.catalog = full_catalog
         self.param_vars = {}
 
         self._build_ui()
