@@ -134,24 +134,24 @@ def test_simulation_hub_discovers_and_swaps_global_samples(monkeypatch):
 
 def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
     tk = pytest.importorskip("tkinter")
-    from piec.measurement.gui_utils import MeasurementApp
-    from piec.simulation.simulation_hub import SimulationHubWindow
-
     try:
         root = tk.Tk()
         root.withdraw()
     except tk.TclError:
         pytest.skip("A display is required for Tkinter SimulationHub tests")
 
-    catalog = discover_simulation_catalog()
-    all_models = [
-        (cat_key, model_name, model_cls)
-        for cat_key, entry in catalog.items()
-        for model_name, model_cls in entry["models"].items()
-    ]
-    assert len(all_models) >= 2
-
     try:
+        from piec.measurement.gui_utils import MeasurementApp
+        from piec.simulation.simulation_hub import SimulationHubWindow
+
+        catalog = discover_simulation_catalog()
+        all_models = [
+            (cat_key, model_name, model_cls)
+            for cat_key, entry in catalog.items()
+            for model_name, model_cls in entry["models"].items()
+        ]
+        assert len(all_models) >= 2
+
         for cat_key, model_name, model_cls in all_models:
             other_cls = next(m_cls for o_cat, _, m_cls in all_models if o_cat != cat_key)
             monkeypatch.setattr(VirtualInstrument, "sample", other_cls())
