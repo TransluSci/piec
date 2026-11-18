@@ -67,8 +67,16 @@ class VirtualLockin(VirtualInstrument, Lockin):
 
     def read_data(self) -> dict[str, float]:
         """Simulation of SNAP? 1,2,3,4"""
+        voltage = None
         if self.sample is not None:
-            x = float(self.sample.get_resistance()) * 1e-6
+            angle = self.sample.state.get('angle', 0.0)
+            field = self.sample.state.get('field', 0.0)
+            try:
+                voltage = self.sample.apply_current(1e-6, angle=angle, field=field)
+            except TypeError:
+                voltage = self.sample.apply_current(1e-6)
+        if voltage is not None:
+            x = float(voltage)
             y = x / 10.0
         else:
             x, y = 0.0001, 0.0002

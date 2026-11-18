@@ -19,7 +19,10 @@ class VirtualFieldController(VirtualInstrument, FieldController):
         if not np.isfinite(value) or not self.field[0] <= value <= self.field[1]:
             raise ValueError('Requested field exceeds virtual field limits')
         if self.sample is not None:
-            self.sample.set_field(value)
+            self.sample.state['field'] = value
+            voltage = self.sample.apply_field(value)
+            if voltage is not None:
+                self.sample.state['voltage'] = float(voltage)
 
     def reset(self):
         self.set_field(0.0)

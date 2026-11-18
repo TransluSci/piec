@@ -52,9 +52,9 @@ class VirtualDMM(VirtualInstrument, DMM):
     def get_voltage(self, ac=False):
         self.state["sense_func"] = "VOLT"
         self.state["coupling"] = "AC" if ac else "DC"
-        if self.sample is not None:
-            return float(self.sample.get_voltage())
-        return 0.0015
+        if self.sample is None:
+            return 0.0015
+        return float(self.sample.state.get('voltage', 0.0015))
 
     def quick_read(self):
         return self.get_voltage(ac=self.state["coupling"] == "AC")

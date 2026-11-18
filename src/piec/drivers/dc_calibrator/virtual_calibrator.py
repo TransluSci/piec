@@ -29,10 +29,8 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
         self.state[mode] = value
         self.state['mode'] = mode
         if self.sample is not None:
-            if mode == "voltage":
-                self.sample.set_voltage(value)
-            elif mode == "current":
-                self.sample.set_current(value)
+            self.sample.state[mode] = float(value)
+            self.sample.state['field'] = float(value) * 10000.0
         return super().set_output(value, mode=mode, **kwargs)
 
     def output(self, on=True):
@@ -40,12 +38,7 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
         self._output_enabled = bool(on)
         self.state['output_on'] = self._output_enabled
         if self.sample is not None:
-            if not self._output_enabled:
-                if self.state['mode'] == "current":
-                    self.sample.set_current(0.0)
-                else:
-                    self.sample.set_voltage(0.0)
-            elif self.state['mode'] == "current":
-                self.sample.set_current(self.state['current'])
-            else:
-                self.sample.set_voltage(self.state['voltage'])
+            mode = self.state['mode']
+            active = self.state[mode] if self._output_enabled else 0.0
+            self.sample.state[mode] = float(active)
+            self.sample.state['field'] = float(active) * 10000.0

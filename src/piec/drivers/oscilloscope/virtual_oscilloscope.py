@@ -2,6 +2,7 @@
 Virtual Oscilloscope class that mimics the Keysight DSOX3024a interface for testing and simulation purposes.
 This module provides a software simulation of an oscilloscope for development and testing without physical hardware.
 """
+import numpy as np
 import pandas as pd
 
 from .oscilloscope import Oscilloscope
@@ -359,8 +360,12 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         """
         if self.sample is None:
             return pd.DataFrame({'Time': [], 'Voltage': []})
-        voltages, times = self.sample.get_waveform()
-        return pd.DataFrame({'Time': times, 'Voltage': voltages})
+        v, t = self.sample.state.get('waveform', (None, None))
+        if v is None:
+            return pd.DataFrame({'Time': [], 'Voltage': []})
+        current = self.sample.apply_voltage(v, t)
+        voltages = v if current is None else np.asarray(current, dtype=float) * 50.0
+        return pd.DataFrame({'Time': t, 'Voltage': voltages})
 
     def toggle_acquisition(self, run=True):
         """

@@ -212,17 +212,17 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
             return float(self.state['source_voltage']), float(self.state['source_current'])
         if self.state['source_func'] == 'CURR':
             current = self.state['source_current']
-            self.sample.set_current(current)
+            v = self.sample.apply_current(current)
             voltage = self._clamp(
-                float(self.sample.get_voltage()),
+                float(self.state['source_voltage'] if v is None else v),
                 -self.state['voltage_compliance'],
                 self.state['voltage_compliance'],
             )
         else:
             voltage = self.state['source_voltage']
-            self.sample.set_voltage(voltage)
+            i = self.sample.apply_voltage(voltage)
             current = self._clamp(
-                float(self.sample.get_current()),
+                float(self.state['source_current'] if i is None else i),
                 -self.state['current_compliance'],
                 self.state['current_compliance'],
             )

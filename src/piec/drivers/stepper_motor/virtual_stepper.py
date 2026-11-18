@@ -24,9 +24,8 @@ class VirtualStepper(VirtualInstrument, Stepper):
         # Update shared sample orientation angle
         if self.sample is not None:
             delta_angle = steps * 360.0 / self.steps_per_revolution
-            self.sample.set_angle(
-                self.sample.get_angle() + (delta_angle if direction == 1 else -delta_angle)
-            )
+            angle = self.sample.state.get('angle', 0.0)
+            self.sample.state['angle'] = angle + (delta_angle if direction == 1 else -delta_angle)
 
         return self.current_pos
 
@@ -36,4 +35,4 @@ class VirtualStepper(VirtualInstrument, Stepper):
     def set_zero(self):
         self.current_pos = 0
         if self.sample is not None:
-            self.sample.set_angle(0.0)
+            self.sample.state['angle'] = 0.0

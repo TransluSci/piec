@@ -20,4 +20,4 @@ class VirtualGaussmeter(VirtualInstrument, Gaussmeter):
             raise ValueError(f'Unavailable gaussmeter channel: {channel}')
         if self.sample is None:
             return 0.0
-        return float(self.sample.get_field())
+        return float(self.sample.state.get('field', 0.0))
