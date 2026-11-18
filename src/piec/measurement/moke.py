@@ -7,6 +7,7 @@ import pandas as pd
 from .experiment import Experiment
 from ..analysis.utilities import create_measurement_filename, metadata_and_data_to_csv
 from ..drivers.daq.daq import Daq
+from ..simulation.magnetic.moke.arctan_moke import ArctanMOKE
 
 
 def _triangle_cycle_fields(field_min, field_max, points_per_cycle):
@@ -27,6 +28,7 @@ class MOKE(Experiment):
     samples the detector and optional gaussmeter at sample_rate.
     """
     mtype = 'moke'
+    _default_virtual_sample = ArctanMOKE
 
     def __init__(self, field_controller, dmm, gaussmeter=None, *, geometry='longitudinal', gaussmeter_channel=1,
                  field_min=-1000.0, field_max=1000.0, cycles=1, points_per_cycle=200,
@@ -52,12 +54,6 @@ class MOKE(Experiment):
         self._validate()
         self._reset_data()
         super().__init__(save_dir=save_dir)
-        self._ensure_virtual_sample(self._default_virtual_sample)
-
-    @staticmethod
-    def _default_virtual_sample():
-        from piec.simulation.magnetic.moke.arctan_moke import ArctanMOKE
-        return ArctanMOKE()
 
     def _shared_daq(self):
         """Return the shared DAQ instance when field_controller and dmm use the same board."""
