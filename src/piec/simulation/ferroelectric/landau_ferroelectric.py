@@ -1,7 +1,7 @@
 """Level-3 Landau-Devonshire ferroelectric simulation model."""
 import numpy as np
 from scipy.optimize import fsolve
-from .fe_material import FerroelectricMaterial
+from .ferroelectric import FerroelectricMaterial
 
 EPSILON_0 = 8.854e-12  # F/m
 
@@ -46,28 +46,23 @@ class LandauFerroelectric(FerroelectricMaterial):
     Electric field: E = dG/dP = a·P + b·P³ + c·P⁵
     Voltage:        V = E · d   (d = film thickness)
 
-    Renormalized coefficients (computed in apply_waveform):
+    Renormalized coefficients:
         a_tilde = a0·(T − T0) + a_strain + a_depol
         b_tilde = b  + 4·Q12²/(s11 + s12)
         c_tilde = c
     """
 
-    def __init__(self, parameter_dict=None, temperature=300, *, name=None):
+    def __init__(self, parameter_dict=None, temperature=300, *, name="virtual_fe_sample"):
         super().__init__(parameter_dict=parameter_dict, name=name)
-        self.temperature = temperature
-        self.output_voltage = np.array([])
-        self.t = np.array([])
+        for section, defaults in DEFAULT_FE_MATERIAL.items():
+            sec_dict = self.parameter_dict.setdefault(section, {})
+            for key, val in defaults.items():
+                sec_dict.setdefault(key, val)
+        self.temperature = float(self.parameter_dict.setdefault('temperature', temperature))
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _resolve_sections(self):
-        """Return ``(ferroelectric, substrate, electrode)`` merged with module defaults."""
-        fe = {**DEFAULT_FE_MATERIAL['ferroelectric'], **self.parameter_dict.get('ferroelectric', {})}
-        sub = {**DEFAULT_FE_MATERIAL['substrate'], **self.parameter_dict.get('substrate', {})}
-        elec = {**DEFAULT_FE_MATERIAL['electrode'], **self.parameter_dict.get('electrode', {})}
-        return fe, sub, elec
 
     def _compute_renormalized_coefficients(self, temperature=None):
         """Return (a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s).
@@ -77,7 +72,9 @@ class LandauFerroelectric(FerroelectricMaterial):
         """
         if temperature is None:
             temperature = self.temperature
-        fe, sub, elec = self._resolve_sections()
+        fe = self.parameter_dict['ferroelectric']
+        sub = self.parameter_dict['substrate']
+        elec = self.parameter_dict['electrode']
         d = fe['film_thickness']
 
         eta_m = (sub['lattice_a'] - fe['lattice_a']) / fe['lattice_a']
@@ -191,8 +188,7 @@ class LandauFerroelectric(FerroelectricMaterial):
         a_tilde, b_tilde, c_tilde, d, landau_V, residual, P_s = \
             self._compute_renormalized_coefficients()
 
-        fe, _, _ = self._resolve_sections()
-        gamma = fe['kinetic_damping']
+        gamma = self.parameter_dict['ferroelectric']['kinetic_damping']
         dt = t[1] - t[0]  # assumes uniform timestep
         P_max = 2 * P_s    # physical clamp bound
 
@@ -236,7 +232,8 @@ class LandauFerroelectric(FerroelectricMaterial):
         Returns:
             tuple: (P_total, P_without_leakage) both in C/m².
         """
-        fe, _, elec = self._resolve_sections()
+        fe = self.parameter_dict['ferroelectric']
+        elec = self.parameter_dict['electrode']
         d = fe['film_thickness']
         epsilon_r = fe['epsilon_r']
         area = elec['area']
@@ -260,102 +257,62 @@ class LandauFerroelectric(FerroelectricMaterial):
     # Level-2 Contract Implementations
     # ------------------------------------------------------------------
 
-    def set_voltage(self, v):
-        """Apply DC voltage ``v`` (V) and compute leakage current."""
-        self._voltage = float(v)
-        self._current = float(self.voltage_response(self._voltage)[0])
+    def apply_voltage(self, v, t=0.0):
+        """Apply DC voltage or waveform ``v(t)`` (V) and return current in Amperes.
 
-    def set_current(self, i):
-        """Apply DC current ``i`` (A) and compute leakage voltage drop."""
-        self._current = float(i)
-        self._voltage = float(self.current_response(self._current)[0])
-
-    def get_voltage(self):
-        """Return terminal voltage in Volts."""
-        return float(self._voltage)
-
-    def get_current(self):
-        """Return DC leakage current in Amperes."""
-        return float(self._current)
-
-    def voltage_response(self, v, t=0.0):
-        """Return ``(current_A, time_s)`` from DC leakage resistance."""
-        fe, _, _ = self._resolve_sections()
-        r_leak = fe.get('leakage_resistance')
-        if r_leak is not None and r_leak > 0:
-            return v / r_leak, t
-        return v, t
-
-    def current_response(self, i, t=0.0):
-        """Return ``(voltage_V, time_s)`` from DC leakage resistance."""
-        fe, _, _ = self._resolve_sections()
-        r_leak = fe.get('leakage_resistance')
-        if r_leak is not None and r_leak > 0:
-            return i * r_leak, t
-        return i, t
-
-    def apply_waveform(self, v, t):
+        For scalar DC inputs (or when ``t`` is scalar), returns the DC leakage
+        current ``v / leakage_resistance``. For 1D waveform arrays ``(v, t)``,
+        computes the displacement + dielectric + leakage current ``dP/dt * area``
+        using either the frequency-dependent RK4 path (when ``kinetic_damping``
+        is in ``parameter_dict['ferroelectric']``) or quasi-static branch
+        tracking, followed by the 5 ns Gaussian filter and active-region DC
+        offset removal.
         """
-        Apply voltage waveform v(t) and compute the voltage that would appear
-        across a 50 Ω series resistor (proportional to dP/dt · area).
+        fe = self.parameter_dict['ferroelectric']
+        elec = self.parameter_dict['electrode']
+        r_leak = fe['leakage_resistance']
+        if np.ndim(v) == 0 or np.ndim(t) == 0 or len(np.atleast_1d(v)) <= 1:
+            v_arr = np.asarray(v, dtype=float)
+            current = v_arr / r_leak if (r_leak is not None and r_leak > 0) else v_arr
+            return float(current) if np.ndim(v) == 0 else current
 
-        If `kinetic_damping` is present in the material dictionary the
-        frequency-dependent RK4 path is used and dP/dt comes directly from
-        the integrator — no np.gradient needed.  Otherwise the quasi-static
-        branch-tracking path is used.
-        """
-        self.t = t
-        fe, _, elec = self._resolve_sections()
+        v_arr = np.asarray(v, dtype=float)
+        t_arr = np.asarray(t, dtype=float)
         area = elec['area']
         d = fe['film_thickness']
         epsilon_r = fe['epsilon_r']
-        R_leak = fe['leakage_resistance']
 
         if 'kinetic_damping' in fe:
-            # --- frequency-dependent path ---
-            P_ideal, dP_ideal_dt = self._run_kinetic_simulation(v, t)
-
-            # Analytical derivatives for parasitic contributions (no gradient needed)
-            dV_dt = np.gradient(v, t)
+            _, dP_ideal_dt = self._run_kinetic_simulation(v_arr, t_arr)
+            dV_dt = np.gradient(v_arr, t_arr)
             dP_dielectric_dt = EPSILON_0 * (epsilon_r - 1) / d * dV_dt
-            dP_leak_dt = v / (area * R_leak)
-
+            dP_leak_dt = v_arr / (area * r_leak)
             dP_total_dt = dP_ideal_dt + dP_dielectric_dt + dP_leak_dt
-            self.output_voltage = dP_total_dt * 50.0 * area
-
+            current = dP_total_dt * area
         else:
-            # --- quasi-static path ---
-            P_ideal = self.run_landau_hysteresis_simulation(v)
-            P_total, _ = self.add_parasitic_effects(v, P_ideal, t=t)
-            self.output_voltage = np.gradient(P_total, t) * 50.0 * area
+            P_ideal = self.run_landau_hysteresis_simulation(v_arr)
+            P_total, _ = self.add_parasitic_effects(v_arr, P_ideal, t=t_arr)
+            current = np.gradient(P_total, t_arr) * area
 
-        # --- post-processing ---------------------------------------------------
-        n_prep = getattr(self, 'prep_points', 10)
+        n_prep = 20 if (len(current) > 20 and np.all(v_arr[:20] == 0)) else 0
 
-        # 1. Gaussian bandwidth filter.
-        #    Fixed time-constant: higher-frequency loops get more smearing.
-        dt = t[1] - t[0]
-        sigma = 5e-9                           # Gaussian width (s)
-        n_half = max(1, int(3 * sigma / dt))   # 3-sigma half-width
+        # 1. Gaussian bandwidth filter (fixed 5 ns time-constant).
+        dt = t_arr[1] - t_arr[0]
+        sigma = 5e-9
+        n_half = max(1, int(3 * sigma / dt))
         if n_half > 1:
             x = np.arange(-n_half, n_half + 1) * dt
             kernel = np.exp(-0.5 * (x / sigma) ** 2)
             kernel /= kernel.sum()
-            self.output_voltage = np.convolve(
-                self.output_voltage, kernel, mode='same')
+            current = np.convolve(current, kernel, mode='same')
 
-        # 2. Remove DC offset of the active (non-prep) region so that
-        #    cumulative integration in the analysis doesn't drift.
-        if 0 < n_prep < len(self.output_voltage):
-            active = self.output_voltage[n_prep:]
-            active -= np.mean(active)           # modifies slice in-place
-            self.output_voltage[:n_prep] = 0.0  # clean quiet baseline
+        # 2. Remove DC offset of the active region so integration does not drift.
+        if 0 < n_prep < len(current):
+            active = current[n_prep:]
+            active -= np.mean(active)
+            current[:n_prep] = 0.0
 
-    def get_waveform(self):
-        """Return ``(output_voltage, time)`` measured across the 50 Ω sense resistor."""
-        return self.output_voltage, self.t
-
-    get_voltage_response = get_waveform
+        return current
 
 
 Ferroelectric = LandauFerroelectric

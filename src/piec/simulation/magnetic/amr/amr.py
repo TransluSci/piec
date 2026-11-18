@@ -5,30 +5,9 @@ from piec.simulation.sample import Sample
 class AMRMaterial(Sample):
     """Level-2 contract interface for AMR and magneto-transport samples.
 
-    Defines the stimulus inputs (applied magnetic field and orientation
-    angle) and electrical transport outputs (resistance and terminal voltage)
-    used by virtual calibrators, stepper motors, DMMs, and lock-in amplifiers.
+    Defines the bare-minimum stimulus-to-response contract mapping applied
+    sense current, orientation angle, and magnetic field to terminal voltage.
     """
 
-    def __init__(self, parameter_dict=None, name="amr_material"):
-        super().__init__(parameter_dict=parameter_dict, name=name)
-
-    def set_field(self, field):
-        """Apply magnetic field in Oe."""
-        raise NotImplementedError
-
-    def get_field(self):
-        """Return the current applied magnetic field in Oe."""
-        raise NotImplementedError
-
-    def set_angle(self, angle):
-        """Set the sample orientation angle in degrees."""
-        raise NotImplementedError
-
-    def get_resistance(self, angle=None, field=None):
-        """Return simulated electrical resistance in Ohms at ``(angle, field)``."""
-        raise NotImplementedError
-
-    def get_voltage(self):
-        """Return terminal voltage in Volts."""
-        raise NotImplementedError
+    def apply_current(self, i=1e-6, angle=0.0, field=0.0):
+        """Apply current ``i`` (A) at ``(angle, field)`` (deg, Oe) and return voltage in Volts."""

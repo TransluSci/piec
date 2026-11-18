@@ -8,27 +8,28 @@ class ArctanMOKE(MOKEMaterial):
 
     def __init__(
         self,
-        *,
         coercivity=100.0,
         switching_width=30.0,
         bias=0.0,
         offset=0.3,
         sensitivity=0.02,
+        *,
         parameter_dict=None,
         name="virtual_moke_sample",
     ):
         super().__init__(parameter_dict=parameter_dict, name=name)
-        self.coercivity = self.parameter_dict.get('coercivity', coercivity)
-        self.switching_width = self.parameter_dict.get('switching_width', switching_width)
-        self.bias = self.parameter_dict.get('bias', bias)
-        self.offset = self.parameter_dict.get('offset', offset)
-        self.sensitivity = self.parameter_dict.get('sensitivity', sensitivity)
+        self.coercivity = float(self.parameter_dict.setdefault('coercivity', coercivity))
+        self.switching_width = float(self.parameter_dict.setdefault('switching_width', switching_width))
+        self.bias = float(self.parameter_dict.setdefault('bias', bias))
+        self.offset = float(self.parameter_dict.setdefault('offset', offset))
+        self.sensitivity = float(self.parameter_dict.setdefault('sensitivity', sensitivity))
         if (
             not np.isfinite([self.coercivity, self.switching_width, self.bias]).all()
             or self.coercivity < 0
             or self.switching_width <= 0
         ):
             raise ValueError('Require finite coercivity >= 0 and switching width > 0')
+        self._field = 0.0
         self._magnetization = 0.0
 
     def _branch_m(self, field, sign):
@@ -37,8 +38,8 @@ class ArctanMOKE(MOKEMaterial):
             (field - self.bias - sign * self.coercivity) / self.switching_width
         ))
 
-    def set_field(self, field):
-        """Apply magnetic field in Oe and advance along the arctan hysteresis branch."""
+    def apply_field(self, field):
+        """Apply magnetic field in Oe, update hysteresis state, and return detector voltage (V)."""
         value = float(field)
         if not np.isfinite(value):
             raise ValueError('Field must be finite')
@@ -48,15 +49,4 @@ class ArctanMOKE(MOKEMaterial):
             self._magnetization = min(self._magnetization, self._branch_m(value, -1.0))
         self._magnetization = float(np.clip(self._magnetization, -1.0, 1.0))
         self._field = value
-
-    def get_field(self):
-        """Return the current applied magnetic field in Oe."""
-        return float(self._field)
-
-    def get_magnetization(self):
-        """Return normalized magnetization M/Ms in [-1, 1]."""
-        return float(self._magnetization)
-
-    def get_voltage(self):
-        """Return simulated MOKE photodetector voltage in Volts."""
         return float(self.offset + self.sensitivity * self._magnetization)
