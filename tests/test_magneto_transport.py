@@ -70,7 +70,7 @@ def test_amr_virtual_pipeline_refreshes_metadata_and_history(instruments, tmp_pa
     assert data['field'].tolist() == [100, 100, 100]
     np.testing.assert_allclose(data['Y'], data['X'] / 10)
     assert np.isfinite(data.to_numpy()).all()
-    assert instruments['calibrator'].sample.current_field == 0
+    assert instruments['dmm'].get_voltage() == 0
     assert len(experiment.history) == 1
     pd.testing.assert_frame_equal(experiment.history[0], experiment.metadata)
 

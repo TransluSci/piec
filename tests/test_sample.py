@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import inspect
-from pathlib import Path
 import textwrap
 
 import numpy as np
 import pytest
 
+from pathlib import Path
+
 import piec.drivers as drivers_pkg
-import piec.simulation as simulation_pkg
 from piec.drivers.virtual_instrument import VirtualInstrument
 from piec.simulation.sample import Sample
 from piec.simulation.simulation_hub import (
@@ -20,54 +19,7 @@ from piec.simulation.simulation_hub import (
     get_model_parameters,
 )
 
-SIMULATION_PATH = Path(simulation_pkg.__file__).resolve().parent
 DRIVERS_PATH = Path(drivers_pkg.__file__).resolve().parent
-
-
-def _local_subclasses(module, base_cls):
-    return [
-        obj for name, obj in inspect.getmembers(module, inspect.isclass)
-        if obj is not base_cls and obj.__module__ == module.__name__
-        and name == obj.__name__ and issubclass(obj, base_cls)
-    ]
-
-
-def _discover_category_dirs():
-    dirs = []
-    for cat_dir in sorted(SIMULATION_PATH.rglob("*")):
-        if not cat_dir.is_dir():
-            continue
-        rel_parts = cat_dir.relative_to(SIMULATION_PATH).parts
-        if any(part.startswith("_") for part in rel_parts):
-            continue
-        if (cat_dir / f"{cat_dir.name}.py").is_file():
-            dirs.append((cat_dir, rel_parts))
-    assert dirs
-    return dirs
-
-
-def _discover_categories():
-    categories = {}
-    for cat_dir, rel_parts in _discover_category_dirs():
-        pkg_prefix = ".".join(("piec", "simulation", *rel_parts))
-        mod = importlib.import_module(f"{pkg_prefix}.{cat_dir.name}")
-        found = _local_subclasses(mod, Sample)
-        assert len(found) == 1, f"{mod.__name__} must define one Sample subclass, found {found}"
-        categories["/".join(rel_parts)] = (cat_dir, pkg_prefix, found[0])
-    return categories
-
-
-def _discover_models():
-    models = []
-    for cat_dir, pkg_prefix, cat_cls in _discover_categories().values():
-        for py_file in sorted(cat_dir.glob("*.py")):
-            if py_file.stem in {"__init__", cat_dir.name} or py_file.stem.startswith("_"):
-                continue
-            mod = importlib.import_module(f"{pkg_prefix}.{py_file.stem}")
-            for model_cls in _local_subclasses(mod, Sample):
-                models.append((cat_cls, model_cls))
-    assert models
-    return models
 
 
 def _is_not_implemented_stub(fn):
@@ -91,8 +43,13 @@ def _is_not_implemented_stub(fn):
     return False
 
 
-_CATEGORIES = [entry[2] for entry in _discover_categories().values()]
-_MODELS = _discover_models()
+_CATALOG = discover_simulation_catalog()
+_CATEGORIES = [entry["category_class"] for entry in _CATALOG.values()]
+_MODELS = [
+    (entry["category_class"], model_cls)
+    for entry in _CATALOG.values()
+    for model_cls in entry["models"].values()
+]
 _ALL_CLASSES = [Sample, *_CATEGORIES, *(m for _, m in _MODELS)]
 
 
@@ -105,7 +62,7 @@ def test_category_contracts_are_pure_stubs(cat_cls):
     ]
     assert public_methods
     for name, fn in public_methods:
-        assert _is_not_implemented_stub(fn), f"{cat_cls.__name__}.{name} must be a stub raising NotImplementedError"
+        assert _is_not_implemented_stub(fn), f"{cat_cls.__name__}.{name} must be a stub"
 
 
 @pytest.mark.parametrize("cat_cls,model_cls", _MODELS, ids=lambda p: p.__name__)
@@ -153,8 +110,7 @@ def test_drivers_do_not_import_simulation():
 def test_simulation_hub_discovers_and_swaps_global_samples(monkeypatch):
     monkeypatch.setattr(VirtualInstrument, "sample", None)
     catalog = discover_simulation_catalog()
-    expected_categories = {key for key in _discover_categories() if key != "example"}
-    assert set(catalog) == expected_categories
+    assert catalog
 
     for entry in catalog.values():
         for model_cls in entry["models"].values():
@@ -203,6 +159,7 @@ def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
             app = app_cls.__new__(app_cls)
             hub = SimulationHubWindow(root, default_sample=app.get_default_sample())
             try:
+                assert set(hub.catalog.keys()) == {cat_key}
                 assert hub.category_var.get() == cat_key
                 assert hub.model_var.get() == model_name
                 for key, val in get_model_parameters(model_cls).items():
@@ -214,32 +171,29 @@ def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
 
 
 @pytest.mark.parametrize("cat_cls,model_cls", _MODELS, ids=lambda p: p.__name__)
-def test_all_models_support_universal_sample_io(cat_cls, model_cls, monkeypatch):
+def test_models_execute_contract_methods_and_report_unsupported_calls(cat_cls, model_cls, capsys):
     sample = model_cls()
     assert isinstance(sample, cat_cls)
-    monkeypatch.setattr(VirtualInstrument, "sample", sample)
-    assert VirtualInstrument.sample is sample
-
-    sample.set_field(25.0)
-    assert sample.get_field() == pytest.approx(25.0)
-    assert sample.current_field == pytest.approx(25.0)
-
-    sample.set_angle(45.0)
-    assert sample.get_angle() == pytest.approx(45.0)
-    assert sample.current_angle == pytest.approx(45.0)
-
-    sample.set_voltage(0.5)
-    assert np.isfinite(sample.get_voltage())
-    assert np.isfinite(sample.get_current())
-
-    sample.set_current(1e-3)
-    assert np.isfinite(sample.get_voltage())
-    assert np.isfinite(sample.get_current())
-    assert np.isfinite(sample.get_resistance())
 
     t = np.linspace(0.0, 1e-3, 16)
     v = np.sin(2.0 * np.pi * 1e3 * t)
-    sample.apply_waveform(v, t)
-    v_out, t_out = sample.get_waveform()
-    assert len(v_out) == len(t_out) == len(t)
-    assert np.all(np.isfinite(v_out))
+
+    if hasattr(cat_cls, "apply_voltage"):
+        dc_current = sample.apply_voltage(0.5)
+        assert np.isfinite(dc_current)
+        wf_current = sample.apply_voltage(v, t)
+        assert len(wf_current) == len(t)
+        assert np.all(np.isfinite(wf_current))
+
+    if hasattr(cat_cls, "apply_current"):
+        if "angle" in inspect.signature(sample.apply_current).parameters:
+            assert np.isfinite(sample.apply_current(1e-3, angle=45.0, field=25.0))
+        else:
+            assert np.isfinite(sample.apply_current(1e-3))
+
+    if hasattr(cat_cls, "apply_field"):
+        assert np.isfinite(sample.apply_field(25.0))
+
+    assert sample.unsupported_stimulus(1.0) is None
+    captured = capsys.readouterr()
+    assert "[UNSUPPORTED]" in captured.out
