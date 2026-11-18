@@ -50,4 +50,8 @@ def test_import_analysis_utilities():
 
 
 def test_import_simulation_classes():
-    from piec.simulation.fe_material import Ferroelectric, Resistor, Dielectric
+    from piec.simulation.sample import Sample
+    from piec.simulation.ferroelectric.landau_ferroelectric import Ferroelectric
+    from piec.simulation.resistor.ohmic_resistor import Resistor
+    from piec.simulation.magnetic.moke.arctan_moke import ArctanMOKE
+    from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR

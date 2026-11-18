@@ -6,6 +6,7 @@ import pandas as pd
 from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.gui_utils import MeasurementApp
+from piec.simulation.ferroelectric.landau_ferroelectric import LandauFerroelectric
 
 DEFAULTS = {
             "save_dir":r"scratch",
@@ -28,6 +29,7 @@ DEFAULTS = {
 
 class FEMeasurementApp(MeasurementApp):
     _instruments = ('awg', 'oscilloscope')
+    _default_sample = LandauFerroelectric
 
     def __init__(self, root):
         super().__init__(root, title="Ferroelectric Measurement GUI", geometry="1200x700")

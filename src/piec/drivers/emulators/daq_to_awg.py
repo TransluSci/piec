@@ -147,14 +147,14 @@ class DaqAsAwg(Awg):
             # Try to use the high-performance scan if the driver supports it.
             # This is "Smart" mode: Check capability or Try/Except
             try:
-                inspect.getattr_static(self.daq, "write_waveform_scan")
-                hardware_scan = self.daq.write_waveform_scan
+                fn = inspect.getattr_static(self.daq, "write_AO_scan")
+                hardware_scan = None if getattr(fn, "_is_optional", False) else self.daq.write_AO_scan
             except AttributeError:
                 hardware_scan = None
 
             if callable(hardware_scan):
                 try:
-                    hardware_scan(daq_channel, data, int(self.sample_rate))
+                    hardware_scan(ao_channel=daq_channel, data=data, sample_rate=int(self.sample_rate))
                     self._using_hardware_scan = True
                     return # Success!
                 except Exception as e:
@@ -207,7 +207,7 @@ class DaqAsAwg(Awg):
             # 1. Output the point
             val = data[idx]
             try:
-                self.daq.write_AO(channel, val)
+                self.daq.write_AO(ao_channel=channel, data=val)
             except Exception as e:
                 print(f"Error in background generation: {e}")
                 break

@@ -137,6 +137,16 @@ address ``'VIRTUAL'`` to a concrete model class:
    awg = Keysight81150a('VIRTUAL')
    print(awg.channel)  # Model capabilities with VirtualAwg behavior
 
+Virtual instruments share one global ``sample`` across all instances; assign
+any ``Sample`` model via ``.sample`` so sources and meters act on the same
+simulated device:
+
+.. code-block:: python
+
+   from piec.simulation.resistor.ohmic_resistor import Resistor
+
+   awg.sample = Resistor(resistance=1000.0)  # shared with scope.sample, etc.
+
 Using a driver
 --------------
 
@@ -181,6 +191,18 @@ channels. ``reset()`` or ``initialize()`` clears that selection; passing
 changes hardware settings, so configure the scope again before reading.
 Use ``get_data()`` for scope waveform reads; ``quick_read()`` is no longer part
 of the oscilloscope interface.
+
+DAQ analog reads
+----------------
+
+Use ``read_AI(ai_channel=0)`` for one voltage or
+``read_AI_scan(ai_channel=0, points=1000, rate=1000)`` for a pandas DataFrame
+with ``Time`` and ``Voltage`` columns. A one-element channel list returns the
+same format. An ordered list such as ``ai_channel=[2, 0]`` returns ``Time``,
+``AI2``, and ``AI0``. Time is in seconds and voltages are in volts. The actual
+per-channel rate in Hz is available at ``data.attrs['sample_rate']``.
+MCC inputs share a scan clock and are sampled in sequence. Use ``ao_channel``
+for analog output commands and ``dio_channel`` for digital line commands.
 
 Arbitrary waveforms
 -------------------

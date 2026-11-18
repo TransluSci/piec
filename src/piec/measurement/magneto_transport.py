@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from piec.analysis.utilities import *
 from piec.measurement.experiment import Experiment
+from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
 
 
 class MagnetoTransport(Experiment):
@@ -28,6 +29,7 @@ class MagnetoTransport(Experiment):
     """
 
     _instruments = ('dmm', 'calibrator', 'arduino', 'lockin')
+    _default_virtual_sample = CosSquaredAMR
 
     def __init__(self, dmm, calibrator, arduino, lockin,  field, save_dir=r'\\scratch', voltage_callibration=10000,
                  live_plot=True, plot_config=None):
@@ -61,7 +63,6 @@ class MagnetoTransport(Experiment):
         self._ax = None
         self._in_jupyter = self._is_jupyter()
         super().__init__(save_dir=save_dir)
-        #self._initialize() #checks communication
 
     def initialize(self):
         """

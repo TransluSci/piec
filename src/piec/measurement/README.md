@@ -11,6 +11,7 @@ This directory contains classes for managing discrete waveform generation, measu
 - **`magneto_transport.py`**: Contains `MagnetoTransport` and `AMR` (Anisotropic Magnetoresistance) classes for controlling magnets, stepper motors, and lock-in amplifiers.
 - **`iv_sweep.py`**: Contains `IVSweep` for sourcemeter voltage sweeps.
 - **`amr.py`**: Re-exports `AMR` and magneto-transport helpers.
+- **`moke.py`**: `MOKE(Experiment)` for optical hysteresis loops and cycle averaging.
 
 `Experiment` provides save-directory initialization, metadata collection, and
 independent history snapshots. `DiscreteWaveform`, `IVSweep`, and

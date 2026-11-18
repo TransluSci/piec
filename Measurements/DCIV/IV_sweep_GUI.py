@@ -9,7 +9,7 @@ import time
 import pandas as pd
 from piec.measurement.iv_sweep import IVSweep
 from piec.measurement.gui_utils import MeasurementApp
-from piec.simulation.fe_material import Resistor
+from piec.simulation.resistor.ohmic_resistor import Resistor
 
 
 class _LiveIVSweep(IVSweep):
@@ -89,6 +89,7 @@ DEFAULTS = {
 
 class IVSweepApp(MeasurementApp):
     _instruments = ('sourcemeter',)
+    _default_sample = Resistor
 
     def __init__(self, root):
         super().__init__(root, title="IV Sweep Measurement GUI", geometry="1600x900")
@@ -188,8 +189,8 @@ class IVSweepApp(MeasurementApp):
         except Exception as error:
             print(f"Could not connect instruments: {error}")
             return
-        if sm_address == "VIRTUAL":
-            sourcemeter.virtual_sample = Resistor(resistance=1000.0)
+        if sm_address == "VIRTUAL" and sourcemeter.sample is None:
+            sourcemeter.sample = self.get_default_sample()
 
         self.experiment = _LiveIVSweep(
             sourcemeter=sourcemeter,

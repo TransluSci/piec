@@ -208,19 +208,21 @@ class VirtualSourcemeter(VirtualInstrument, Sourcemeter):
 
     def _measured_voltage_current(self):
         """Return the response of the shared external virtual sample."""
+        if self.sample is None:
+            return float(self.state['source_voltage']), float(self.state['source_current'])
         if self.state['source_func'] == 'CURR':
             current = self.state['source_current']
-            voltage, _ = self.sample.current_response(current, 0.0)
+            v = self.sample.apply_current(current)
             voltage = self._clamp(
-                float(voltage),
+                float(self.state['source_voltage'] if v is None else v),
                 -self.state['voltage_compliance'],
                 self.state['voltage_compliance'],
             )
         else:
             voltage = self.state['source_voltage']
-            current, _ = self.sample.voltage_response(voltage, 0.0)
+            i = self.sample.apply_voltage(voltage)
             current = self._clamp(
-                float(current),
+                float(self.state['source_current'] if i is None else i),
                 -self.state['current_compliance'],
                 self.state['current_compliance'],
             )
