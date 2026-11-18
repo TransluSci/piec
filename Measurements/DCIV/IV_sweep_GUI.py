@@ -190,7 +190,7 @@ class IVSweepApp(MeasurementApp):
             print(f"Could not connect instruments: {error}")
             return
         if sm_address == "VIRTUAL" and sourcemeter.sample is None:
-            sourcemeter.sample = Resistor(resistance=1000.0)
+            sourcemeter.sample = self.get_default_sample()
 
         self.experiment = _LiveIVSweep(
             sourcemeter=sourcemeter,

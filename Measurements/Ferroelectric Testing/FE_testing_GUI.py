@@ -6,7 +6,7 @@ import pandas as pd
 from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.measurement.gui_utils import MeasurementApp
-from piec.simulation.fe_material.landau_ferroelectric import LandauFerroelectric
+from piec.simulation.ferroelectric.landau_ferroelectric import LandauFerroelectric
 
 DEFAULTS = {
             "save_dir":r"scratch",
