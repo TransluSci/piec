@@ -15,13 +15,16 @@ on:
 
 jobs:
   test:
-    # Use the latest Ubuntu runner
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       matrix:
-        # Test against the minimum supported version and the latest stable release
-        python-version: ["3.9", "3.11"]
+        # Pin ubuntu-24.04 for Python 3.9 (not available on Ubuntu 26.04 / ubuntu-latest)
+        include:
+          - python-version: "3.9"
+            os: ubuntu-24.04
+          - python-version: "3.11"
+            os: ubuntu-latest
 
     steps:
       # 1. Check out the repository code

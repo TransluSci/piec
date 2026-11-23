@@ -194,8 +194,8 @@ def list_instruments(verbose=False):
             # MCC/Digilent device
             idn = addr_str
             res_type = "mcc"
-            driver_class = "Digilent"
-            category = "digilent"
+            driver_class = "MCC"
+            category = "mcc"
             if verbose:
                 print(f"  [MCC]  {addr_str}")
         else:

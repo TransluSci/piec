@@ -21,14 +21,11 @@ class VirtualStepper(VirtualInstrument, Stepper):
         else:
              self.current_pos -= steps
         
-        # Update shared magnetic sample angle
-        if hasattr(self, 'mag_sample') and self.mag_sample:
-            # Convert steps to degrees (assuming 200 steps/rev)
-            delta_angle = (steps * 360.0 / self.steps_per_revolution)
-            if direction == 1: # CW
-                self.mag_sample.current_angle += delta_angle
-            else: # CCW
-                self.mag_sample.current_angle -= delta_angle
+        # Update shared sample orientation angle
+        if self.sample is not None:
+            delta_angle = steps * 360.0 / self.steps_per_revolution
+            angle = self.sample.state.get('angle', 0.0)
+            self.sample.state['angle'] = angle + (delta_angle if direction == 1 else -delta_angle)
 
         return self.current_pos
 
@@ -37,5 +34,5 @@ class VirtualStepper(VirtualInstrument, Stepper):
 
     def set_zero(self):
         self.current_pos = 0
-        if hasattr(self, 'mag_sample') and self.mag_sample:
-            self.mag_sample.current_angle = 0
+        if self.sample is not None:
+            self.sample.state['angle'] = 0.0

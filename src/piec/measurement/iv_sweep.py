@@ -3,6 +3,7 @@ import time
 import pandas as pd
 from piec.analysis.utilities import metadata_and_data_to_csv, create_measurement_filename
 from piec.measurement.experiment import Experiment
+from piec.simulation.resistor.ohmic_resistor import OhmicResistor
 
 
 class IVSweep(Experiment):
@@ -24,6 +25,7 @@ class IVSweep(Experiment):
 
     mtype = "iv_sweep"
     _instruments = ('sourcemeter',)
+    _default_virtual_sample = OhmicResistor
 
     def __init__(self, sourcemeter, v_start=0.0, v_stop=1.0, num_steps=50,
                  current_compliance=0.1, dwell_time=0.1, sense_mode='2W',

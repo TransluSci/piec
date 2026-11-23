@@ -14,13 +14,12 @@ from piec.drivers.lockin.virtual_lockin import VirtualLockin
 from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
 from piec.drivers.virtual_instrument import VirtualInstrument
 from piec.measurement.amr import AMR, MagnetoTransport
-from piec.simulation.magnetic_material import MagneticSample
+from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
 
 
 @pytest.fixture
 def instruments(monkeypatch):
-    monkeypatch.setattr(VirtualInstrument, '_shared_fe_sample', None)
-    monkeypatch.setattr(VirtualInstrument, '_shared_mag_sample', MagneticSample())
+    monkeypatch.setattr(VirtualInstrument, 'sample', CosSquaredAMR())
     monkeypatch.setattr(np.random, 'normal', lambda *args: 0.0)
     monkeypatch.setattr('piec.measurement.magneto_transport.plt.show', lambda: None)
     elapsed = [0.0]
@@ -71,7 +70,7 @@ def test_amr_virtual_pipeline_refreshes_metadata_and_history(instruments, tmp_pa
     assert data['field'].tolist() == [100, 100, 100]
     np.testing.assert_allclose(data['Y'], data['X'] / 10)
     assert np.isfinite(data.to_numpy()).all()
-    assert instruments['calibrator'].mag_sample.current_field == 0
+    assert instruments['dmm'].get_voltage() == 0
     assert len(experiment.history) == 1
     pd.testing.assert_frame_equal(experiment.history[0], experiment.metadata)
 

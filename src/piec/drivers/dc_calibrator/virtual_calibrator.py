@@ -7,7 +7,6 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
     """
     def __init__(self, address="VIRTUAL", **kwargs):
         super().__init__(address=address, **kwargs)
-        self.voltage_callibration = kwargs.get('voltage_callibration', 10000.0)
         self.state = {
             'voltage': 0.0,
             'current': 0.0,
@@ -29,13 +28,17 @@ class VirtualCalibrator(VirtualInstrument, DCCalibrator):
     def set_output(self, value, mode="voltage", **kwargs):
         self.state[mode] = value
         self.state['mode'] = mode
-        if mode == "voltage" and hasattr(self, 'mag_sample') and self.mag_sample:
-            self.mag_sample.current_field = value * self.voltage_callibration
+        if self.sample is not None:
+            self.sample.state[mode] = float(value)
+            self.sample.state['field'] = float(value) * 10000.0
         return super().set_output(value, mode=mode, **kwargs)
 
     def output(self, on=True):
         """Enable or disable calibrator main output."""
         self._output_enabled = bool(on)
         self.state['output_on'] = self._output_enabled
-        if not self._output_enabled and hasattr(self, 'mag_sample') and self.mag_sample:
-            self.mag_sample.current_field = 0.0
+        if self.sample is not None:
+            mode = self.state['mode']
+            active = self.state[mode] if self._output_enabled else 0.0
+            self.sample.state[mode] = float(active)
+            self.sample.state['field'] = float(active) * 10000.0

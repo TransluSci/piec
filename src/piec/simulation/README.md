@@ -1,77 +1,55 @@
 # Simulation Module
 
-This module provides tools for simulating various materials and their responses. It is primarily designed to support virtual instruments and testing scenarios where physical hardware is not available.
+Simulated sample models for virtual instruments and hardware-free testing. The module follows a 3-level hierarchy mirroring `piec.drivers`:
 
-## Contents
+1. **Level 1 (`sample.py`)**: `Sample` — minimal base class holding `name`, `parameter_dict`, a generic `state` dict for pass-through stimulus tracking, and an `Instrument`-style `__getattr__` fallback that prints `[UNSUPPORTED]` once per method and returns `None`. A bare `Sample()` instance acts as a pass-through wire.
+2. **Level 2 (`<category>/<category>.py`)**: Pure contract interfaces (`ResistiveMaterial`, `FerroelectricMaterial`, `MOKEMaterial`, `AMRMaterial`). Each category declares only the bare-minimum stimulus-to-response methods (`apply_voltage`, `apply_current`, `apply_field`) as docstring-only stubs mirroring `piec.drivers.awg.awg.Awg`.
+3. **Level 3 (`<category>/<model>.py`)**: Concrete physics models implementing those Level 2 methods directly from their scalar or dictionary parameters (`parameter_dict`).
 
-`sample.py` defines `Sample`, the common base for all simulated samples. `Material` and `MagneticSample` inherit from it; `Resistor`, `Dielectric`, and `Ferroelectric` inherit through `Material`.
+## Minimal Stimulus-to-Response Contracts
 
-Every sample accepts a `name` and `parameter_dict`, initialized by `Sample`.
-Existing default names are preserved, including `None` for an unnamed
-ferroelectric sample. Each sample without a supplied dictionary gets its own
-empty dictionary. Resistor, dielectric, and magnetic models fill missing keys
-with their scalar constructor arguments; supplied dictionary values take
-precedence. These models initialize their existing mutable attributes from
-the dictionary. Ferroelectric models read their nested parameters directly
-from the supplied dictionary, as before.
+Virtual instruments share applied stimulus state via `sample.state` and call a sample's stimulus-to-response method directly:
 
-The core logic is implemented in `fe_material.py` and includes:
+| Category | Level-2 Contract Method(s) | Physical Meaning | Virtual Instrument Caller |
+|---|---|---|---|
+| **Resistor / I-V** | `apply_voltage(v, t=0.0)`, `apply_current(i, t=0.0)` | Apply voltage/current (scalar DC or waveform) and return current/voltage | `VirtualSourcemeter`, `VirtualScope` |
+| **Ferroelectric** | `apply_voltage(v, t=0.0)` | Apply DC voltage or waveform `v(t)` and return current (A) | `VirtualScope`, `VirtualSourcemeter` |
+| **MOKE** | `apply_field(field)` | Apply magnetic field (Oe) and return photodetector voltage (V) | `VirtualFieldController` |
+| **AMR** | `apply_current(i=1e-6, angle=0.0, field=0.0)` | Apply sense current at `(angle, field)` and return terminal voltage (V) | `VirtualLockin` |
 
-*   **`Material`**: Base class for all material simulations.
-*   **`Resistor`**: Simulates an ideal ohmic resistor ($V = IR$).
-*   **`Dielectric`**: Simulates an ideal linear dielectric material.
-*   **`Ferroelectric`**: Implements a Landau-Devonshire model for ferroelectric materials, including:
-    *   Hysteresis loop calculation.
-    *   Temperature dependence ($T_0$).
-    *   Strain effects from substrate mismatch.
-    *   Parasitic effects (linear dielectric background and leakage/loss).
+If an experiment or virtual instrument invokes a method that the active sample does not implement, `Sample.__getattr__` prints a one-time `[UNSUPPORTED]` notice to the console and returns `None` rather than crashing.
+
+## Categories
+
+*   **`resistor/`** *(reference template)*: Two-terminal resistive/I-V samples.
+    *   Level 2: `ResistiveMaterial` (`resistor.py`)
+    *   Level 3: `OhmicResistor` / `Resistor` (`ohmic_resistor.py`), `SimpleDiode` (`simple_diode.py`)
+*   **`ferroelectric/`**: Ferroelectric capacitor samples.
+    *   Level 2: `FerroelectricMaterial` (`ferroelectric.py`)
+    *   Level 3: `LandauFerroelectric` / `Ferroelectric` (`landau_ferroelectric.py`)
+*   **`magnetic/moke/`**: Magneto-Optic Kerr Effect (MOKE) samples ($H \rightarrow V_{\text{photodiode}}$).
+    *   Level 2: `MOKEMaterial` (`moke.py`)
+    *   Level 3: `ArctanMOKE` (`arctan_moke.py`)
+*   **`magnetic/amr/`**: Anisotropic magnetoresistance / magneto-transport samples ($(I, \theta, H) \rightarrow V_{\text{terminal}}$).
+    *   Level 2: `AMRMaterial` (`amr.py`)
+    *   Level 3: `CosSquaredAMR` (`cos_squared_amr.py`)
+
+## Simulation Hub GUI
+
+`src/piec/simulation/simulation_hub.py` provides `SimulationHubWindow`, which dynamically discovers every Level-2 category and Level-3 model along with its editable parameters, instantiates the configured sample, and assigns it globally via `VirtualInstrument.sample`. When opened from a `MeasurementApp` GUI, it filters the catalog to only the samples supported by that GUI. Launch it standalone (`python -m piec.simulation.simulation_hub`) or via the **SIMULATION HUB** button inside any `MeasurementApp` GUI.
 
 ## Usage
 
-Classes can be imported directly from the module. The primary methods for interaction are typically `voltage_response`, `current_response`, or `apply_waveform`. Instrument drivers provide the applied signal; these material objects provide the simulated device response.
+### Example: Swapping Samples Behind Virtual Instruments
 
-### Example: Simulating a Resistor
-
-```python
-import numpy as np
-from piec.simulation.fe_material import Resistor
-
-# Create a resistor
-r = Resistor(parameter_dict={'resistance': 2000}, name='test_resistor')
-
-# Define a waveform
-t = np.linspace(0, 1e-3, 1000)
-v = np.sin(2 * np.pi * 1000 * t)
-
-# Calculate response
-i_response, t_out = r.voltage_response(v, t)
-
-# Or calculate the voltage produced by a sourced current.
-v_response, t_out = r.current_response(i_response, t)
-```
-
-### Example: Simulating a Ferroelectric Capacitor
-
-The `Ferroelectric` class requires a parameter dictionary for initialization.
-The keyword and attribute previously called `material_dict` are now
-`parameter_dict`; the nested dictionary structure is unchanged.
+Setting `.sample` on any virtual instrument updates the single global sample shared across every virtual instrument:
 
 ```python
-from piec.simulation.fe_material import Ferroelectric
+from piec.drivers.sourcemeter.virtual_sourcemeter import VirtualSourcemeter
+from piec.simulation.resistor.simple_diode import SimpleDiode
 
-# Define material properties (or use defaults from virtual_instrument.py)
-material_props = {
-    'ferroelectric': {
-        'a0': 8.248e5, 'b': -8.388e8, 'c': 7.764e9, 'T0': 388,
-        'Q12': -0.034, 's11': 1.27e-11, 's12': -4.2e-12,
-        'lattice_a': 4.02e-10, 'film_thickness': 10e-9,
-        'epsilon_r': 400, 'leakage_resistance': 1e4
-    },
-    'substrate': {'lattice_a': 3.905e-10},
-    'electrode': {'screening_lambda': 5e-11, 'permittivity_e': 8.0, 'area': 4e-10}
-}
-
-fe_sample = Ferroelectric(parameter_dict=material_props)
-fe_sample.apply_waveform(v, t)
-output_voltage, time = fe_sample.get_voltage_response()
+sm = VirtualSourcemeter()
+sm.sample = SimpleDiode()  # shared globally across all virtual instruments
+sm.configure_voltage_source(voltage=0.5)
+current = sm.get_current()
 ```

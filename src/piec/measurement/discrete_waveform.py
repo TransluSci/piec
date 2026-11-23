@@ -6,6 +6,7 @@ from piec.analysis.utilities import *
 from piec.analysis.pund import *
 from piec.analysis.hysteresis import *
 from piec.measurement.experiment import Experiment
+from piec.simulation.ferroelectric.landau_ferroelectric import LandauFerroelectric
 
 class DiscreteWaveform(Experiment):
     """
@@ -27,6 +28,7 @@ class DiscreteWaveform(Experiment):
         :metadata (pd.DataFrame): Measurement parameters and metadata
     """
     _instruments = ('awg', 'osc')
+    _default_virtual_sample = LandauFerroelectric
     _metadata_attributes = ('length',)
     length = None
     filename = None
