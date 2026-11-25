@@ -211,6 +211,11 @@ Do not make `idn()` return the marker. Replace it when a real identifier is veri
 
 When using a list of identifiers for a hardware family with differing channel counts or limits, declare the family maximum capabilities at the class level (ensuring model-profiled virtual dispatch works out-of-the-box), and let the physical constructor inspect `self.idn()` (e.g. matching `max(matches, key=len)`) to configure instance-specific capabilities.
 
+### Model Variants vs. Generic SDK Fallbacks
+
+* **Same SCPI family / minor hardware variant** (e.g. a sibling oscilloscope or AWG model): extend the existing driver's `AUTODETECT_ID` list and refine limits from `self.idn()`, or subclass the existing driver and override only the differing attributes/methods. Do **not** create per-family `generic_*` drivers.
+* **Self-describing vendor SDKs** (e.g. MCC Universal Library, NI-DAQmx) where every board uses the same SDK calls and exposes runtime capability introspection (such as `DaqDeviceInfo`): a single internal `_<Vendor><Category>` base class plus an opt-in generic fallback (prefixed with `_` so it never shadows dedicated drivers) is allowed to avoid duplicating SDK plumbing across models.
+
 
 ## 3b. Driver Provenance & Hardware Validation (`AI_STATUS`, `HARDWARE_TESTED`)
 
