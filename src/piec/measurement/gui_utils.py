@@ -54,7 +54,9 @@ class ConsoleRedirector:
 class MeasurementApp:
     # Driver category names (or aliases such as "scope" and "calibrator").
     _instruments = ()
-    _default_sample = None
+    # Experiment class run by this GUI; its ``_default_virtual_sample`` drives
+    # Simulation Hub filtering and the virtual sample used before a run.
+    _experiment_cls = None
 
     def __init__(self, root, title="Measurement GUI", geometry="1200x700", icon_path=None):
         self.root = root
@@ -218,11 +220,9 @@ class MeasurementApp:
         ttk.Button(controls, text='SIMULATION HUB', command=self.open_simulation_hub).pack(fill=tk.X, padx=5, pady=5)
 
     def get_default_sample(self):
-        """Return the default ``Sample`` instance configured for this GUI."""
-        default = self._default_sample
-        if default is not None:
-            return default() if callable(default) else default
-        return None
+        """Return a new default ``Sample`` from this GUI's experiment class, or ``None``."""
+        default = getattr(self._experiment_cls, '_default_virtual_sample', None)
+        return default() if default is not None else None
 
     def open_simulation_hub(self):
         """Open or focus the Simulation Hub window for configuring the global sample."""
@@ -321,6 +321,11 @@ class MeasurementApp:
         except Exception:
             self.close_instruments()
             raise
+        if any(getattr(inst, '_is_virtual_driver', False) is True for inst in self.instruments.values()):
+            from piec.drivers.virtual_instrument import VirtualInstrument
+            if VirtualInstrument.sample is None:
+                from piec.simulation.sample import Sample
+                VirtualInstrument.sample = self.get_default_sample() or Sample()
         return self.instruments
 
     def close_instruments(self):

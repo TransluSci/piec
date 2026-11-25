@@ -21,7 +21,6 @@ except Exception:
 
 import time
 from piec.measurement.gui_utils import MeasurementApp
-from piec.simulation.resistor.ohmic_resistor import Resistor
 
 DEFAULTS = {
     "save_dir": r"scratch",
@@ -36,7 +35,6 @@ class QuickstartApp(MeasurementApp):
     """Quickstart GUI application inheriting from PIEC's standard MeasurementApp."""
 
     _instruments = ('awg', 'oscilloscope')
-    _default_sample = Resistor
 
     def __init__(self, root):
         super().__init__(root, title="PIEC — Quickstart Measurement GUI", geometry="1300x750")
@@ -137,8 +135,6 @@ class QuickstartApp(MeasurementApp):
             return
         awg = instruments['awg']
         scope = instruments['oscilloscope']
-        if osc_address == 'VIRTUAL' and scope.sample is None:
-            scope.sample = self.get_default_sample()
 
         # Execute measurement
         try:

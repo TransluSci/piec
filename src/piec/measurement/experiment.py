@@ -16,16 +16,16 @@ class Experiment:
     ``safe_close``. ``_metadata_attributes`` also includes class attributes in
     the metadata, when present.
 
-    Simulation is optional. ``_default_virtual_sample`` may specify a sample
-    class or factory placed behind virtual instruments when no global sample has
-    been chosen. The default ``Sample`` acts as a generic pass-through wire
-    when a subclass does not specify a concrete sample model.
+    Simulation is optional. ``_default_virtual_sample`` defaults to ``None`` so
+    new experiments do not need to reference simulation at all; when virtual
+    instruments run with no global sample selected, ``Experiment`` falls back
+    to a generic pass-through ``Sample``.
     """
 
     mtype = None
     _instruments = ()
     _metadata_attributes = ()
-    _default_virtual_sample = Sample
+    _default_virtual_sample = None
 
     def __init__(self, save_dir=r'\\scratch'):
         self.save_dir = save_dir
@@ -39,17 +39,19 @@ class Experiment:
             getattr(self, name).initialize()
 
     def _ensure_virtual_sample(self):
-        """Assign the default sample when virtual drivers have no global sample."""
+        """Assign a default sample when virtual drivers have no global sample."""
         instruments = [getattr(self, name, None) for name in self._instruments]
         if any(getattr(inst, '_is_virtual_driver', False) is True for inst in instruments):
             from piec.drivers.virtual_instrument import VirtualInstrument
-            if VirtualInstrument.sample is None and self._default_virtual_sample is not None:
-                if self._default_virtual_sample is Sample:
+            if VirtualInstrument.sample is None:
+                if self._default_virtual_sample is not None:
+                    VirtualInstrument.sample = self._default_virtual_sample()
+                else:
                     print(
                         f"WARNING: {type(self).__name__} does not define a specific "
                         "_default_virtual_sample; using generic pass-through Sample."
                     )
-                VirtualInstrument.sample = self._default_virtual_sample()
+                    VirtualInstrument.sample = Sample()
 
     def _update_metadata(self):
         """Refresh measurement parameters, instrument IDs, and timestamp."""

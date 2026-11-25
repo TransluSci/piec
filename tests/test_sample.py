@@ -141,6 +141,7 @@ def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
         pytest.skip("A display is required for Tkinter SimulationHub tests")
 
     try:
+        from piec.measurement.experiment import Experiment
         from piec.measurement.gui_utils import MeasurementApp
         from piec.simulation.simulation_hub import SimulationHubWindow
 
@@ -155,7 +156,8 @@ def test_simulation_hub_opens_to_gui_default_sample(monkeypatch):
         for cat_key, model_name, model_cls in all_models:
             other_cls = next(m_cls for o_cat, _, m_cls in all_models if o_cat != cat_key)
             monkeypatch.setattr(VirtualInstrument, "sample", other_cls())
-            app_cls = type("TempApp", (MeasurementApp,), {"_default_sample": model_cls})
+            exp_cls = type("TempExperiment", (Experiment,), {"_default_virtual_sample": model_cls})
+            app_cls = type("TempApp", (MeasurementApp,), {"_experiment_cls": exp_cls})
             app = app_cls.__new__(app_cls)
             hub = SimulationHubWindow(root, default_sample=app.get_default_sample())
             try:
