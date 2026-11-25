@@ -65,7 +65,9 @@ class MOKE(Experiment):
             return None
         if not (callable(getattr(self.field_controller, 'start_triangle_waveform', None))
                 and callable(getattr(fc_daq, 'read_AI_scan', None))
-                and getattr(type(fc_daq), 'write_AO_scan', None) is not getattr(Daq, 'write_AO_scan', None)):
+                and getattr(type(fc_daq), 'write_AO_scan', None) is not getattr(Daq, 'write_AO_scan', None)
+                and getattr(fc_daq, '_supports_ai_scan', True)
+                and getattr(fc_daq, '_supports_ao_scan', True)):
             return None
         return fc_daq
 

@@ -1,4 +1,3 @@
-import re
 import json
 import time
 import importlib
@@ -26,9 +25,6 @@ try:
 except:
     MCC_AVAILABLE = False
     ul = None
-
-MCC_REGEX = re.compile(r'Device ADDRESS = (\S+)')
-
 
 # Backward-compatible private name.  Constructor dispatch and autodetect now
 # share the implementation in ``virtual_dispatch``.
@@ -209,25 +205,6 @@ def _mcc_daq_driver_map():
     return mapping
 
 
-def list_mcc_devices():
-    """Return connected MCC devices and whether PIEC has a dedicated DAQ driver."""
-    if not MCC_AVAILABLE or ul is None:
-        return []
-    ul.ignore_instacal()
-    daq_map = _mcc_daq_driver_map()
-    found = []
-    for device in ul.get_daq_device_inventory(InterfaceType.ANY):
-        driver_cls = daq_map.get(device.product_name)
-        found.append({
-            "product_name": device.product_name,
-            "product_id": getattr(device, "product_id", None),
-            "unique_id": getattr(device, "unique_id", None),
-            "driver_class": driver_cls,
-            "supported": driver_cls is not None,
-        })
-    return found
-
-
 def _open_mcc_driver(driver_class=None, board_num=0, *, allow_generic=False):
     """Register a matching MCC device and return its open driver.
 
@@ -245,32 +222,38 @@ def _open_mcc_driver(driver_class=None, board_num=0, *, allow_generic=False):
         driver_class = None
 
     if driver_class is None or driver_class is Daq:
+        if not MCC_AVAILABLE or ul is None:
+            raise ConnectionError(f"No supported MCC DAQ found for board {board_num}")
+        ul.ignore_instacal()
+        devices = ul.get_daq_device_inventory(InterfaceType.ANY)
+        if not devices:
+            raise ConnectionError(f"No supported MCC DAQ found for board {board_num}")
+
         daq_map = _mcc_daq_driver_map()
-        product_names = tuple(daq_map.keys())
-        matched_name = _setup_mcc_device(board_num=board_num, product_names=product_names)
-        if matched_name:
-            resolved_class = daq_map[matched_name]
-        else:
-            connected = list_mcc_devices()
-            if allow_generic and connected:
-                if len(connected) > 1:
-                    names = [item["product_name"] for item in connected]
-                    raise ConnectionError(
-                        f"Multiple MCC DAQs found ({names}). Connect only the DAQ for this setup."
-                    )
-                matched_name = _setup_mcc_device(board_num=board_num)
-                if not matched_name:
-                    raise ConnectionError(f"Could not register MCC board {board_num}")
-                from .daq._generic_mcc import GenericMCCDaq
-                resolved_class = GenericMCCDaq
-            elif connected:
-                names = ", ".join(item["product_name"] for item in connected)
+        supported = [dev for dev in devices if dev.product_name in daq_map]
+        if supported:
+            if len(supported) > 1:
                 raise ConnectionError(
-                    f"No supported MCC DAQ found for board {board_num}. "
-                    f"Detected unsupported MCC device(s): {names}"
+                    "Multiple matching MCC DAQs found. Connect only the DAQ for this setup."
                 )
-            else:
-                raise ConnectionError(f"No supported MCC DAQ found for board {board_num}")
+            target_device = supported[0]
+            resolved_class = daq_map[target_device.product_name]
+        elif allow_generic:
+            if len(devices) > 1:
+                names = [dev.product_name for dev in devices]
+                raise ConnectionError(
+                    f"Multiple MCC DAQs found ({names}). Connect only the DAQ for this setup."
+                )
+            target_device = devices[0]
+            from .daq._generic_mcc import GenericMCCDaq
+            resolved_class = GenericMCCDaq
+        else:
+            names = ", ".join(dev.product_name for dev in devices)
+            raise ConnectionError(
+                f"No supported MCC DAQ found for board {board_num}. "
+                f"Detected unsupported MCC device(s): {names}"
+            )
+        ul.create_daq_device(board_num, target_device)
     else:
         raw_ids = getattr(driver_class, 'AUTODETECT_ID', ())
         product_names = (raw_ids,) if isinstance(raw_ids, str) else tuple(raw_ids)

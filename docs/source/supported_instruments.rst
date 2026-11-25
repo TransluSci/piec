@@ -101,6 +101,10 @@ Daq
         - :py:class:`~piec.drivers.daq.usb1208hs.USB1208HS`
         - Digilent VBS
         - Requires mcculw
+      * - One driver for all three USB-1608G family models
+        - :py:class:`~piec.drivers.daq.usb1608g.USB1608G`
+        - Digilent VBS
+        - Requires mcculw
 
 .. _dc-calibrator:
 
