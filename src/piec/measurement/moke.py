@@ -7,7 +7,7 @@ import pandas as pd
 from .experiment import Experiment
 from ..analysis.utilities import create_measurement_filename, metadata_and_data_to_csv
 from ..drivers.daq.daq import Daq
-from ..simulation.magnetic.moke.arctan_moke import ArctanMOKE
+from ..simulation.moke.arctan_moke import ArctanMOKE
 
 
 def _triangle_cycle_fields(field_min, field_max, points_per_cycle):

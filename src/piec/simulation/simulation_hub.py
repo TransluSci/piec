@@ -60,22 +60,22 @@ def _nested_set(mapping, dotted_key, value):
 
 
 def discover_simulation_catalog():
-    """Discover Level-2 simulation categories and Level-3 models recursively.
+    """Discover Level-2 simulation categories and Level-3 models.
+
+    Every simulation category lives directly under ``piec.simulation.<category>``
+    with a ``<category>.py`` interface module and sibling model modules.
 
     Returns:
-        dict[str, dict]: Mapping ``category_key -> {'category_class', 'models'}``.
+        dict[str, dict]: Mapping ``category_name -> {'category_class', 'models'}``.
     """
     catalog = {}
-    for cat_dir in sorted(SIMULATION_PATH.rglob("*")):
-        if not cat_dir.is_dir():
-            continue
-        rel_parts = cat_dir.relative_to(SIMULATION_PATH).parts
-        if any(part.startswith("_") for part in rel_parts):
+    for cat_dir in sorted(SIMULATION_PATH.iterdir()):
+        if not cat_dir.is_dir() or cat_dir.name.startswith("_"):
             continue
         if not (cat_dir / f"{cat_dir.name}.py").is_file():
             continue
 
-        pkg_prefix = ".".join(("piec", "simulation", *rel_parts))
+        pkg_prefix = f"piec.simulation.{cat_dir.name}"
         cat_mod = importlib.import_module(f"{pkg_prefix}.{cat_dir.name}")
         cat_classes = _local_subclasses(cat_mod, Sample)
         if len(cat_classes) != 1:
@@ -92,7 +92,7 @@ def discover_simulation_catalog():
                     models[model_cls.__name__] = model_cls
 
         if models:
-            catalog[cat_dir.relative_to(SIMULATION_PATH).as_posix()] = {
+            catalog[cat_dir.name] = {
                 "category_class": cat_cls,
                 "models": models,
             }

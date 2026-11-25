@@ -27,10 +27,10 @@ If an experiment or virtual instrument invokes a method that the active sample d
 *   **`ferroelectric/`**: Ferroelectric capacitor samples.
     *   Level 2: `FerroelectricMaterial` (`ferroelectric.py`)
     *   Level 3: `LandauFerroelectric` / `Ferroelectric` (`landau_ferroelectric.py`)
-*   **`magnetic/moke/`**: Magneto-Optic Kerr Effect (MOKE) samples ($H \rightarrow V_{\text{photodiode}}$).
+*   **`moke/`**: Magneto-Optic Kerr Effect (MOKE) samples ($H \rightarrow V_{\text{photodiode}}$).
     *   Level 2: `MOKEMaterial` (`moke.py`)
     *   Level 3: `ArctanMOKE` (`arctan_moke.py`)
-*   **`magnetic/amr/`**: Anisotropic magnetoresistance / magneto-transport samples ($(I, \theta, H) \rightarrow V_{\text{terminal}}$).
+*   **`amr/`**: Anisotropic magnetoresistance / magneto-transport samples ($(I, \theta, H) \rightarrow V_{\text{terminal}}$).
     *   Level 2: `AMRMaterial` (`amr.py`)
     *   Level 3: `CosSquaredAMR` (`cos_squared_amr.py`)
 

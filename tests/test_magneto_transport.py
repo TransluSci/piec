@@ -14,7 +14,7 @@ from piec.drivers.lockin.virtual_lockin import VirtualLockin
 from piec.drivers.stepper_motor.virtual_stepper import VirtualStepper
 from piec.drivers.virtual_instrument import VirtualInstrument
 from piec.measurement.amr import AMR, MagnetoTransport
-from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
+from piec.simulation.amr.cos_squared_amr import CosSquaredAMR
 
 
 @pytest.fixture
