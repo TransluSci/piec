@@ -222,7 +222,9 @@ class MeasurementApp:
     def get_default_sample(self):
         """Return a new default ``Sample`` from this GUI's experiment class, or ``None``."""
         default = getattr(self._experiment_cls, '_default_virtual_sample', None)
-        return default() if default is not None else None
+        if default is not None:
+            return default() if callable(default) else default
+        return None
 
     def open_simulation_hub(self):
         """Open or focus the Simulation Hub window for configuring the global sample."""

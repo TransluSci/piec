@@ -45,7 +45,8 @@ class Experiment:
             from piec.drivers.virtual_instrument import VirtualInstrument
             if VirtualInstrument.sample is None:
                 if self._default_virtual_sample is not None:
-                    VirtualInstrument.sample = self._default_virtual_sample()
+                    default = self._default_virtual_sample
+                    VirtualInstrument.sample = default() if callable(default) else default
                 else:
                     print(
                         f"WARNING: {type(self).__name__} does not define a specific "
