@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from piec.analysis.utilities import *
 from piec.measurement.experiment import Experiment
-from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
+from piec.simulation.amr.cos_squared_amr import CosSquaredAMR
 
 
 class MagnetoTransport(Experiment):

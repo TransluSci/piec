@@ -12,11 +12,15 @@ except Exception as e:
     InterfaceType = None
 
 import pyvisa # Keep this for _probe_scpi
-import inspect
-import importlib
-from pathlib import Path
-import json
-import os
+
+
+def _is_mcc_resource(address):
+    """Return True when a resource string represents an MCC/Digilent DAQ.
+
+    Keep in sync with the string format produced by ``list_mcc_resources()``.
+    """
+    addr_str = str(address)
+    return "Device ADDRESS =" in addr_str or "MCC" in addr_str or "Digilent" in addr_str
 
 class PiecManager():
     """
@@ -58,11 +62,13 @@ class PiecManager():
             **kwargs: Other keyword arguments to pass to pyvisa.open_resource.
         """
         # Check if the device is an MCC/Digilent device
-        if 'MCC' in address or 'Digilent' in address:
+        if _is_mcc_resource(address):
             if ul is None:
                 raise ImportError("Cannot open MCC device: 'mcculw' library is not installed.")
-            # These devices are not opened via VISA, so kwargs are not used.
-            return ul.open_device(address)
+            raise NotImplementedError(
+                "MCC DAQ devices cannot be opened via open_resource(); "
+                "use autodetect() or construct the MCC DAQ driver with its board number."
+            )
         else:
             # This is a standard VISA resource.
             # If the user provided a baud_rate, add it to the kwargs dictionary.
@@ -190,7 +196,7 @@ def list_instruments(verbose=False):
         idn = "Unknown"
         res_type = ""
 
-        if "MCC" in addr_str or "Digilent" in addr_str:
+        if _is_mcc_resource(addr_str):
             # MCC/Digilent device
             idn = addr_str
             res_type = "mcc"

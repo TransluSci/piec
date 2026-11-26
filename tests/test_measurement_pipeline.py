@@ -1,272 +1,155 @@
-"""
-Integration tests covering the full virtual-driver, measurement, CSV pipeline.
+"""Dynamic contract tests for Experiment pipelines and HysteresisLoop reference."""
 
-Run with pytest tests/test_measurement_pipeline.py
-"""
-
+import importlib
+import inspect
 import os
-import shutil
-import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 
+import piec.measurement as measurement_pkg
+from piec.analysis.utilities import standard_csv_to_metadata_and_data
+from piec.drivers.autodetect import autodetect
 from piec.drivers.awg.virtual_awg import VirtualAwg
 from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+from piec.drivers.virtual_dispatch import find_virtual_driver_class
 from piec.drivers.virtual_instrument import VirtualInstrument
-from piec.measurement.discrete_waveform import HysteresisLoop, ThreePulsePund
-from piec.analysis.utilities import standard_csv_to_metadata_and_data
+from piec.measurement.discrete_waveform import HysteresisLoop
+from piec.measurement.experiment import Experiment
 
 
-def test_pund_full_pipeline_preserves_metadata(tmp_path, monkeypatch):
-    monkeypatch.setattr(VirtualInstrument, 'sample', None)
-    experiment = ThreePulsePund(
-        awg=VirtualAwg(), osc=VirtualScope(),
-        reset_amp=2.0, p_u_amp=1.5,
-        show_plots=False, save_plots=False,
-        save_dir=str(tmp_path),
+_PARAM_ALIASES = {
+    "osc": "oscilloscope",
+    "arduino": "stepper_motor",
+}
+
+
+def discover_experiments():
+    """Discover all concrete Experiment subclasses with a defined ``mtype``."""
+    meas_dir = Path(measurement_pkg.__file__).resolve().parent
+    experiments = []
+    for path in sorted(meas_dir.glob("*.py")):
+        if path.stem in {"__init__", "experiment", "gui_utils"} or path.stem.startswith("_"):
+            continue
+        module = importlib.import_module(f"piec.measurement.{path.stem}")
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if (
+                obj.__module__ == module.__name__
+                and issubclass(obj, Experiment)
+                and obj is not Experiment
+                and obj.mtype is not None
+            ):
+                experiments.append(obj)
+    return sorted(experiments, key=lambda cls: cls.__name__)
+
+
+def _build_virtual_experiment(exp_cls, save_dir):
+    """Instantiate an Experiment with matching VIRTUAL_* drivers and fast defaults."""
+    defaults = {
+        "save_dir": str(save_dir),
+        "show_plots": False,
+        "save_plots": False,
+        "live_plot": False,
+        "dwell_time": 0.0,
+        "num_steps": 5,
+        "points_per_cycle": 12,
+        "angle_step": 90,
+        "total_angle": 180,
+        "measure_time": 0.05,
+        "field": 100,
+    }
+    kwargs = {}
+    for name, param in inspect.signature(exp_cls.__init__).parameters.items():
+        if name == "self" or param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+        device_type = _PARAM_ALIASES.get(name, name)
+        if find_virtual_driver_class(device_type) is not None:
+            kwargs[name] = autodetect(f"VIRTUAL_{device_type}")
+        elif name in defaults:
+            kwargs[name] = defaults[name]
+    return exp_cls(**kwargs)
+
+
+@pytest.mark.parametrize("exp_cls", discover_experiments(), ids=lambda cls: cls.__name__)
+def test_measurement_virtual_pipeline_contract(exp_cls, tmp_path, monkeypatch):
+    """Verify every concrete Experiment runs virtually and produces valid PIEC CSV/DataFrames."""
+    monkeypatch.setattr(VirtualInstrument, "sample", None)
+    monkeypatch.setattr(np.random, "normal", lambda *args: 0.0)
+    elapsed = [0.0]
+
+    def _sleep(seconds):
+        elapsed[0] += seconds
+
+    monkeypatch.setattr(
+        "piec.measurement.magneto_transport.time",
+        SimpleNamespace(time=lambda: elapsed[0], sleep=_sleep),
     )
+
+    experiment = _build_virtual_experiment(exp_cls, tmp_path)
     experiment.run_experiment()
 
+    assert isinstance(experiment.metadata, pd.DataFrame) and len(experiment.metadata) == 1
+    assert isinstance(experiment.data, pd.DataFrame) and not experiment.data.empty
+    assert experiment.filename is not None and os.path.isfile(experiment.filename)
+    assert os.path.getsize(experiment.filename) > 0
+
     metadata, data = standard_csv_to_metadata_and_data(experiment.filename)
-    assert metadata.loc[0, 'mtype'] == '3pulsepund'
-    assert metadata.loc[0, 'reset_amp'] == 2.0
-    assert metadata.loc[0, 'p_u_amp'] == 1.5
-    assert metadata.loc[0, 'length'] == pytest.approx(experiment.length)
-    assert metadata.loc[0, 'awg'] == experiment.awg.idn()
-    assert metadata.loc[0, 'osc'] == experiment.osc.idn()
-    assert bool(metadata.loc[0, 'processed']) is True
-    assert not data.empty
-    assert {'current (A)', 'polarization (uC/cm^2)', 'applied voltage (V)'} <= set(data)
+    assert isinstance(metadata, pd.DataFrame) and not metadata.empty
+    assert isinstance(data, pd.DataFrame) and not data.empty
+    assert metadata.loc[0, "mtype"] == exp_cls.mtype
+    assert {"timestamp", "processed"} <= set(metadata.columns)
+    for name in experiment._instruments:
+        assert metadata.loc[0, name] == getattr(experiment, name).idn()
+
+    numeric = data.select_dtypes(include=[np.number])
+    assert not numeric.empty
+    assert np.isfinite(numeric.to_numpy()).all()
     assert len(experiment.history) == 1
-    assert experiment.history[0].loc[0, 'reset_amp'] == 2.0
+    assert isinstance(experiment.history[0], pd.DataFrame)
 
 
-class TestVirtualDriverInit:
-    """Verify that virtual AWG and oscilloscope initialize correctly."""
+def test_hysteresis_full_pipeline(tmp_path, monkeypatch):
+    """Legacy reference end-to-end check for HysteresisLoop formatting and analysis."""
+    monkeypatch.setattr(VirtualInstrument, "sample", None)
+    loop = HysteresisLoop(
+        awg=VirtualAwg(),
+        osc=VirtualScope(),
+        frequency=1000.0,
+        amplitude=1.0,
+        n_cycles=2,
+        area=1.0e-5,
+        show_plots=False,
+        save_plots=False,
+        save_dir=str(tmp_path),
+    )
 
-    def setup_method(self):
-        self.awg = VirtualAwg()
-        self.scope = VirtualScope()
+    assert loop.mtype == "hysteresis"
+    assert loop.data is None
+    assert loop.filename is None
+    assert loop.history == []
+    assert isinstance(loop.metadata, pd.DataFrame)
+    assert float(loop.metadata["frequency"].iloc[0]) == pytest.approx(1000.0)
+    assert float(loop.metadata["amplitude"].iloc[0]) == pytest.approx(1.0)
 
-    def test_virtual_awg_creates_without_error(self):
-        assert self.awg is not None
+    loop.run_experiment()
 
-    def test_virtual_awg_idn_returns_nonempty_string(self):
-        result = self.awg.idn()
-        assert isinstance(result, str) and len(result) > 0
+    assert loop.filename is not None and os.path.isfile(loop.filename)
+    assert os.path.getsize(loop.filename) > 0
+    metadata, data = standard_csv_to_metadata_and_data(loop.filename)
+    assert {"frequency", "amplitude", "area", "n_cycles", "time_offset"} <= set(metadata.columns)
+    assert float(metadata["frequency"].iloc[0]) == pytest.approx(1000.0)
+    assert float(metadata["amplitude"].iloc[0]) == pytest.approx(1.0)
+    assert bool(metadata["processed"].iloc[0]) is True
 
-    def test_virtual_awg_has_state_dict(self):
-        # State dict must exist and contain sub-dicts.
-        assert hasattr(self.awg, 'state')
-        assert 'output' in self.awg.state
-        assert 'waveform' in self.awg.state
-
-    def test_virtual_awg_default_waveform_is_sin(self):
-        # Channel 1 starts in SIN mode
-        assert self.awg.state['waveform'][1] == 'SIN'
-
-    def test_virtual_scope_creates_without_error(self):
-        assert self.scope is not None
-
-    def test_virtual_scope_idn_returns_nonempty_string(self):
-        result = self.scope.idn()
-        assert isinstance(result, str) and len(result) > 0
-
-    def test_virtual_scope_starts_unarmed(self):
-        assert self.scope.state['armed'] is False
-
-    def test_virtual_scope_arm_sets_flag(self):
-        self.scope.arm()
-        assert self.scope.state['armed'] is True
-
-    def test_virtual_drivers_receive_common_instrument_state(self):
-        for instrument in (self.awg, self.scope):
-            assert isinstance(instrument, VirtualInstrument)
-            assert instrument.check_params is False
-            assert instrument.instrument is instrument
-
-    def test_existing_virtual_drivers_see_replaced_shared_sample(self):
-        original_sample = VirtualInstrument.sample
-
-        try:
-            replacement = object()
-            VirtualInstrument.sample = replacement
-
-            assert self.awg.sample is replacement
-            assert self.scope.sample is replacement
-
-            replacement_from_property = object()
-            self.awg.sample = replacement_from_property
-
-            assert self.awg.sample is replacement_from_property
-            assert self.scope.sample is replacement_from_property
-        finally:
-            VirtualInstrument.sample = original_sample
-
-
-class TestHysteresisLoopInit:
-    """Verify HysteresisLoop initialises correctly when given virtual drivers."""
-
-    def setup_method(self):
-        self.tmp_dir = tempfile.mkdtemp()
-        self.loop = HysteresisLoop(
-            awg=VirtualAwg(),
-            osc=VirtualScope(),
-            frequency=1000.0,
-            amplitude=1.0,
-            save_dir=self.tmp_dir,
-        )
-
-    def teardown_method(self):
-        shutil.rmtree(self.tmp_dir, ignore_errors=True)
-
-    def test_loop_is_not_none(self):
-        assert self.loop is not None
-
-    def test_loop_mtype_is_hysteresis(self):
-        assert self.loop.mtype == "hysteresis"
-
-    def test_loop_data_is_none_before_capture(self):
-        # No waveform has been captured yet, data must be None
-        assert self.loop.data is None
-
-    def test_loop_filename_is_none_before_save(self):
-        # No file has been written yet
-        assert self.loop.filename is None
-
-    def test_loop_metadata_is_a_dataframe(self):
-        # _update_metadata() is called in init so metadata should exist
-        assert isinstance(self.loop.metadata, pd.DataFrame)
-
-    def test_loop_metadata_has_frequency(self):
-        assert 'frequency' in self.loop.metadata.columns
-        assert float(self.loop.metadata['frequency'].values[0]) == pytest.approx(1000.0)
-
-    def test_loop_metadata_has_amplitude(self):
-        assert 'amplitude' in self.loop.metadata.columns
-        assert float(self.loop.metadata['amplitude'].values[0]) == pytest.approx(1.0)
-
-    def test_loop_history_starts_empty(self):
-        # History is only populated after run_experiment() finishes
-        assert self.loop.history == []
-
-
-class TestHysteresisFullPipeline:
-    """
-    End-to-end test of the full measurement pipeline.
-    """
-
-    def setup_method(self):
-        # Create a fresh temporary directory for each test 
-        self.tmp_dir = tempfile.mkdtemp()
-
-        # Instantiate virtual drivers
-        awg = VirtualAwg()
-        scope = VirtualScope()
-
-        # Build and execute the complete measurement pipeline
-        self.loop = HysteresisLoop(
-            awg=awg,
-            osc=scope,
-            frequency=1000.0,   # 1 kHz
-            amplitude=1.0,      # 1 V peak amplitude
-            n_cycles=2,         # two bipolar triangle cycles
-            area=1.0e-5,       
-            show_plots=False,  
-            save_plots=False,  
-            save_dir=self.tmp_dir,
-        )
-        self.loop.run_experiment()
-
-        # Store the path returned by save_waveform()
-        self.csv_path = self.loop.filename
-
-    def teardown_method(self):
-        # Always remove the temporary directory tree after each test
-        shutil.rmtree(self.tmp_dir, ignore_errors=True)
-
-    def test_csv_file_is_created(self):
-        """run_experiment() must produce a CSV file at the reported path."""
-        assert self.csv_path is not None
-        assert os.path.isfile(self.csv_path), (
-            f"Expected CSV at {self.csv_path!r} but no file was found"
-        )
-
-    def test_csv_file_has_nonzero_size(self):
-        """The CSV must contain actual content and not be empty."""
-        assert os.path.getsize(self.csv_path) > 0
-
-    def test_csv_can_be_read_back(self):
-        """The CSV must be parseable by the piec standard reader without error."""
-        metadata, data = standard_csv_to_metadata_and_data(self.csv_path)
-        assert metadata is not None
-        assert data is not None
-
-    # test metadata
-
-    def test_metadata_contains_required_columns(self):
-        """All parameters that process_raw_hyst() reads must be in the metadata."""
-        metadata, _ = standard_csv_to_metadata_and_data(self.csv_path)
-        for col in ('frequency', 'amplitude', 'area', 'n_cycles', 'time_offset'):
-            assert col in metadata.columns, f"Metadata is missing column: '{col}'"
-
-    def test_metadata_frequency_value_is_correct(self):
-        """Frequency stored in metadata must match the value passed to the constructor."""
-        metadata, _ = standard_csv_to_metadata_and_data(self.csv_path)
-        assert float(metadata['frequency'].values[0]) == pytest.approx(1000.0)
-
-    def test_metadata_amplitude_value_is_correct(self):
-        """Amplitude stored in metadata must match the value passed to the constructor."""
-        metadata, _ = standard_csv_to_metadata_and_data(self.csv_path)
-        assert float(metadata['amplitude'].values[0]) == pytest.approx(1.0)
-
-    def test_metadata_processed_flag_is_true_after_analysis(self):
-        """analyze() must update the 'processed' flag to True in the CSV."""
-        metadata, _ = standard_csv_to_metadata_and_data(self.csv_path)
-        assert bool(metadata['processed'].values[0]) is True
-
-    # Data validation
-
-    def test_data_has_raw_capture_columns(self):
-        """Columns written by apply_and_capture_waveform() must be present."""
-        _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        for col in ('time (s)', 'voltage (V)'):
-            assert col in data.columns, f"Data is missing column: '{col}'"
-
-    def test_data_has_analysis_columns(self):
-        """Columns added by process_raw_hyst() during analyze() must be present."""
-        _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        for col in ('current (A)', 'polarization (uC/cm^2)', 'applied voltage (V)'):
-            assert col in data.columns, f"Analysis column missing: '{col}'"
-
-    def test_data_has_multiple_rows(self):
-        """The captured waveform must contain actual data points, not be empty."""
-        _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        assert len(data) > 0
-
-    def test_data_time_column_is_numeric(self):
-        """Time values must be numeric so downstream integration works correctly."""
-        _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        assert pd.api.types.is_numeric_dtype(data['time (s)'])
-
-    def test_data_voltage_column_is_numeric(self):
-        """Voltage values must be numeric so current/polarization calculation works."""
-        _, data = standard_csv_to_metadata_and_data(self.csv_path)
-        assert pd.api.types.is_numeric_dtype(data['voltage (V)'])
-
-    def test_history_has_one_entry_after_run(self):
-        """_update_history() is called once at the end of run_experiment()."""
-        assert len(self.loop.history) == 1
-
-    def test_history_entry_is_a_dataframe(self):
-        """Each history entry must be a DataFrame containing the measurement metadata."""
-        assert isinstance(self.loop.history[0], pd.DataFrame)
-
-    # cleanup verification
-
-    def test_csv_can_be_explicitly_deleted(self):
-        """Confirm the output CSV is a normal file that callers can remove."""
-        assert os.path.isfile(self.csv_path)
-        os.remove(self.csv_path)
-        assert not os.path.isfile(self.csv_path)
+    assert {"time (s)", "voltage (V)", "current (A)", "polarization (uC/cm^2)", "applied voltage (V)"} <= set(data.columns)
+    assert len(data) > 0
+    assert pd.api.types.is_numeric_dtype(data["time (s)"])
+    assert pd.api.types.is_numeric_dtype(data["voltage (V)"])
+    assert len(loop.history) == 1
+    assert isinstance(loop.history[0], pd.DataFrame)

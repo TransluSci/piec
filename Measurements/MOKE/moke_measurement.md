@@ -54,7 +54,7 @@ For continuous shared-DAQ runs, `DaqFieldController` configures the output wavef
 
 ## Software Architecture
 
-The codebase is structured around the `MOKE` measurement class and the 3-level `magnetic/moke` simulation package.
+The codebase is structured around the `MOKE` measurement class and the 3-level `moke` simulation package.
 
 ### `MOKE` Class
 *   **Location**: `src/piec/measurement/moke.py`
@@ -67,7 +67,7 @@ The codebase is structured around the `MOKE` measurement class and the 3-level `
     *   `request_pause()`, `request_resume()`, `request_stop()`: Thread-safe controls used by the GUI to pause, resume, or stop an active acquisition.
 
 ### `MOKEMaterial` & `ArctanMOKE` Simulation
-*   **Location**: `src/piec/simulation/magnetic/moke/`
+*   **Location**: `src/piec/simulation/moke/`
 *   **Role**: `MOKEMaterial` (`moke.py`) defines the Level-2 MOKE sample contract (`set_field`, `get_field`, `get_magnetization`, `get_voltage`), and `ArctanMOKE` (`arctan_moke.py`) implements the Level-3 noiseless analytical arctan hysteresis loop used by `VirtualFieldController`, `VirtualDMM`, and `VirtualGaussmeter`.
 
 ## How to Use the Notebook
@@ -136,6 +136,6 @@ python Measurements/MOKE/moke_GUI.py
 
 *   **Standard Instrument Abstraction**: Built directly around `FieldController`, `DMM`, and optional `Gaussmeter` interfaces, with drop-in DAQ and source emulators when needed.
 *   **Stepped & Continuous Bipolar Triangle Sweeps**: Consistent `0 -> +H_max -> 0 -> -H_min -> 0` waveform across both stepped and continuous modes.
-*   **Ideal Virtual Simulation**: Uses the Level-3 `ArctanMOKE` model (`piec.simulation.magnetic.moke.arctan_moke`) for clean, noiseless hysteresis loops in simulation mode.
+*   **Ideal Virtual Simulation**: Uses the Level-3 `ArctanMOKE` model (`piec.simulation.moke.arctan_moke`) for clean, noiseless hysteresis loops in simulation mode.
 *   **Cycle Averaging & CSV Export**: Automatically saves both raw multi-cycle data and point-by-point cycle-averaged hysteresis loops with full experiment and instrument metadata.
 *   **Safe Shutdown**: Always returns the magnetic field setpoint to zero after completion or abort.

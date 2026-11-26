@@ -363,7 +363,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope):
         v, t = self.sample.state.get('waveform', (None, None))
         if v is None:
             return pd.DataFrame({'Time': [], 'Voltage': []})
-        current = self.sample.apply_voltage(v, t)
+        current = None if type(self.sample).__name__ == 'Sample' else self.sample.apply_voltage(v, t)
         voltages = v if current is None else np.asarray(current, dtype=float) * 50.0
         return pd.DataFrame({'Time': t, 'Voltage': voltages})
 

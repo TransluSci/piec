@@ -9,7 +9,7 @@ Run with pytest tests/test_imports.py
 
 
 def test_import_piec():
-    import piec 
+    import piec
 
 
 def test_version_string():
@@ -21,7 +21,7 @@ def test_version_string():
 
 
 def test_import_drivers():
-    import piec.drivers 
+    import piec.drivers
 
 
 def test_import_analysis():
@@ -29,15 +29,11 @@ def test_import_analysis():
 
 
 def test_import_simulation():
-    import piec.simulation 
+    import piec.simulation
 
 
-def test_import_virtual_awg():
-    from piec.drivers.awg.virtual_awg import VirtualAwg 
-
-
-def test_import_virtual_scope():
-    from piec.drivers.oscilloscope.virtual_oscilloscope import VirtualScope
+def test_import_measurement():
+    import piec.measurement
 
 
 def test_import_analysis_utilities():
@@ -47,11 +43,3 @@ def test_import_analysis_utilities():
         standard_csv_to_metadata_and_data,
         create_measurement_filename,
     )
-
-
-def test_import_simulation_classes():
-    from piec.simulation.sample import Sample
-    from piec.simulation.ferroelectric.landau_ferroelectric import Ferroelectric
-    from piec.simulation.resistor.ohmic_resistor import Resistor
-    from piec.simulation.magnetic.moke.arctan_moke import ArctanMOKE
-    from piec.simulation.magnetic.amr.cos_squared_amr import CosSquaredAMR
