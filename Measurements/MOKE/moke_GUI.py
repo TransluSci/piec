@@ -292,8 +292,19 @@ class MOKEApp(MeasurementApp):
         device = None
         try:
             board = int(target.get() if target is not None else self.connection_setup['board'])
-            device = _open_mcc_driver(Daq, board)
-            print(f'Detected shared DAQ: {device.idn()} (board {device.board_num})')
+            device = _open_mcc_driver(Daq, board, allow_generic=True)
+            device.set_input_mode(self.connection_setup['ai_mode'])
+            is_generic = bool(getattr(type(device), 'IS_GENERIC_FALLBACK', False))
+            driver = f'generic MCC fallback ({device.model})' if is_generic else type(device).__name__
+            summary = (f'Detected shared DAQ: {device.idn()} (board {device.board_num}, {driver}, '
+                       f'{self.connection_setup["ai_mode"]}: {len(device.ai_channel)} AI / {len(device.ao_channel)} AO)')
+            print(summary)
+            if is_generic:
+                messagebox.showwarning(
+                    'DAQ discovery (Generic MCC Fallback)',
+                    summary + '\n\nNo dedicated PIEC driver yet; verify wiring mode, voltage ranges, and sample rates.',
+                    parent=self.root,
+                )
         except Exception as error:
             messagebox.showerror('DAQ discovery', str(error), parent=self.root)
         finally:
@@ -367,7 +378,7 @@ class MOKEApp(MeasurementApp):
                   'Shared DAQ channel uses the wiring for the selected geometry under DAQ channels.\n'
                   'Current or voltage source uses the instrument and calibration under Source settings.').grid(
                       row=3, column=0, columnspan=2, sticky='w', pady=(14, 0))
-        ttk.Label(daq_frame, text='Shared DAQ: MCC board number (e.g. USB-1208HS, USB-231)').grid(
+        ttk.Label(daq_frame, text='Shared DAQ: board number (e.g. USB-1208HS or generic DAQ)').grid(
             row=0, column=0, columnspan=2, sticky='w', pady=(12, 3))
         board = ttk.Entry(daq_frame)
         board.insert(0, self.connection_setup['board'])
@@ -552,7 +563,7 @@ class MOKEApp(MeasurementApp):
         self.close_instruments()
         try:
             if any(self.instrument_address_entries[name].get() == DAQ_ADDRESS for name in roles):
-                self._owned_daq = _open_mcc_driver(Daq, int(self.connection_setup['board']))
+                self._owned_daq = _open_mcc_driver(Daq, int(self.connection_setup['board']), allow_generic=True)
                 self._owned_daq.set_input_mode(self.connection_setup['ai_mode'])
             for name in roles:
                 if name == 'field_controller' and self.instrument_address_entries[name].get() == SOURCE_ADDRESS:
