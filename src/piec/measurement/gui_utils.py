@@ -56,7 +56,7 @@ class MeasurementApp:
     _instruments = ()
     # Experiment class run by this GUI; its ``_default_virtual_sample`` drives
     # Simulation Hub filtering and the virtual sample used before a run.
-    _experiment_cls = None
+    _experiment_cls = None  # leave as None (or omit) for no Simulation Hub filtering
 
     def __init__(self, root, title="Measurement GUI", geometry="1200x700", icon_path=None):
         self.root = root
